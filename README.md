@@ -11,12 +11,28 @@ go/engine   App: state, connect, ping (urltest + TCP bound to the physical NIC),
 go/ipc      loopback HTTP JSON-RPC: 127.0.0.1:<random>, 256-bit token in ipc.json (ACL: SYSTEM/Admins full, Users read)
 go/cmd/noxd Windows service "Nox" (LocalSystem): run | install | uninstall | start | stop | version
 go/cmd/signupdate  ed25519 signer for update.json
+go/mobile   gomobile AAR (com.lumen.core.noxcore): engine + libbox in the Android app process
+app/android Android phone + TV (package com.lumen.vpn, VpnService, leanback launcher, tile, boot)
 installer/  Inno Setup 7 script (per-machine, registers the service, migrates/removes Nox 0.8.x)
-third_party/windows  qwdtt.exe 1.4.4, sing rule sets, LICENSES.txt
+third_party/windows  qwdtt.exe 1.4.4, sing rule sets, LICENSES.txt (xray.exe is fetched by CI)
+third_party/android  <abi>/libqwdtt.so (libxray.so fetched by scripts/fetch-xray-android.sh)
 .github/workflows/windows.yml  windows-latest build -> Nox-Setup-<ver>.exe (+ signed update.json)
 ```
 
-No OpenVPN on any platform. Engines: sing-box, qWDTT, SSTP.
+No OpenVPN on any platform. Engines: sing-box, qWDTT, SSTP, and Xray-core for XHTTP servers.
+
+XHTTP (`vless://…?type=xhttp`, also trojan) is not in sing-box. Such servers are stored as
+`{"type":"_xray","xray":<Xray outbound>}`. When one is selected, Xray-core runs it behind a loopback
+SOCKS5 port and sing-box chains to it, so TUN, routing, DNS and stats stay in sing-box. Ping works the
+same way: one Xray instance serves all XHTTP servers on separate ports for the URL test.
+For the disconnected URL test, server domains are resolved through public DNS (with DoH fallback) and
+fake-IP answers are skipped, so a stale or poisoned system resolver can't break pings.
+
+## Android / TV
+`scripts/build-android.sh` builds the AAR if needed (`go/mobile/build-aar.sh`) and fetches Xray (pinned
+sha256). It then builds a release APK signed with lumen.jks (passwords come from
+lumen-passwords.txt through env vars). versionCode is the pubspec build number, which is above 0.7.71's 99.
+At first start, `files/lumen-data.json` from 0.7.x is imported.
 
 ## Windows architecture
 * `noxd.exe` runs as a LocalSystem service. It owns TUN, routes, sing-box/qwdtt processes and SSTP (RAS).
@@ -40,7 +56,7 @@ cd app && flutter test && flutter build web --dart-define=NOX_MOCK=true   # UI p
 go run ./cmd/noxd run -data /tmp/noxd   # dev daemon; then: flutter test test/service_it_test.dart
 ```
 Windows (manual): `flutter build windows`, stage `dist\app` + `dist\core` as in the workflow, then
-`ISCC /DAppVersion=1.0.1 /DDist=..\dist installer\nox.iss`.
+`ISCC /DAppVersion=1.0.2 /DDist=..\dist installer\nox.iss`.
 
 ## Secrets (CI)
 * `NOX_UPDATE_KEY`: ed25519 private key for update signing (`go run ./cmd/signupdate -gen key`; keep it offline).

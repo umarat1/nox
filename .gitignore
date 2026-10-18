@@ -23,3 +23,6 @@ app/android/key.properties
 app/android/app/libs/*.aar
 local.properties
 app/android/app/libs/*.jar
+# Xray-core for Android is fetched (pinned sha256) by scripts/fetch-xray-android.sh
+third_party/android/*/libxray.so
+third_party/android/.xray-*

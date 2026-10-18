@@ -26,7 +26,7 @@ import (
 	"nox/core"
 )
 
-const Version = "1.0.1"
+const Version = "1.0.2"
 
 type Sub struct {
 	ID       string `json:"id"`
@@ -78,6 +78,7 @@ type App struct {
 
 	box     coreProc
 	qw      *exec.Cmd
+	xr      *xrayProc // Xray-core for an XHTTP server
 	qwStdin io.WriteCloser
 	tun     *exec.Cmd // sstpc (Linux)
 	sstpUp  bool      // Windows RAS SSTP entry dialed
@@ -735,14 +736,44 @@ func (a *App) urlTest(list []core.Server, set func(string, int), pn pingNet) {
 	ctrl := fmt.Sprintf("127.0.0.1:%d", port)
 	var outs, eps []any
 	tags := map[string]string{}
+	// XHTTP servers: one Xray instance, one loopback SOCKS port each, tested through sing-box
+	var xobs []json.RawMessage
+	var xidx []int
+	for i, s := range list {
+		if core.IsXray(s.Outbound) {
+			xobs, xidx = append(xobs, s.Outbound), append(xidx, i)
+		}
+	}
+	xport := map[int]int{}
+	if len(xobs) > 0 {
+		x, err := a.startXray("ping", xobs, pn)
+		if err != nil {
+			a.log("пинг XHTTP: " + err.Error())
+			for _, i := range xidx {
+				set(list[i].ID, -1)
+			}
+		} else {
+			defer x.Stop()
+			for k, i := range xidx {
+				xport[i] = x.ports[k]
+			}
+		}
+	}
 	for i, s := range list {
 		var ob map[string]any
-		if json.Unmarshal(s.Outbound, &ob) != nil {
+		if core.IsXray(s.Outbound) {
+			p, ok := xport[i]
+			if !ok {
+				continue
+			}
+			ob = socksOut(p)
+		} else if json.Unmarshal(s.Outbound, &ob) != nil {
 			set(s.ID, -1)
 			continue
 		}
 		tag := "s" + strconv.Itoa(i)
 		ob["tag"] = tag
+		pinIP(ob, pn)
 		tags[tag] = s.ID
 		if ob["type"] == "wireguard" {
 			eps = append(eps, ob)
@@ -948,6 +979,27 @@ func (a *App) connect(ctx context.Context, srv core.Server, s core.Settings) err
 			return err
 		}
 		proxy = ep
+	} else if core.IsXray(srv.Outbound) {
+		x, err := a.startXray("main", []json.RawMessage{srv.Outbound}, pingNet{})
+		if err != nil {
+			return err
+		}
+		a.mu.Lock()
+		a.xr = x
+		a.mu.Unlock()
+		a.log("Xray: XHTTP через локальный SOCKS5")
+		proxy = socksOut(x.ports[0])
+		go func() {
+			<-x.done
+			a.mu.Lock()
+			if a.xr == x && (a.status == "connected" || a.status == "connecting") {
+				a.errMsg = "Xray завершился: " + x.lastErr()
+				a.mu.Unlock()
+				a.stopAll()
+				return
+			}
+			a.mu.Unlock()
+		}()
 	} else if err := json.Unmarshal(srv.Outbound, &proxy); err != nil {
 		return err
 	}
@@ -1191,9 +1243,12 @@ func (a *App) stopAll() {
 		a.proxySet = false
 		setSystemProxy(false, 0)
 	}
-	box, qw, qin := a.box, a.qw, a.qwStdin
-	a.box, a.qw, a.qwStdin = nil, nil, nil
+	box, qw, qin, xr := a.box, a.qw, a.qwStdin, a.xr
+	a.box, a.qw, a.qwStdin, a.xr = nil, nil, nil, nil
 	a.mu.Unlock()
+	if xr != nil {
+		defer xr.Stop()
+	}
 	a.stopFullTunnel()
 	if box != nil {
 		box.Stop()

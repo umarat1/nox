@@ -21,6 +21,8 @@ env:
   FLUTTER_VERSION: "3.47.7"
   SINGBOX_VERSION: "1.14.3"
   SINGBOX_SHA256: "d8b86ef58936dba9230ec6a57ffa4243933f3c14ef4809828b6c553440ed1518"
+  XRAY_VERSION: "26.3.27"
+  XRAY_SHA256: "d004c39288ce9ada487c6f398c7c545f7d749e44bdfdd59dbc9f865afba4e1ad"
   INNO_URL: "https://github.com/jrsoftware/issrc/releases/download/is-7_1_0/innosetup-7.1.0-x64.exe"
   INNO_SHA256: "0362a383ed217d4c4239b5933866dd96d3eb2102737da92f80f6057a4b40df2f"
 
@@ -80,6 +82,14 @@ jobs:
           if ((Get-FileHash $zip -Algorithm SHA256).Hash -ne $env:SINGBOX_SHA256) { throw "sing-box checksum mismatch" }
           Expand-Archive $zip "$env:RUNNER_TEMP\sb"
           Copy-Item "$env:RUNNER_TEMP\sb\*\sing-box.exe","$env:RUNNER_TEMP\sb\*\libcronet.dll" dist/core/
+
+      - name: Fetch Xray-core (XHTTP servers; pinned, checksum verified)
+        run: |
+          $zip = "$env:RUNNER_TEMP\xray.zip"
+          Invoke-WebRequest "https://github.com/XTLS/Xray-core/releases/download/v$env:XRAY_VERSION/Xray-windows-64.zip" -OutFile $zip
+          if ((Get-FileHash $zip -Algorithm SHA256).Hash -ne $env:XRAY_SHA256) { throw "Xray checksum mismatch" }
+          Expand-Archive $zip "$env:RUNNER_TEMP\xray"
+          Copy-Item "$env:RUNNER_TEMP\xray\xray.exe" dist/core/
 
       - name: Stage dist
         run: |

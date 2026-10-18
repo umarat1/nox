@@ -87,7 +87,7 @@ class MockApi implements NoxApi {
     switch (m) {
       case 'GetState':
         return {
-          'version': '1.0.1',
+          'version': '1.0.2',
           'core': 'sing-box 1.14.3 · qWDTT 1.4.4 · SSTP',
           'status': status,
           'error': '',

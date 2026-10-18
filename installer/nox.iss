@@ -1,14 +1,14 @@
 ; Nox 1.0 for Windows: Inno Setup 7 script.
-; Build:  ISCC.exe /DAppVersion=1.0.1 /DDist=..\dist installer\nox.iss
+; Build:  ISCC.exe /DAppVersion=1.0.2 /DDist=..\dist installer\nox.iss
 ; Dist layout (made by CI, see .github/workflows/windows.yml):
 ;   dist\app\   Flutter Release folder (Nox.exe, flutter_windows.dll, plugins, data\) + VC++ runtime DLLs
-;   dist\core\  noxd.exe, sing-box.exe, libcronet.dll, qwdtt.exe, *.srs, LICENSES.txt
+;   dist\core\  noxd.exe, sing-box.exe, libcronet.dll, qwdtt.exe, xray.exe, *.srs, LICENSES.txt
 ; The UI runs as the normal user. Only the installer needs admin: it registers the
 ; "Nox" service (LocalSystem), which owns TUN, routes and SSTP. No OpenVPN.
 ; Silent update (from the service): Setup.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
 
 #ifndef AppVersion
-  #define AppVersion "1.0.1"
+  #define AppVersion "1.0.2"
 #endif
 #ifndef Dist
   #define Dist "..\dist"
@@ -136,6 +136,7 @@ begin
   Run(ExpandConstant('{sys}\taskkill.exe'), '/F /IM Nox.exe');
   Run(ExpandConstant('{sys}\taskkill.exe'), '/F /IM sing-box.exe');
   Run(ExpandConstant('{sys}\taskkill.exe'), '/F /IM qwdtt.exe');
+  Run(ExpandConstant('{sys}\taskkill.exe'), '/F /IM xray.exe');
   RemoveNox08;
 end;
 

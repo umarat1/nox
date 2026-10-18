@@ -250,7 +250,7 @@ func parseSingBoxJSON(text string) (ParseResult, error) {
 
 func DisplayType(t string) string {
 	m := map[string]string{"vless": "VLESS", "vmess": "VMess", "trojan": "Trojan", "shadowsocks": "Shadowsocks", "hysteria": "Hysteria",
-		"hysteria2": "Hysteria2", "tuic": "TUIC", "anytls": "AnyTLS", "wireguard": "WireGuard", "socks": "SOCKS5", "http": "HTTP", "ssh": "SSH", "_qwdtt": "qWDTT", "_sstp": "SSTP"}
+		"hysteria2": "Hysteria2", "tuic": "TUIC", "anytls": "AnyTLS", "wireguard": "WireGuard", "socks": "SOCKS5", "http": "HTTP", "ssh": "SSH", "_qwdtt": "qWDTT", "_sstp": "SSTP", "_xray": "XHTTP"}
 	if v, ok := m[t]; ok {
 		return v
 	}
@@ -457,6 +457,9 @@ func ParseLink(s string) (Server, error) {
 	l, err := splitLink(s)
 	if err != nil {
 		return Server{}, err
+	}
+	if (l.scheme == "vless" || l.scheme == "trojan") && strings.EqualFold(l.g("type"), "xhttp") {
+		return xrayFromLink(l) // sing-box has no XHTTP: Xray-core runs it
 	}
 	switch l.scheme {
 	case "vless":

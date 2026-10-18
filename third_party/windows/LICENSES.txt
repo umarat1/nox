@@ -2,6 +2,7 @@ Nox 1.0 for Windows: third-party components
 
 sing-box 1.14.3 (GPLv3+) https://github.com/SagerNet/sing-box  (sing-box.exe, libcronet.dll)
 wintun (embedded in sing-box) https://www.wintun.net
+Xray-core 26.3.27 (MPL-2.0) https://github.com/XTLS/Xray-core  (xray.exe, XHTTP servers)
 qWDTT client 1.4.4 (go_client, see project LICENSE) https://github.com/SpaceNeuroX/proxy-turn-vk-android
 sing-geoip / sing-geosite rule sets (geoip-ru, geosite-category-ru, geosite-category-ads-all)
 Flutter (BSD-3-Clause) https://flutter.dev

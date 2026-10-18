@@ -20,6 +20,8 @@ NOX_KEY_PASS="$(field 'key password')"; export NOX_KEY_PASS
 NOX_KEY_ALIAS="$(field 'alias')"; export NOX_KEY_ALIAS
 [[ -n "$NOX_KS_PASS" && -n "$NOX_KEY_ALIAS" ]] || { echo "signing fields not found" >&2; exit 1; }
 
+"$ROOT/scripts/fetch-xray-android.sh"
+
 cd "$ROOT/app"
 flutter build apk --release
 ls -la build/app/outputs/flutter-apk/app-release.apk
