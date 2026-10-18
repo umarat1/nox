@@ -648,16 +648,17 @@ class _Hero extends StatelessWidget {
                     _Pill(p: p, text: '↑ ${fmtBytes(t?['Up'] ?? 0)}/с'),
                   ],
                 ),
-                if (t != null && !wide)
+                // Always reserve the graph when connected so the card never looks empty.
+                if (on && !wide)
                   SizedBox(
-                    height: 36,
+                    height: 40,
                     width: double.infinity,
                     child: Padding(
-                      padding: const EdgeInsets.only(top: 4),
+                      padding: const EdgeInsets.only(top: 6),
                       child: LiveGraph(
                         series: c.speed,
                         p: p,
-                        active: on && c.animSmooth,
+                        active: c.animSmooth,
                       ),
                     ),
                   ),
@@ -910,20 +911,38 @@ class _SubBlock extends StatelessWidget {
         children: [
           Row(
             children: [
-              Text(
-                expireTxt,
-                style: TextStyle(
-                  color: left != null && left <= 0
-                      ? p.red
-                      : (left != null && left <= 3 ? p.amb : p.txt),
-                  fontWeight: FontWeight.w700,
-                  fontSize: 12,
+              // Labels + bar + traffic share space; icons stay fixed (no overlap at any scale).
+              Flexible(
+                flex: 2,
+                child: Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        expireTxt,
+                        maxLines: 1,
+                        softWrap: false,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: left != null && left <= 0
+                              ? p.red
+                              : (left != null && left <= 3 ? p.amb : p.txt),
+                          fontWeight: FontWeight.w700,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      '$n серв.',
+                      maxLines: 1,
+                      style: TextStyle(color: p.sub, fontSize: 12),
+                    ),
+                  ],
                 ),
               ),
-              const SizedBox(width: 8),
-              Text('$n серв.', style: TextStyle(color: p.sub, fontSize: 12)),
-              const SizedBox(width: 8),
+              const SizedBox(width: 6),
               Expanded(
+                flex: 3,
                 child: Row(
                   children: [
                     Expanded(
@@ -938,13 +957,19 @@ class _SubBlock extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(width: 6),
-                    Text(
-                      trafficTxt,
-                      style: TextStyle(color: p.ter, fontSize: 10),
+                    Flexible(
+                      child: Text(
+                        trafficTxt,
+                        maxLines: 1,
+                        softWrap: false,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(color: p.ter, fontSize: 10),
+                      ),
                     ),
                   ],
                 ),
               ),
+              const SizedBox(width: 2),
               _IconBtn(
                 p: p,
                 icon: Icons.refresh,

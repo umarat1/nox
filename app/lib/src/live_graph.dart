@@ -121,11 +121,25 @@ class _LiveGraphState extends State<LiveGraph>
     if (run && !_ticker.isActive) {
       _last = Duration.zero;
       _ticker.start();
-    } else if (!run && _ticker.isActive) {
-      _ticker.stop();
+      return;
     }
-    if (!widget.active) {
-      pos = -1;
+    if (!run) {
+      if (_ticker.isActive) _ticker.stop();
+      // Freeze on the newest sample so a static curve stays visible when
+      // «Плавные анимации» is off (or the window is hidden briefly).
+      final s = widget.series;
+      if (s.up.isNotEmpty) {
+        pos = s.seq - 1.0;
+        var top = 0.0;
+        for (var i = 0; i < s.up.length; i++) {
+          top = math.max(top, math.max(s.down[i], s.up[i]));
+        }
+        mx = math.max(32 * 1024.0, top * 1.18);
+        curDown = s.down.last;
+        curUp = s.up.last;
+      } else {
+        pos = -1;
+      }
       _frame.value++;
     }
   }
@@ -199,6 +213,26 @@ class _LivePainter extends CustomPainter {
       }
     }
     if (g.pos < 0 || s.up.isEmpty || g.mx <= 0) {
+      // Idle baseline — keeps the connection-card slot visible before samples arrive.
+      final y = bottom - 1;
+      canvas.drawLine(
+        Offset(0, y),
+        Offset(w, y),
+        Paint()
+          ..color = p.acc.withValues(alpha: .35)
+          ..strokeWidth = 1.4
+          ..strokeCap = StrokeCap.round,
+      );
+      // Soft accent glow so it reads as a graph, not an empty gap.
+      canvas.drawLine(
+        Offset(0, y - 3),
+        Offset(w * .55, y - 8),
+        Paint()
+          ..color = p.acc2.withValues(alpha: .45)
+          ..strokeWidth = 1.6
+          ..strokeCap = StrokeCap.round
+          ..style = PaintingStyle.stroke,
+      );
       if (labels) {
         _text(canvas, 'Нет подключения', Offset(0, 0), p.sub, 12.5);
       }
