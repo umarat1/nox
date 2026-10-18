@@ -37,6 +37,12 @@ NoxApi createApi() =>
 
 const _ch = MethodChannel('nox/core');
 
+class AppInfo {
+  final String pkg, label;
+  final Uint8List? icon;
+  AppInfo(this.pkg, this.label, this.icon);
+}
+
 /// Android: the engine runs in this process (gomobile AAR); Kotlin forwards the calls.
 class AndroidApi implements NoxApi {
   @override
@@ -64,6 +70,29 @@ Future<bool> prepareVpn() async {
 Future<bool> isTvDevice() async {
   if (!Platform.isAndroid || _mock) return false;
   return await _ch.invokeMethod<bool>('isTv') ?? false;
+}
+
+/// Android: VK captcha page for qWDTT in a WebView; success_token or "error:…".
+bool get canCaptcha => Platform.isAndroid && !_mock;
+Future<String> solveCaptcha(String url) async {
+  if (!canCaptcha) return 'error:unsupported';
+  try {
+    return await _ch.invokeMethod<String>('solveCaptcha', {'url': url}) ??
+        'error:cancelled';
+  } catch (_) {
+    return 'error:webview';
+  }
+}
+
+/// Android: launchable apps for per-app split tunnelling.
+bool get canSplitApps => Platform.isAndroid && !_mock;
+Future<List<AppInfo>> listApps() async {
+  if (!canSplitApps) return [];
+  final r = await _ch.invokeMethod<List>('listApps') ?? [];
+  return [
+    for (final m in r.cast<Map>())
+      AppInfo('${m['pkg']}', '${m['label']}', m['icon'] as Uint8List?),
+  ];
 }
 
 Future<bool> openUrl(String url) async {

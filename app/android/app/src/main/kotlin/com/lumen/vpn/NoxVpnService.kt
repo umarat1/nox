@@ -126,9 +126,17 @@ class NoxVpnService : VpnService() {
             if (v6 && r6 == 0) b.addRoute("::", 0)
         }
         each(o.optJSONArray("dns")) { b.addDnsServer(it) }
-        val skip = mutableSetOf(packageName)
-        each(o.optJSONArray("exclude")) { skip.add(it) }
-        for (p in skip) try { b.addDisallowedApplication(p) } catch (_: Exception) {}
+        // Per-app split: "include" = only these apps use the VPN (Nox itself is never in the
+        // list, so it stays outside); otherwise everything except Nox and "exclude".
+        val only = mutableListOf<String>()
+        each(o.optJSONArray("include")) { if (it != packageName) only.add(it) }
+        var allowed = 0
+        for (p in only) try { b.addAllowedApplication(p); allowed++ } catch (_: Exception) {}
+        if (allowed == 0) {
+            val skip = mutableSetOf(packageName)
+            each(o.optJSONArray("exclude")) { skip.add(it) }
+            for (p in skip) try { b.addDisallowedApplication(p) } catch (_: Exception) {}
+        }
         if (Build.VERSION.SDK_INT >= 29) {
             b.setMetered(false)
             if (o.optBoolean("httpProxy")) {

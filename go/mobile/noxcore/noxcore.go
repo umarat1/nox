@@ -58,6 +58,7 @@ func Init(dataDir, libDir, ruleDir string, h Host) error {
 		return err
 	}
 	engine.AndroidRuleDir = ruleDir
+	engine.CaptchaUI = true // Kotlin CaptchaActivity (WebView)
 	engine.AndroidStartVpn = startVpn
 	engine.AndroidStopVpn = stopVpn
 	engine.AndroidTestCore = testCore

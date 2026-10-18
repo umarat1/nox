@@ -16,6 +16,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -26,7 +27,7 @@ import (
 	"nox/core"
 )
 
-const Version = "1.0.3"
+const Version = "1.0.4"
 
 type Sub struct {
 	ID       string `json:"id"`
@@ -79,6 +80,7 @@ type App struct {
 	box     coreProc
 	qw      *exec.Cmd
 	xr      *xrayProc // Xray-core for an XHTTP server
+	captcha *CaptchaReq
 	qwStdin io.WriteCloser
 	tun     *exec.Cmd // sstpc (Linux)
 	sstpUp  bool      // Windows RAS SSTP entry dialed
@@ -242,13 +244,14 @@ type UIState struct {
 	GroupOrder []string      `json:"groupOrder"`
 	CanUndo    int           `json:"canUndo"`
 	Notice     string        `json:"notice"`
+	Captcha    *CaptchaReq   `json:"captcha"`
 }
 
 func (a *App) GetState() UIState {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	return UIState{Version, a.p.Subs, a.p.Servers, a.p.Selected, a.p.Settings, a.p.HintsSeen, a.status, a.errMsg,
-		a.pinging, a.pingDone, a.pingAll, a.since, a.p.Category, a.p.Sort, "sing-box 1.14.3 · qWDTT 1.4.4 · SSTP", a.visibleUpdLocked(), osName(), a.p.GroupOrder, len(a.lastDeleted), a.notice}
+		a.pinging, a.pingDone, a.pingAll, a.since, a.p.Category, a.p.Sort, coreLabel(), a.visibleUpdLocked(), osName(), a.p.GroupOrder, len(a.lastDeleted), a.notice, a.captcha}
 }
 
 type Traffic struct {
@@ -1135,7 +1138,16 @@ func (a *App) startQwdtt(ctx context.Context, q core.Qwdtt) (map[string]any, err
 	}
 	dns := pickDNS(q)
 	a.log(fmt.Sprintf("qWDTT: старт, потоков %d, DNS %s", q.EffectiveWorkers(), dns))
-	cmd := exec.Command(a.bin("qwdtt"), q.RelayArgs(dev, dns)...)
+	args := q.RelayArgs(dev, dns)
+	if CaptchaUI {
+		// "auto": qwdtt's Go solver first, then a manual WebView request the UI shows
+		for i := range args {
+			if args[i] == "-captcha-mode" && i+1 < len(args) {
+				args[i+1] = "auto"
+			}
+		}
+	}
+	cmd := exec.Command(a.bin("qwdtt"), args...)
 	cmd.Dir = work
 	hideWindow(cmd)
 	stdin, _ := cmd.StdinPipe()
@@ -1157,6 +1169,9 @@ func (a *App) startQwdtt(ctx context.Context, q core.Qwdtt) (map[string]any, err
 		sc.Buffer(make([]byte, 64<<10), 1<<20)
 		for sc.Scan() {
 			l := sc.Text()
+			if a.qwdttCaptchaLine(l) {
+				continue
+			}
 			for _, s := range secrets {
 				if s != "" {
 					l = strings.ReplaceAll(l, s, "***")
@@ -1244,7 +1259,7 @@ func (a *App) stopAll() {
 		setSystemProxy(false, 0)
 	}
 	box, qw, qin, xr := a.box, a.qw, a.qwStdin, a.xr
-	a.box, a.qw, a.qwStdin, a.xr = nil, nil, nil, nil
+	a.box, a.qw, a.qwStdin, a.xr, a.captcha = nil, nil, nil, nil, nil
 	a.mu.Unlock()
 	if xr != nil {
 		defer xr.Stop()
@@ -1281,4 +1296,13 @@ func dropOpenVPN(l []core.Server) []core.Server {
 		}
 	}
 	return out
+}
+
+// coreLabel: bundled engines shown under Settings (SSTP uses the OS client: Windows RAS, sstpc).
+func coreLabel() string {
+	l := "sing-box 1.14.3 · Xray 26.3.27 · qWDTT 1.4.4"
+	if runtime.GOOS != "android" {
+		l += " · SSTP"
+	}
+	return l
 }

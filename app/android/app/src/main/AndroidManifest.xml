@@ -27,6 +27,11 @@
         android:extractNativeLibs="true"
         android:supportsRtl="true">
         <activity
+            android:name=".CaptchaActivity"
+            android:exported="false"
+            android:theme="@android:style/Theme.DeviceDefault.NoActionBar"
+            android:configChanges="orientation|screenSize|keyboardHidden|smallestScreenSize|screenLayout"/>
+        <activity
             android:name="com.lumen.vpn.MainActivity"
             android:exported="true"
             android:launchMode="singleTask"
@@ -109,6 +114,15 @@
         <meta-data android:name="flutterEmbedding" android:value="2"/>
     </application>
     <queries>
+        <!-- per-app split tunnelling: list launchable apps (phone + TV launchers) -->
+        <intent>
+            <action android:name="android.intent.action.MAIN"/>
+            <category android:name="android.intent.category.LAUNCHER"/>
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.MAIN"/>
+            <category android:name="android.intent.category.LEANBACK_LAUNCHER"/>
+        </intent>
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>

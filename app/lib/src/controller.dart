@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 
 import 'api.dart';
 import 'live_graph.dart';
@@ -130,6 +130,7 @@ class NoxController extends ChangeNotifier {
         speed.reset();
       }
       await _syncDesktop();
+      _maybeCaptcha();
     }
     notifyListeners();
   }
@@ -152,6 +153,30 @@ class NoxController extends ChangeNotifier {
       );
     }
   }
+
+  /// qWDTT asked for VK's "I'm not a robot" check: open it once per request (Android).
+  J? get captcha => (s['captcha'] as Map?)?.cast<String, dynamic>();
+  int _captchaShown = 0;
+  bool captchaOpen = false;
+  void _maybeCaptcha({bool force = false}) {
+    final c = captcha;
+    if (c == null || !canCaptcha || captchaOpen) return;
+    final id = (c['id'] as num?)?.toInt() ?? 0;
+    if (id == _captchaShown && !force)
+      return; // dismissed: the banner offers it again
+    // Android blocks activity starts from the background: wait until Nox is in front
+    final ls = WidgetsBinding.instance.lifecycleState;
+    if (ls != null && ls != AppLifecycleState.resumed) return;
+    _captchaShown = id;
+    captchaOpen = true;
+    solveCaptcha('${c['url']}').then((r) async {
+      captchaOpen = false;
+      await call('SolveCaptcha', [id, r]);
+      await refresh();
+    });
+  }
+
+  void openCaptcha() => _maybeCaptcha(force: true);
 
   Future<String?> saveSettings(J patch) async {
     final n = {...settings, ...patch};

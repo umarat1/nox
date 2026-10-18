@@ -1,3 +1,4 @@
+import 'split_apps.dart';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -127,6 +128,14 @@ class _Body extends StatelessWidget {
             c.vpnDenied = false;
             c.refresh();
           },
+        ),
+      if (c.captcha != null && canCaptcha && !c.captchaOpen)
+        _Banner(
+          p: p,
+          text:
+              'qWDTT: VK просит пройти проверку «я не робот». Нажмите, чтобы открыть.',
+          color: p.amb,
+          onTap: c.openCaptcha,
         ),
       if ((c.s['error'] ?? '') != '')
         _Banner(
@@ -1501,6 +1510,19 @@ void settingsSheet(BuildContext context, NoxController c, Pal p) {
           );
         },
       ),
+      if (canSplitApps)
+        item(
+          p,
+          'Приложения через VPN',
+          desc: splitDesc(s),
+          arrow: true,
+          onTap: () {
+            Navigator.pop(ctx);
+            Navigator.of(
+              context,
+            ).push(MaterialPageRoute(builder: (_) => SplitAppsPage(c: c)));
+          },
+        ),
       swItem('directRu', 'Российские сайты мимо VPN'),
       swItem(
         'autoSwitch',

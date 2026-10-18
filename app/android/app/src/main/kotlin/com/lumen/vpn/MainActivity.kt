@@ -18,6 +18,7 @@ class MainActivity : FlutterActivity() {
     private val exec = Executors.newCachedThreadPool()
     private var vpnResult: MethodChannel.Result? = null
     private var askedNotif = false
+    private var captchaResult: MethodChannel.Result? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -34,6 +35,11 @@ class MainActivity : FlutterActivity() {
                 }
                 "prepareVpn" -> prepareVpn(res)
                 "isTv" -> res.success(isTv())
+                "listApps" -> exec.execute {
+                    val r = listApps()
+                    runOnUiThread { res.success(r) }
+                }
+                "solveCaptcha" -> solveCaptcha(call.argument<String>("url") ?: "", res)
                 "openUrl" -> res.success(openUrl(call.argument<String>("url") ?: ""))
                 "legacyState" -> exec.execute {
                     // Nox 0.7.x kept subscriptions/servers here (same package, same files dir)
@@ -70,6 +76,46 @@ class MainActivity : FlutterActivity() {
         if (text.isNullOrEmpty()) return
         i?.action = Intent.ACTION_MAIN // not again on rotation
         exec.execute { Core.call("Import", org.json.JSONArray().put(text).toString()) }
+    }
+
+    /** Launchable apps for the split-tunnelling picker: package, label, 48px PNG icon. */
+    private fun listApps(): List<Map<String, Any>> {
+        val pm = packageManager
+        val seen = HashMap<String, Map<String, Any>>()
+        for (cat in listOf(Intent.CATEGORY_LAUNCHER, Intent.CATEGORY_LEANBACK_LAUNCHER)) {
+            val q = Intent(Intent.ACTION_MAIN).addCategory(cat)
+            for (ri in try { pm.queryIntentActivities(q, 0) } catch (_: Exception) { emptyList() }) {
+                val ai = ri.activityInfo?.applicationInfo ?: continue
+                val pkg = ai.packageName
+                if (pkg == packageName || seen.containsKey(pkg)) continue
+                val m = HashMap<String, Any>()
+                m["pkg"] = pkg
+                m["label"] = try { ai.loadLabel(pm).toString() } catch (_: Exception) { pkg }
+                try {
+                    val d = ai.loadIcon(pm)
+                    val bmp = android.graphics.Bitmap.createBitmap(48, 48, android.graphics.Bitmap.Config.ARGB_8888)
+                    val c = android.graphics.Canvas(bmp)
+                    d.setBounds(0, 0, 48, 48); d.draw(c)
+                    val out = java.io.ByteArrayOutputStream()
+                    bmp.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, out)
+                    m["icon"] = out.toByteArray()
+                } catch (_: Exception) {}
+                seen[pkg] = m
+            }
+        }
+        return seen.values.sortedBy { (it["label"] as String).lowercase() }
+    }
+
+    private fun solveCaptcha(url: String, res: MethodChannel.Result) {
+        if (captchaResult != null) { res.success("error:busy"); return }
+        captchaResult = res
+        try {
+            @Suppress("DEPRECATION")
+            startActivityForResult(Intent(this, CaptchaActivity::class.java).putExtra("url", url), 44)
+        } catch (_: Exception) {
+            captchaResult = null
+            res.success("error:webview")
+        }
     }
 
     private fun isTv(): Boolean {
@@ -118,6 +164,10 @@ class MainActivity : FlutterActivity() {
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         @Suppress("DEPRECATION")
         super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == 44) {
+            captchaResult?.success(data?.getStringExtra("r") ?: "error:cancelled")
+            captchaResult = null
+        }
         if (requestCode == 42) {
             vpnResult?.success(resultCode == RESULT_OK)
             vpnResult = null

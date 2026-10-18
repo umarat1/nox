@@ -86,7 +86,10 @@ func startCore(a *App, cfg string, tun bool, out io.WriteCloser) (coreProc, erro
 	if AndroidStartVpn == nil {
 		return nil, errors.New("VPN-служба недоступна")
 	}
-	if err := PatchAndroidConfig(cfg, true); err != nil {
+	a.mu.Lock()
+	split, apps := a.p.Settings.SplitMode, a.p.Settings.SplitApps
+	a.mu.Unlock()
+	if err := PatchAndroidConfigSplit(cfg, true, split, apps); err != nil {
 		return nil, err
 	}
 	p := &vpnProc{done: make(chan struct{})}
@@ -128,6 +131,12 @@ func startTestCore(a *App, cfg string, out io.Writer) (coreProc, error) {
 // default_interface is dropped (the app is excluded from its own VPN, and libbox protects
 // its sockets through VpnService.protect).
 func PatchAndroidConfig(path string, vpn bool) error {
+	return PatchAndroidConfigSplit(path, vpn, "", nil)
+}
+
+// PatchAndroidConfigSplit also applies per-app split tunnelling to the TUN inbound
+// (libbox hands include/exclude_package to VpnService.Builder).
+func PatchAndroidConfigSplit(path string, vpn bool, split string, apps []string) error {
 	b, err := os.ReadFile(path)
 	if err != nil {
 		return err
@@ -159,6 +168,9 @@ func PatchAndroidConfig(path string, vpn bool) error {
 			if m, ok := in.(map[string]any); ok && m["type"] == "tun" {
 				delete(m, "interface_name")
 				m["stack"] = "gvisor" // "system" stack needs a writable TUN address on the host side
+				if len(apps) > 0 && (split == "include" || split == "exclude") {
+					m[split+"_package"] = apps
+				}
 			}
 		}
 	}

@@ -31,6 +31,9 @@ type Settings struct {
 	PingURL    string `json:"pingUrl"`    // check point for «через прокси» ping ("" = gstatic)
 	// 1.0: UI-only preferences (category chip, view, hideDead, dedup, …) kept by the core
 	UI map[string]string `json:"ui,omitempty"`
+	// Android per-app split tunnelling: "" (all apps) | "include" (only SplitApps) | "exclude" (all but SplitApps)
+	SplitMode string   `json:"splitMode,omitempty"`
+	SplitApps []string `json:"splitApps,omitempty"`
 }
 
 func DefaultSettings() Settings {

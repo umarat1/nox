@@ -34,6 +34,17 @@ sha256). It then builds a release APK signed with lumen.jks (passwords come from
 lumen-passwords.txt through env vars). versionCode is the pubspec build number, which is above 0.7.71's 99.
 At first start, `files/lumen-data.json` from 0.7.x is imported.
 
+- Per-app split tunnelling (Settings → «Приложения через VPN»): all apps / only selected
+  (`addAllowedApplication`) / all except selected (`addDisallowedApplication`). Stored as
+  `splitMode`/`splitApps`, applied to the TUN as sing-box `include_package`/`exclude_package`;
+  changing it while connected reconnects. Nox itself is always outside the VPN.
+- qWDTT captcha: qWDTT runs with `-captcha-mode auto` (its Go solver first). When it asks for a
+  manual WebView solve (`CAPTCHA_SOLVE|manual|<url>|…` on stdout), the engine exposes
+  `captcha {id,url}` in GetState; `CaptchaActivity` opens VK's page and sends `success_token`
+  back with `SolveCaptcha(id, token)` → `CAPTCHA_RESULT|token` on qWDTT's stdin. Requests for
+  headless "auto" WebView solves are declined so qWDTT moves on. Windows has no captcha UI yet
+  (qWDTT keeps `-captcha-mode rjs` there).
+
 ## Windows architecture
 * `noxd.exe` runs as a LocalSystem service. It owns TUN, routes, sing-box/qwdtt processes and SSTP (RAS).
   It keeps running when the window is closed. The UI needs no UAC.
@@ -56,7 +67,7 @@ cd app && flutter test && flutter build web --dart-define=NOX_MOCK=true   # UI p
 go run ./cmd/noxd run -data /tmp/noxd   # dev daemon; then: flutter test test/service_it_test.dart
 ```
 Windows (manual): `flutter build windows`, stage `dist\app` + `dist\core` as in the workflow, then
-`ISCC /DAppVersion=1.0.3 /DDist=..\dist installer\nox.iss`.
+`ISCC /DAppVersion=1.0.4 /DDist=..\dist installer\nox.iss`.
 
 ## Secrets (CI)
 * `NOX_UPDATE_KEY`: ed25519 private key for update signing (`go run ./cmd/signupdate -gen key`; keep it offline).
