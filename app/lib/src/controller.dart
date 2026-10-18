@@ -220,12 +220,13 @@ class NoxController extends ChangeNotifier {
       ? ''
       : ((s['type'] ?? '') as String).replaceFirst(RegExp(r' Reality$'), '');
 
-  /// Chips: Все → Автовыбор → qWDTT → страны → протоколы.
+  /// Chips: Все → Автовыбор → Антиблок (qWDTT) → страны → протоколы.
   List<(String key, String label, String? iso)> chips() {
     final all = servers;
     final c = <(String, String, String?)>[('', 'Все', null)];
     if (all.any(isBal)) c.add(('_auto', '⚡ Автовыбор', null));
-    if (all.any(isQw)) c.add(('_qw', 'qWDTT', null));
+    // Murad: only this chip is called «Антиблок»; type, badge and server names stay qWDTT
+    if (all.any(isQw)) c.add(('_qw', 'Антиблок', null));
     final rg = <String>{};
     for (final s in all) {
       if (isBal(s) || isQw(s)) continue;
@@ -290,7 +291,7 @@ class NoxController extends ChangeNotifier {
           ? p
           : p == 0
           ? 1000000
-          : p == -2
+          : p == -2 || p == -3
           ? 2000000
           : 3000000;
     }

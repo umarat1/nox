@@ -44,5 +44,7 @@ String pingText(int? p) {
   if (p == null || p == 0) return '—';
   if (p == -1) return 'таймаут';
   if (p == -2) return 'UDP';
+  if (p == -3)
+    return '—'; // qWDTT: not measurable without connecting (VK relays)
   return '$p мс';
 }

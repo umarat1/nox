@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"strings"
 	"testing"
+
+	"nox/core"
 )
 
 type wbuf struct{ bytes.Buffer }
@@ -39,5 +41,17 @@ func TestQwdttCaptcha(t *testing.T) {
 	a.SolveCaptcha(c.ID, "tok123")
 	if w.String() != "CAPTCHA_RESULT|tok123\n" || a.captcha != nil {
 		t.Fatal(w.String())
+	}
+}
+
+func TestQwdttPingNeverTimeoutFromProbe(t *testing.T) {
+	a := &App{binDir: t.TempDir(), dataDir: t.TempDir()}
+	s := core.Server{ID: "q", Type: "qWDTT", Outbound: []byte(`{"type":"_qwdtt","peer":"203.0.113.1:56000","hashes":["x"],"password":"p"}`)}
+	if v := a.qwdttPing(s); v != PingQwdttUnknown {
+		t.Fatalf("got %d", v)
+	}
+	l := dropOpenVPN([]core.Server{{Type: "qWDTT", Ping: -1}, {Type: "VLESS", Ping: -1}})
+	if l[0].Ping != PingQwdttUnknown || l[1].Ping != -1 {
+		t.Fatalf("%+v", l)
 	}
 }

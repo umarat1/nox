@@ -27,7 +27,7 @@ import (
 	"nox/core"
 )
 
-const Version = "1.0.4"
+const Version = "1.0.5"
 
 type Sub struct {
 	ID       string `json:"id"`
@@ -903,10 +903,20 @@ func pickDNS(q core.Qwdtt) string {
 	return "doh-google"
 }
 
+// PingQwdttUnknown: a qWDTT server whose latency cannot be measured from here. qWDTT goes
+// through VK's TURN relays (the server may itself be relayed by the panel), so a failed
+// direct/handshake probe does not mean the server is dead: the UI shows «—», never «таймаут»,
+// and hide-dead / remove-dead leave it alone.
+const PingQwdttUnknown = -3
+
 func (a *App) qwdttPing(s core.Server) int {
+	// connected to this server: real latency through the tunnel
+	if v, ok := a.tunnelPing(s.ID); ok {
+		return v
+	}
 	q, err := core.QwdttFromOutbound(s.Outbound)
 	if err != nil {
-		return -1
+		return PingQwdttUnknown
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 40*time.Second)
 	defer cancel()
@@ -921,7 +931,51 @@ func (a *App) qwdttPing(s core.Server) int {
 			}
 		}
 	}
-	return -1
+	return PingQwdttUnknown
+}
+
+// tunnelPing: when connected to server id, time an HTTPS check through the running tunnel
+// (the main config's local mixed inbound). ok=false when not connected to that server.
+func (a *App) tunnelPing(id string) (int, bool) {
+	a.mu.Lock()
+	on := a.status == "connected" && a.p.Selected == id && a.box != nil
+	port := a.p.Settings.ProxyPort
+	urls := []string{"https://www.gstatic.com/generate_204", "https://cp.cloudflare.com/generate_204"}
+	if u := strings.TrimSpace(a.p.Settings.PingURL); strings.HasPrefix(u, "http") {
+		urls = []string{u, urls[0]}
+	}
+	a.mu.Unlock()
+	if !on {
+		return 0, false
+	}
+	if port == 0 {
+		port = 2080
+	}
+	pu, _ := url.Parse(fmt.Sprintf("http://127.0.0.1:%d", port))
+	cl := &http.Client{Timeout: 8 * time.Second, Transport: &http.Transport{Proxy: http.ProxyURL(pu)}}
+	defer cl.CloseIdleConnections()
+	best := -1
+	for _, u := range urls {
+		for i := 0; i < 2; i++ { // the 2nd request reuses the connection: closer to real RTT
+			t := time.Now()
+			r, err := cl.Get(u)
+			if err != nil {
+				break
+			}
+			io.Copy(io.Discard, r.Body)
+			r.Body.Close()
+			if r.StatusCode >= 500 {
+				break
+			}
+			if ms := int(time.Since(t).Milliseconds()); best < 0 || ms < best {
+				best = max(ms, 1)
+			}
+		}
+		if best > 0 {
+			break
+		}
+	}
+	return best, true // -1 here is a real failure through the tunnel
 }
 
 // ---------------------------------------------------------------- connect
@@ -1292,6 +1346,9 @@ func dropOpenVPN(l []core.Server) []core.Server {
 	out := l[:0:0]
 	for _, s := range l {
 		if !core.IsLegacyOpenVPN(s.Outbound) {
+			if s.Type == "qWDTT" && s.Ping == -1 {
+				s.Ping = PingQwdttUnknown // old direct-probe «таймаут» (meaningless for qWDTT)
+			}
 			out = append(out, s)
 		}
 	}

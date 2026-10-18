@@ -12,7 +12,7 @@ void main() {
   test('ServiceApi talks to noxd', () async {
     final api = ServiceApi();
     final st = await api.call('GetState') as Map;
-    expect(st['version'], '1.0.4');
+    expect(st['version'], '1.0.5');
     final r =
         await api.call('Import', [
               'sstp://u:p@vpn.example.com:14443#%F0%9F%87%A8%F0%9F%87%A6%20SSTP',
