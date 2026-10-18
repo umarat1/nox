@@ -16,7 +16,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -27,7 +26,7 @@ import (
 	"nox/core"
 )
 
-const Version = "1.0.5"
+const Version = "1.0.6"
 
 type Sub struct {
 	ID       string `json:"id"`
@@ -83,7 +82,8 @@ type App struct {
 	captcha *CaptchaReq
 	qwStdin io.WriteCloser
 	tun     *exec.Cmd // sstpc (Linux)
-	sstpUp  bool      // Windows RAS SSTP entry dialed
+	sstpUp  bool      // Windows RAS SSTP entry dialed / Android bridge up
+	sstpBr  *sstpBridge
 	cancel  context.CancelFunc
 	logBuf  []string
 
@@ -403,7 +403,7 @@ func (a *App) Import(text string) ImportResult {
 	return ImportResult{Added: len(r.Servers), Errors: r.Errors, Msg: fmt.Sprintf("Добавлено серверов: %d", len(r.Servers))}
 }
 
-var userAgents = []string{"v2rayNG/1.10.16 Nox/" + Version, "Happ/2.7.0 Nox/" + Version, "v2rayN/7.13.8", "sing-box 1.14.2"}
+var userAgents = []string{"Nox/" + Version + " v2rayNG/1.10.16", "Happ/2.7.0 Nox/" + Version, "v2rayN/7.13.8", "sing-box 1.14.2"}
 
 func parseUserInfo(h string, s *Sub) {
 	for _, part := range strings.Split(h, ";") {
@@ -1357,9 +1357,5 @@ func dropOpenVPN(l []core.Server) []core.Server {
 
 // coreLabel: bundled engines shown under Settings (SSTP uses the OS client: Windows RAS, sstpc).
 func coreLabel() string {
-	l := "sing-box 1.14.3 · Xray 26.3.27 · qWDTT 1.4.4"
-	if runtime.GOOS != "android" {
-		l += " · SSTP"
-	}
-	return l
+	return "sing-box 1.14.3 · Xray 26.3.27 · qWDTT 1.4.4 · SSTP"
 }

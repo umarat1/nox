@@ -61,6 +61,14 @@ class AndroidApi implements NoxApi {
 }
 
 /// VPN permission (VpnService.prepare) and, on Android 13+, the notification permission.
+/// Prefer the display's highest refresh rate (Flutter ticker / graph then run at panel Hz).
+Future<void> requestHighRefreshRate() async {
+  if (!Platform.isAndroid || _mock) return;
+  try {
+    await _ch.invokeMethod('setHighRefresh');
+  } catch (_) {}
+}
+
 Future<bool> prepareVpn() async {
   if (!Platform.isAndroid || _mock) return true;
   return await _ch.invokeMethod<bool>('prepareVpn') ?? false;

@@ -50,8 +50,26 @@ class NoxController extends ChangeNotifier {
   String pref(String k, String d) => ui[k] ?? d;
   bool flag(String k, bool d) => ui.containsKey(k) ? ui[k] == '1' : d;
 
+  /// Text size 0.85–1.30 (MediaQuery textScaler).
+  double get fontScale =>
+      (double.tryParse(pref('fontScale', '')) ?? (isTv ? 1.1 : 1.0)).clamp(
+        0.85,
+        1.30,
+      );
+
+  /// Overall UI zoom 0.80–1.30 (layout size / Transform).
+  double get uiScale =>
+      (double.tryParse(pref('uiScale', '')) ?? (isTv ? 1.15 : 1.0)).clamp(
+        0.80,
+        1.30,
+      );
+
+  /// Smooth 60fps+ animations (graph ticker); off = economy (ticker still vsync but UI can skip).
+  bool get animSmooth => flag('anim60', true);
+
   Future<void> start() async {
     isTv = await isTvDevice();
+    await requestHighRefreshRate();
     await refresh();
     // first start of 1.0 on a PC that had 0.8 / VPS: take its subscriptions
     if (fatal == null && servers.isEmpty) {
@@ -191,6 +209,19 @@ class NoxController extends ChangeNotifier {
   Future<void> setPref(String k, String v) => saveSettings({
     'ui': {...ui, k: v},
   });
+
+  /// Update a ui pref and notify immediately; persist in background (for sliders).
+  void setPrefLive(String k, String v) {
+    final n = {
+      ...settings,
+      'ui': {...ui, k: v},
+    };
+    if (state != null) {
+      state = {...s, 'settings': n};
+      notifyListeners();
+    }
+    call('SaveSettings', [n]);
+  }
 
   Future<void> toggle() async {
     if (status == 'disconnected') {

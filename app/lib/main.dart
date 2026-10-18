@@ -41,13 +41,53 @@ class NoxApp extends StatelessWidget {
   final NoxController c;
   const NoxApp({super.key, required this.c});
   @override
-  Widget build(BuildContext context) => MaterialApp(
-    title: 'Nox',
-    debugShowCheckedModeBanner: false,
-    theme: materialTheme(Pal.dark),
-    locale: const Locale('ru'),
-    // D-pad / remote: arrows move focus, centre button activates (Android TV, M2)
-    shortcuts: {...WidgetsApp.defaultShortcuts},
-    home: Home(c: c),
+  Widget build(BuildContext context) => ListenableBuilder(
+    listenable: c,
+    builder: (_, _) {
+      final pal = Pal.of(c.settings['theme'] as String?);
+      return MaterialApp(
+        title: 'Nox',
+        debugShowCheckedModeBanner: false,
+        theme: materialTheme(pal),
+        locale: const Locale('ru'),
+        shortcuts: {...WidgetsApp.defaultShortcuts},
+        builder: (ctx, child) {
+          final mq = MediaQuery.of(ctx);
+          final fs = c.fontScale;
+          final us = c.uiScale;
+          // Font via textScaler; UI density by scaling the logical viewport (TV defaults larger).
+          Widget body = MediaQuery(
+            data: mq.copyWith(textScaler: TextScaler.linear(fs)),
+            child: child ?? const SizedBox.shrink(),
+          );
+          if ((us - 1.0).abs() > 0.01) {
+            body = OverflowBox(
+              minWidth: mq.size.width / us,
+              maxWidth: mq.size.width / us,
+              minHeight: mq.size.height / us,
+              maxHeight: mq.size.height / us,
+              alignment: Alignment.topCenter,
+              child: Transform.scale(
+                scale: us,
+                alignment: Alignment.topCenter,
+                child: SizedBox(
+                  width: mq.size.width / us,
+                  height: mq.size.height / us,
+                  child: MediaQuery(
+                    data: mq.copyWith(
+                      size: Size(mq.size.width / us, mq.size.height / us),
+                      textScaler: TextScaler.linear(fs),
+                    ),
+                    child: child ?? const SizedBox.shrink(),
+                  ),
+                ),
+              ),
+            );
+          }
+          return body;
+        },
+        home: Home(c: c),
+      );
+    },
   );
 }

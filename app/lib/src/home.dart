@@ -234,13 +234,37 @@ class _Body extends StatelessWidget {
         ),
       );
     }
-    return CustomScrollView(
-      slivers: [
-        SliverPadding(
+    // Phone: pin logo/actions + connection card; banners, subs, chips and list scroll under them.
+    final pinned = <Widget>[
+      for (final wdg in head)
+        if (wdg is _TopBar || wdg is _Hero) wdg,
+    ];
+    final scrollHead = <Widget>[
+      for (final wdg in head)
+        if (wdg is! _TopBar && wdg is! _Hero) wdg,
+      ...listHead,
+    ];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
           padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
-          sliver: SliverList.list(children: [...head, ...listHead]),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: pinned,
+          ),
         ),
-        ...servers,
+        Expanded(
+          child: CustomScrollView(
+            slivers: [
+              SliverPadding(
+                padding: const EdgeInsets.fromLTRB(12, 0, 12, 0),
+                sliver: SliverList.list(children: scrollHead),
+              ),
+              ...servers,
+            ],
+          ),
+        ),
       ],
     );
   }
@@ -452,6 +476,8 @@ class _TopBar extends StatelessWidget {
               ),
             ),
           ),
+          _MailBtn(c: c, p: p),
+          const SizedBox(width: 8),
           _IconBtn(
             p: p,
             icon: th == 'light'
@@ -628,7 +654,11 @@ class _Hero extends StatelessWidget {
                     width: double.infinity,
                     child: Padding(
                       padding: const EdgeInsets.only(top: 4),
-                      child: LiveGraph(series: c.speed, p: p, active: on),
+                      child: LiveGraph(
+                        series: c.speed,
+                        p: p,
+                        active: on && c.animSmooth,
+                      ),
                     ),
                   ),
               ],
@@ -702,7 +732,7 @@ class _GraphCard extends StatelessWidget {
             child: LiveGraph(
               series: c.speed,
               p: p,
-              active: on,
+              active: on && c.animSmooth,
               span: 120,
               labels: true,
             ),
@@ -746,6 +776,43 @@ class _Banner extends StatelessWidget {
       ),
     ),
   );
+}
+
+/// 0.7.x «конверт»: always in the header; red badge when an update is available.
+class _MailBtn extends StatelessWidget {
+  final NoxController c;
+  final Pal p;
+  const _MailBtn({required this.c, required this.p});
+  @override
+  Widget build(BuildContext context) {
+    final u = c.s['update'];
+    final has = u is Map;
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        _IconBtn(
+          p: p,
+          icon: Icons.mail_outline,
+          tip: has ? 'Доступно обновление' : 'Обновления',
+          onTap: () => updateSheet(context, c, p),
+        ),
+        if (has)
+          Positioned(
+            right: 2,
+            top: 2,
+            child: Container(
+              width: 9,
+              height: 9,
+              decoration: BoxDecoration(
+                color: const Color(0xFFFF3B5C),
+                shape: BoxShape.circle,
+                border: Border.all(color: p.bg, width: 1.5),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
 }
 
 class _UpdateBanner extends StatelessWidget {
@@ -824,25 +891,58 @@ class _SubBlock extends StatelessWidget {
     final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
     final left = expire > 0 ? (expire - now) / 86400 : null;
     final days = left == null ? null : math.max(0, left.ceil());
-    final m = TextStyle(color: p.sub, fontSize: 12);
     final ann = (b['announce'] ?? '') as String;
+    final expireTxt = left == null
+        ? 'Бессрочно'
+        : left <= 0
+        ? 'Истекла'
+        : '$days ${plural(days!, 'д', 'д', 'д')}';
+    final trafficTxt = total > 0
+        ? '${fmtBytes(used)} / ${fmtBytes(total)}'
+        : 'без лимита';
+    final bar = total > 0 ? math.min(1.0, used / total) : 1.0;
     return Container(
-      margin: const EdgeInsets.only(top: 10),
-      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+      margin: const EdgeInsets.only(top: 8),
+      padding: const EdgeInsets.fromLTRB(10, 6, 6, 6),
       decoration: _box(p),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
+              Text(
+                expireTxt,
+                style: TextStyle(
+                  color: left != null && left <= 0
+                      ? p.red
+                      : (left != null && left <= 3 ? p.amb : p.txt),
+                  fontWeight: FontWeight.w700,
+                  fontSize: 12,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text('$n серв.', style: TextStyle(color: p.sub, fontSize: 12)),
+              const SizedBox(width: 8),
               Expanded(
-                child: Text(
-                  '${b['name'] ?? 'Подписка'}',
-                  style: TextStyle(
-                    color: p.txt,
-                    fontWeight: FontWeight.w700,
-                    fontSize: 14,
-                  ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(3),
+                        child: LinearProgressIndicator(
+                          value: bar,
+                          minHeight: 3,
+                          backgroundColor: p.chip,
+                          color: p.acc,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      trafficTxt,
+                      style: TextStyle(color: p.ter, fontSize: 10),
+                    ),
+                  ],
                 ),
               ),
               _IconBtn(
@@ -859,7 +959,6 @@ class _SubBlock extends StatelessWidget {
                     );
                 },
               ),
-              const SizedBox(width: 6),
               _IconBtn(
                 p: p,
                 icon: Icons.more_vert,
@@ -868,63 +967,20 @@ class _SubBlock extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 2),
-          Text.rich(
-            TextSpan(
-              children: [
-                TextSpan(text: 'Серверов: $n'),
-                if (left != null)
-                  left <= 0
-                      ? TextSpan(
-                          text: ' · истекла',
-                          style: TextStyle(color: p.red),
-                        )
-                      : TextSpan(
-                          text:
-                              ' · осталось $days ${plural(days!, 'день', 'дня', 'дней')}',
-                          style: left <= 3 ? TextStyle(color: p.amb) : null,
-                        ),
-              ],
-            ),
-            style: m,
-          ),
-          Text(
-            '${expire > 0 ? 'Действует до: ${fmtDate(expire)} · ' : ''}'
-            '${used > 0 || total > 0 ? 'Трафик: ${fmtBytes(used)}${total > 0 ? ' из ${fmtBytes(total)}' : ''}' : 'Трафик: без лимита'}',
-            style: m,
-          ),
-          if (total > 0)
-            Padding(
-              padding: const EdgeInsets.only(top: 8),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(3),
-                child: LinearProgressIndicator(
-                  value: math.min(1.0, used / total),
-                  minHeight: 4,
-                  backgroundColor: p.chip,
-                  color: p.acc,
-                ),
-              ),
-            ),
-          const SizedBox(height: 4),
-          Text(
-            'Обновлено: ${ago((b['updated'] ?? 0) as int)}',
-            style: m.copyWith(color: p.ter),
-          ),
           if (ann.isNotEmpty)
             Container(
               width: double.infinity,
-              margin: const EdgeInsets.only(top: 8),
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+              margin: const EdgeInsets.only(top: 4),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
               decoration: BoxDecoration(
                 color: p.acc.withValues(alpha: .12),
-                borderRadius: BorderRadius.circular(10),
+                borderRadius: BorderRadius.circular(8),
               ),
-              child: Text(ann, style: TextStyle(color: p.txt, fontSize: 12.5)),
+              child: Text(ann, style: TextStyle(color: p.txt, fontSize: 11.5)),
             ),
           if ((b['webPage'] ?? '') != '' || (b['support'] ?? '') != '')
             Padding(
-              padding: const EdgeInsets.only(top: 6),
+              padding: const EdgeInsets.only(top: 2),
               child: Row(
                 children: [
                   if ((b['webPage'] ?? '') != '')
@@ -1429,6 +1485,149 @@ const _dns = [
   ('adguard', 'AdGuard (без рекламы)'),
 ];
 
+void updateSheet(BuildContext context, NoxController c, Pal p) async {
+  // Re-check like 0.7.x Mail.open so a fresh publish is not missed.
+  final msg = await c.call('CheckUpdateMsg');
+  await c.refresh();
+  if (!context.mounted) return;
+  final u = c.s['update'];
+  if (u is Map) {
+    final m = u.cast<String, dynamic>();
+    final v = '${m['versionName']}';
+    final notes = '${m['notes'] ?? ''}';
+    sheet(
+      context,
+      p,
+      'Доступна версия $v',
+      (ctx) => [
+        Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: Text(
+            notes.isEmpty ? 'Установлена ${c.s['version']}.' : notes,
+            style: TextStyle(color: p.sub, fontSize: 13),
+          ),
+        ),
+        item(
+          p,
+          'Обновить',
+          onTap: () async {
+            Navigator.pop(ctx);
+            final r = await c.call('DoUpdate');
+            if (context.mounted && r is String && r.isNotEmpty)
+              toast(context, r);
+          },
+        ),
+        item(
+          p,
+          'Позже',
+          onTap: () async {
+            Navigator.pop(ctx);
+            await c.call('HideUpdate', [v]);
+            c.refresh();
+          },
+        ),
+      ],
+    );
+  } else {
+    toast(context, msg is String ? msg : 'У вас последняя версия');
+  }
+}
+
+void scaleSheet(
+  BuildContext context,
+  NoxController c,
+  Pal p, {
+  required bool font,
+}) {
+  final key = font ? 'fontScale' : 'uiScale';
+  final lo = font ? 0.85 : 0.80;
+  final hi = 1.30;
+  final title = font ? 'Размер шрифта' : 'Масштаб интерфейса';
+  final def = c.isTv ? (font ? 1.1 : 1.15) : 1.0;
+  final live = ValueNotifier<double>(font ? c.fontScale : c.uiScale);
+  showModalBottomSheet<void>(
+    context: context,
+    backgroundColor: p.card,
+    isScrollControlled: true,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+    ),
+    builder: (ctx) {
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 28),
+        child: ValueListenableBuilder<double>(
+          valueListenable: live,
+          builder: (_, v, _) => Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                title,
+                style: TextStyle(
+                  color: p.txt,
+                  fontWeight: FontWeight.w800,
+                  fontSize: 16,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                font
+                    ? 'Только текст (${(v * 100).round()}%). На TV по умолчанию чуть крупнее.'
+                    : 'Кнопки, отступы и карточки (${(v * 100).round()}%). На TV по умолчанию 115%.',
+                style: TextStyle(color: p.sub, fontSize: 12),
+              ),
+              // Live preview of the chosen scale on this label
+              Text(
+                'Пример: Лондон · VLESS XHTTP',
+                style: TextStyle(
+                  color: p.txt,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              Slider(
+                value: v,
+                min: lo,
+                max: hi,
+                divisions: ((hi - lo) / 0.05).round(),
+                activeColor: p.acc,
+                label: '${(v * 100).round()}%',
+                onChanged: (x) {
+                  live.value = x;
+                  // preview immediately without RPC storm: patch ui in memory
+                  c.setPrefLive(key, x.toStringAsFixed(2));
+                },
+              ),
+              Row(
+                children: [
+                  TextButton(
+                    onPressed: () {
+                      live.value = def;
+                      c.setPrefLive(key, def.toStringAsFixed(2));
+                    },
+                    child: Text('Сбросить', style: TextStyle(color: p.sub)),
+                  ),
+                  const Spacer(),
+                  TextButton(
+                    onPressed: () => Navigator.pop(ctx),
+                    child: Text(
+                      'Готово',
+                      style: TextStyle(
+                        color: p.acc2,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      );
+    },
+  ).whenComplete(live.dispose);
+}
+
 void settingsSheet(BuildContext context, NoxController c, Pal p) {
   sheet(context, p, 'Настройки', (ctx) {
     final s = c.settings;
@@ -1532,6 +1731,37 @@ void settingsSheet(BuildContext context, NoxController c, Pal p) {
       swItem('blockAds', 'Блокировка рекламы'),
       swItem('autoConnect', 'Автоподключение при запуске'),
       swItem('autostart', 'Запуск вместе с системой'),
+      item(
+        p,
+        'Размер шрифта',
+        desc: '${(c.fontScale * 100).round()}%',
+        arrow: true,
+        onTap: () {
+          Navigator.pop(ctx);
+          scaleSheet(context, c, p, font: true);
+        },
+      ),
+      item(
+        p,
+        'Масштаб интерфейса',
+        desc: '${(c.uiScale * 100).round()}%',
+        arrow: true,
+        onTap: () {
+          Navigator.pop(ctx);
+          scaleSheet(context, c, p, font: false);
+        },
+      ),
+      item(
+        p,
+        'Плавные анимации (60fps+)',
+        desc:
+            'График на частоте экрана; выключите для экономии на слабых устройствах',
+        trailing: sw(p, c.animSmooth),
+        onTap: () {
+          c.setPref('anim60', c.animSmooth ? '0' : '1');
+          Navigator.pop(ctx);
+        },
+      ),
       swItem('ipv6', 'IPv6'),
       item(
         p,
@@ -1852,6 +2082,11 @@ void subSheet(BuildContext context, NoxController c, Pal p, J b) {
     p,
     'Подписка',
     (ctx) => [
+      item(
+        p,
+        'Обновлено: ${ago((b['updated'] ?? 0) as int)}',
+        desc: (b['name'] ?? '') as String,
+      ),
       item(
         p,
         'Обновить',

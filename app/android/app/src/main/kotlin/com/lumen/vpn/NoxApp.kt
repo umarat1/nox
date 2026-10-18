@@ -2,6 +2,7 @@ package com.lumen.vpn
 
 import android.app.Application
 import android.content.Context
+import android.os.Build
 import com.lumen.core.noxcore.Noxcore
 import java.io.File
 
@@ -30,6 +31,7 @@ object Core {
             }
         }
         NetMonitor.start(app) // system DNS + default interface before anything dials out
+        if (Build.SUPPORTED_ABIS.isNotEmpty()) Noxcore.setABI(Build.SUPPORTED_ABIS[0])
         Noxcore.init(File(app.filesDir, "nox").path, app.applicationInfo.nativeLibraryDir, rules.path, NoxHost(app))
         booted = true
     }

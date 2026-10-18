@@ -67,6 +67,11 @@ func stopVpn() {
 	host.StopService()
 }
 
+// startTunService: VpnService only (no libbox) — used by the pure-Go SSTP client.
+func startTunService() error { return host.StartService(true) }
+
+func openTunJSON(optionsJSON string) (int32, error) { return host.OpenTun(optionsJSON) }
+
 // testCore: a second, TUN-less sing-box in process for URL-test pings. The app is excluded
 // from its own VPN, so its sockets take the physical network.
 func testCore(cfgPath string, out io.Writer) (func(), error) {

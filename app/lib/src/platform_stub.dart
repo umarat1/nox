@@ -44,3 +44,6 @@ Future<List<AppInfo>> listApps() async => [
   AppInfo('ru.sberbankmobile', 'СберБанк', null),
   AppInfo('com.vkontakte.android', 'VK', null),
 ];
+
+/// Android: prefer the panel's max refresh rate (90/120 Hz). No-op elsewhere.
+Future<void> requestHighRefreshRate() async {}

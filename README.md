@@ -38,6 +38,9 @@ At first start, `files/lumen-data.json` from 0.7.x is imported.
   (`addAllowedApplication`) / all except selected (`addDisallowedApplication`). Stored as
   `splitMode`/`splitApps`, applied to the TUN as sing-box `include_package`/`exclude_package`;
   changing it while connected reconnects. Nox itself is always outside the VPN.
+- SSTP on Android: pure-Go MS-SSTP client (TLS → PPP/MS-CHAPv2 → IPCP) bridged into VpnService
+  TUN (same full-tunnel path as Windows RAS). Subscription SSTP links appear when the UA starts
+  with `Nox/` (or is plain `sing-box x.y.z`).
 - qWDTT captcha: qWDTT runs with `-captcha-mode auto` (its Go solver first). When it asks for a
   manual WebView solve (`CAPTCHA_SOLVE|manual|<url>|…` on stdout), the engine exposes
   `captcha {id,url}` in GetState; `CaptchaActivity` opens VK's page and sends `success_token`
@@ -67,7 +70,18 @@ cd app && flutter test && flutter build web --dart-define=NOX_MOCK=true   # UI p
 go run ./cmd/noxd run -data /tmp/noxd   # dev daemon; then: flutter test test/service_it_test.dart
 ```
 Windows (manual): `flutter build windows`, stage `dist\app` + `dist\core` as in the workflow, then
-`ISCC /DAppVersion=1.0.5 /DDist=..\dist installer\nox.iss`.
+`ISCC /DAppVersion=1.0.6 /DDist=..\dist installer\nox.iss`.
+
+## Updates (`version.json`)
+
+Android 1.0 reads **top-level** fields (same as 0.7.x; old clients ignore unknown keys):
+
+- `versionCode` (int) — compared to the app build number (106 for 1.0.6)
+- `versionName`, `url`, `sha256`, `notes`
+- optional per-ABI: `url_arm64` / `sha256_arm64`, `url_armv7` / `sha256_armv7` (fallback `url_armeabi_v7a`)
+- Windows signed channel: `nox2-windows` object with `versionName`, `url`, `sha256`, `sig` (ed25519), `notes`
+
+Envelope icon in the header (0.7.x «конверт»): red badge when an update is available; tap re-checks and offers install.
 
 ## Secrets (CI)
 * `NOX_UPDATE_KEY`: ed25519 private key for update signing (`go run ./cmd/signupdate -gen key`; keep it offline).

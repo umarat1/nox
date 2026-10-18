@@ -45,6 +45,9 @@ var (
 
 // Init starts the engine once per process. dataDir: filesDir/nox; libDir:
 // applicationInfo.nativeLibraryDir (libqwdtt.so); ruleDir: rule sets copied from assets.
+// SetABI records the device ABI so update checks can pick url_arm64 / url_armv7.
+func SetABI(abi string) { engine.AndroidABI = abi }
+
 func Init(dataDir, libDir, ruleDir string, h Host) error {
 	mu.Lock()
 	defer mu.Unlock()
@@ -60,6 +63,9 @@ func Init(dataDir, libDir, ruleDir string, h Host) error {
 	engine.AndroidRuleDir = ruleDir
 	engine.CaptchaUI = true // Kotlin CaptchaActivity (WebView)
 	engine.AndroidStartVpn = startVpn
+	engine.AndroidStartTunService = startTunService
+	engine.AndroidOpenTun = openTunJSON
+	engine.AndroidStopTunService = stopVpn
 	engine.AndroidStopVpn = stopVpn
 	engine.AndroidTestCore = testCore
 	engine.AndroidInstallApk = func(p string) error { return host.InstallApk(p) }

@@ -35,6 +35,7 @@ class MainActivity : FlutterActivity() {
                 }
                 "prepareVpn" -> prepareVpn(res)
                 "isTv" -> res.success(isTv())
+                "setHighRefresh" -> { setHighRefresh(); res.success(null) }
                 "listApps" -> exec.execute {
                     val r = listApps()
                     runOnUiThread { res.success(r) }
@@ -116,6 +117,20 @@ class MainActivity : FlutterActivity() {
             captchaResult = null
             res.success("error:webview")
         }
+    }
+
+    private fun setHighRefresh() {
+        if (Build.VERSION.SDK_INT < 23) return
+        try {
+            val display = if (Build.VERSION.SDK_INT >= 30) display else @Suppress("DEPRECATION") windowManager.defaultDisplay
+            val modes = display?.supportedModes ?: return
+            val best = modes.maxByOrNull { it.refreshRate } ?: return
+            if (best.refreshRate < 60.5f) return
+            // preferredDisplayModeId (API 23+) unlocks 90/120 Hz for vsync / the graph ticker
+            val lp = window.attributes
+            lp.preferredDisplayModeId = best.modeId
+            window.attributes = lp
+        } catch (_: Exception) {}
     }
 
     private fun isTv(): Boolean {

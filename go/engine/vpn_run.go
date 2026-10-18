@@ -18,13 +18,14 @@ import (
 const sstpEntry = "Nox SSTP"
 
 func (a *App) connectFullTunnel(ctx context.Context, srv core.Server) error {
+	s, err := core.SSTPFrom(srv.Outbound)
+	if err != nil {
+		return errors.New("неизвестный тип туннеля")
+	}
 	if runtime.GOOS == "android" {
-		return errors.New("SSTP на Android пока не поддерживается — выберите другой сервер")
+		return a.startSSTPAndroid(ctx, srv, s)
 	}
-	if s, err := core.SSTPFrom(srv.Outbound); err == nil {
-		return a.startSSTP(ctx, srv, s)
-	}
-	return errors.New("неизвестный тип туннеля")
+	return a.startSSTP(ctx, srv, s)
 }
 
 func (a *App) markConnected(name string) {
@@ -83,6 +84,10 @@ func (a *App) startSSTPC(ctx context.Context, srv core.Server, s core.SSTP) erro
 }
 
 func (a *App) stopFullTunnel() {
+	if runtime.GOOS == "android" {
+		a.stopSSTPAndroid()
+		return
+	}
 	a.mu.Lock()
 	tun, sstp := a.tun, a.sstpUp
 	a.tun, a.sstpUp = nil, false
