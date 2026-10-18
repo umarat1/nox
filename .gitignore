@@ -18,3 +18,8 @@ app/android/key.properties
 *.pfx
 *ed25519*.key
 *passwords*.txt
+
+# gomobile engine AAR (rebuilt by scripts/build-android.sh / go/mobile/build-aar.sh)
+app/android/app/libs/*.aar
+local.properties
+app/android/app/libs/*.jar

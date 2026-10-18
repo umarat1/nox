@@ -6,6 +6,8 @@ import 'package:flutter_svg/flutter_svg.dart';
 
 import 'controller.dart';
 import 'fmt.dart';
+import 'live_graph.dart';
+import 'platform.dart';
 import 'regions.dart';
 import 'theme.dart';
 
@@ -24,11 +26,26 @@ class Home extends StatelessWidget {
           child: Scaffold(
             backgroundColor: p.bg,
             body: SafeArea(
-              child: Center(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 560),
-                  child: _Body(c: c, p: p),
-                ),
+              child: LayoutBuilder(
+                builder: (context, box) {
+                  // TV / wide window: two panes (controls left, servers right)
+                  // (fills the whole window; narrow keeps the phone column)
+                  final wide = box.maxWidth >= 840;
+                  return Center(
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(
+                        maxWidth: wide ? double.infinity : 560,
+                      ),
+                      child: _Body(
+                        c: c,
+                        p: p,
+                        wide: wide,
+                        w: box.maxWidth,
+                        h: box.maxHeight,
+                      ),
+                    ),
+                  );
+                },
               ),
             ),
           ),
@@ -54,7 +71,15 @@ void toast(BuildContext ctx, String t) {
 class _Body extends StatelessWidget {
   final NoxController c;
   final Pal p;
-  const _Body({required this.c, required this.p});
+  final bool wide;
+  final double w, h;
+  const _Body({
+    required this.c,
+    required this.p,
+    this.wide = false,
+    this.w = 0,
+    this.h = 0,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -88,75 +113,135 @@ class _Body extends StatelessWidget {
       return const Center(child: CircularProgressIndicator());
     final view = c.pref('view', 'list');
     final list = c.visible();
+    final head = <Widget>[
+      _TopBar(c: c, p: p),
+      _Hero(c: c, p: p, wide: wide),
+      if (wide) _GraphCard(c: c, p: p, height: (h * .3).clamp(170.0, 320.0)),
+      if (c.vpnDenied)
+        _Banner(
+          p: p,
+          text:
+              'Нужно разрешение на VPN: нажмите кнопку питания и подтвердите системный запрос.',
+          color: p.red,
+          onTap: () {
+            c.vpnDenied = false;
+            c.refresh();
+          },
+        ),
+      if ((c.s['error'] ?? '') != '')
+        _Banner(
+          p: p,
+          text: c.s['error'],
+          color: p.red,
+          onTap: () => c.call('ClearError'),
+        ),
+      if ((c.s['notice'] ?? '') != '')
+        _Banner(
+          p: p,
+          text: c.s['notice'],
+          color: p.acc,
+          onTap: () => c.call('ClearError'),
+        ),
+      if (c.s['update'] != null) _UpdateBanner(c: c, p: p),
+      for (final b in c.subs) _SubBlock(c: c, p: p, b: b),
+    ];
+    final listHead = <Widget>[
+      _Chips(c: c, p: p),
+      _Toolbar(c: c, p: p, shown: list.length),
+    ];
+    final servers = _serverSlivers(list, view);
+    if (wide) {
+      return Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: (w * .34).clamp(390.0, 540.0),
+            child: FocusTraversalGroup(
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(20, 12, 10, 24),
+                children: head,
+              ),
+            ),
+          ),
+          Expanded(
+            child: FocusTraversalGroup(
+              child: CustomScrollView(
+                slivers: [
+                  SliverPadding(
+                    padding: const EdgeInsets.fromLTRB(10, 12, 20, 0),
+                    sliver: SliverList.list(children: listHead),
+                  ),
+                  ...servers,
+                ],
+              ),
+            ),
+          ),
+        ],
+      );
+    }
     return CustomScrollView(
       slivers: [
         SliverPadding(
           padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
-          sliver: SliverList.list(
-            children: [
-              _TopBar(c: c, p: p),
-              _Hero(c: c, p: p),
-              if ((c.s['error'] ?? '') != '')
-                _Banner(
-                  p: p,
-                  text: c.s['error'],
-                  color: p.red,
-                  onTap: () => c.call('ClearError'),
-                ),
-              if ((c.s['notice'] ?? '') != '')
-                _Banner(
-                  p: p,
-                  text: c.s['notice'],
-                  color: p.acc,
-                  onTap: () => c.call('ClearError'),
-                ),
-              if (c.s['update'] != null) _UpdateBanner(c: c, p: p),
-              for (final b in c.subs) _SubBlock(c: c, p: p, b: b),
-              _Chips(c: c, p: p),
-              _Toolbar(c: c, p: p, shown: list.length),
-            ],
-          ),
+          sliver: SliverList.list(children: [...head, ...listHead]),
         ),
-        if (list.isEmpty)
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.all(40),
-              child: Text(
-                'Нет серверов. Нажмите «＋», чтобы добавить подписку или ссылку (vless, trojan, ss, hy2, tuic, qwdtt, sstp).',
-                textAlign: TextAlign.center,
-                style: TextStyle(color: p.sub),
-              ),
-            ),
-          )
-        else if (view == 'grid')
-          SliverPadding(
-            padding: const EdgeInsets.fromLTRB(12, 0, 12, 40),
-            sliver: SliverGrid.builder(
-              gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-                maxCrossAxisExtent: 260,
-                mainAxisSpacing: 7,
-                crossAxisSpacing: 7,
-                mainAxisExtent: 128,
-              ),
-              itemCount: list.length,
-              itemBuilder: (_, i) => _ServerCard(c: c, p: p, s: list[i]),
-            ),
-          )
-        else if (view == 'slider')
-          SliverPadding(
-            padding: const EdgeInsets.fromLTRB(0, 0, 0, 40),
-            sliver: SliverList.list(children: _sliders(list)),
-          )
-        else
-          SliverPadding(
-            padding: const EdgeInsets.fromLTRB(12, 0, 12, 40),
-            sliver: SliverList.builder(
-              itemCount: list.length,
-              itemBuilder: (_, i) => _ServerRow(c: c, p: p, s: list[i]),
-            ),
-          ),
+        ...servers,
       ],
     );
+  }
+
+  List<Widget> _serverSlivers(List<J> list, String view) {
+    final h = wide
+        ? const EdgeInsets.fromLTRB(10, 0, 20, 40)
+        : const EdgeInsets.fromLTRB(12, 0, 12, 40);
+    if (list.isEmpty) {
+      return [
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.all(40),
+            child: Text(
+              'Нет серверов. Нажмите «＋», чтобы добавить подписку или ссылку (vless, trojan, ss, hy2, tuic, qwdtt, sstp).',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: p.sub),
+            ),
+          ),
+        ),
+      ];
+    }
+    if (view == 'grid') {
+      return [
+        SliverPadding(
+          padding: h,
+          sliver: SliverGrid.builder(
+            gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+              maxCrossAxisExtent: 260,
+              mainAxisSpacing: 7,
+              crossAxisSpacing: 7,
+              mainAxisExtent: 128,
+            ),
+            itemCount: list.length,
+            itemBuilder: (_, i) => _ServerCard(c: c, p: p, s: list[i]),
+          ),
+        ),
+      ];
+    }
+    if (view == 'slider') {
+      return [
+        SliverPadding(
+          padding: const EdgeInsets.fromLTRB(0, 0, 0, 40),
+          sliver: SliverList.list(children: _sliders(list)),
+        ),
+      ];
+    }
+    return [
+      SliverPadding(
+        padding: h,
+        sliver: SliverList.builder(
+          itemCount: list.length,
+          itemBuilder: (_, i) => _ServerRow(c: c, p: p, s: list[i]),
+        ),
+      ),
+    ];
   }
 
   /// «Слайдеры»: one horizontal carousel per country (Автовыбор / qWDTT / other first).
@@ -326,6 +411,20 @@ class _TopBar extends StatelessWidget {
             },
           ),
           const SizedBox(width: 8),
+          if (canFullScreen) ...[
+            ValueListenableBuilder<bool>(
+              valueListenable: fullScreen,
+              builder: (_, fs, _) => _IconBtn(
+                p: p,
+                icon: fs ? Icons.fullscreen_exit : Icons.fullscreen,
+                tip: fs
+                    ? 'Выйти из полноэкранного режима (F11)'
+                    : 'Во весь экран (F11)',
+                onTap: () => toggleFullScreen(),
+              ),
+            ),
+            const SizedBox(width: 8),
+          ],
           _IconBtn(
             p: p,
             icon: Icons.add,
@@ -348,7 +447,8 @@ class _TopBar extends StatelessWidget {
 class _Hero extends StatelessWidget {
   final NoxController c;
   final Pal p;
-  const _Hero({required this.c, required this.p});
+  final bool wide; // wide layout has its own big graph card
+  const _Hero({required this.c, required this.p, this.wide = false});
   @override
   Widget build(BuildContext context) {
     final on = c.connected, wait = c.busy, st = c.status, cur = c.current;
@@ -367,6 +467,7 @@ class _Hero extends StatelessWidget {
       child: Row(
         children: [
           Focus(
+            autofocus: c.isTv,
             child: Builder(
               builder: (ctx) {
                 final f = Focus.of(ctx).hasFocus;
@@ -466,12 +567,13 @@ class _Hero extends StatelessWidget {
                     _Pill(p: p, text: '↑ ${fmtBytes(t?['Up'] ?? 0)}/с'),
                   ],
                 ),
-                if (t != null)
+                if (t != null && !wide)
                   SizedBox(
-                    height: 34,
+                    height: 36,
                     width: double.infinity,
-                    child: CustomPaint(
-                      painter: _Graph((t['Hist'] as List?) ?? const [], p.acc),
+                    child: Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: LiveGraph(series: c.speed, p: p, active: on),
                     ),
                   ),
               ],
@@ -498,32 +600,58 @@ class _Pill extends StatelessWidget {
   );
 }
 
-class _Graph extends CustomPainter {
-  final List h;
-  final Color col;
-  _Graph(this.h, this.col);
+/// Wide layout: big live speed graph with totals under the connect card.
+class _GraphCard extends StatelessWidget {
+  final NoxController c;
+  final Pal p;
+  final double height;
+  const _GraphCard({required this.c, required this.p, required this.height});
   @override
-  void paint(Canvas canvas, Size size) {
-    if (h.isEmpty) return;
-    final v = h.map((e) => ((e as List)[1] as num).toDouble()).toList();
-    final mx = math.max(1.0, v.reduce(math.max));
-    final path = Path();
-    for (var i = 0; i < v.length; i++) {
-      final x = i / 119 * size.width,
-          y = size.height - 2 - v[i] / mx * (size.height - 4);
-      i == 0 ? path.moveTo(x, y) : path.lineTo(x, y);
-    }
-    canvas.drawPath(
-      path,
-      Paint()
-        ..color = col
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 1.6,
+  Widget build(BuildContext context) {
+    final t = c.traffic;
+    final on = c.connected && t != null;
+    return Container(
+      margin: const EdgeInsets.only(top: 10),
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
+      decoration: _box(p, r: 20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Text(
+                'Скорость',
+                style: TextStyle(
+                  color: p.sub,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 1,
+                ),
+              ),
+              const Spacer(),
+              if (on)
+                Text(
+                  'за сеанс: ↓ ${fmtBytes(t['DownTotal'] ?? 0)}  ↑ ${fmtBytes(t['UpTotal'] ?? 0)}',
+                  style: TextStyle(color: p.sub, fontSize: 12),
+                ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          SizedBox(
+            height: height,
+            width: double.infinity,
+            child: LiveGraph(
+              series: c.speed,
+              p: p,
+              active: on,
+              span: 120,
+              labels: true,
+            ),
+          ),
+        ],
+      ),
     );
   }
-
-  @override
-  bool shouldRepaint(_Graph o) => o.h != h;
 }
 
 class _Banner extends StatelessWidget {
@@ -761,9 +889,10 @@ class _Link extends StatelessWidget {
   Widget build(BuildContext context) => Padding(
     padding: const EdgeInsets.only(right: 12),
     child: InkWell(
-      onTap: () {
+      onTap: () async {
+        if (await openUrl(url)) return;
         Clipboard.setData(ClipboardData(text: url));
-        toast(context, 'Ссылка скопирована: $url');
+        if (context.mounted) toast(context, 'Ссылка скопирована: $url');
       },
       child: Text(
         text,
@@ -970,7 +1099,7 @@ String _sub(J s) {
   return '${pr.isNotEmpty ? pr : (m != null ? '$m серв.' : '')}${d.isNotEmpty ? ' · $d' : ''}';
 }
 
-class _Tap extends StatelessWidget {
+class _Tap extends StatefulWidget {
   final Pal p;
   final bool sel;
   final Widget child;
@@ -985,21 +1114,35 @@ class _Tap extends StatelessWidget {
     required this.padding,
   });
   @override
-  Widget build(BuildContext context) => Material(
-    color: sel ? p.sel : p.card,
-    shape: RoundedRectangleBorder(
-      borderRadius: BorderRadius.circular(16),
-      side: BorderSide(color: sel ? p.acc : p.line),
-    ),
-    child: InkWell(
-      borderRadius: BorderRadius.circular(16),
-      focusColor: p.acc.withValues(alpha: .25),
-      onTap: onTap,
-      onLongPress: onLong,
-      onSecondaryTap: onLong,
-      child: Padding(padding: padding, child: child),
-    ),
-  );
+  State<_Tap> createState() => _TapState();
+}
+
+class _TapState extends State<_Tap> {
+  bool focused = false;
+  @override
+  Widget build(BuildContext context) {
+    final w = widget, p = w.p;
+    return Material(
+      color: w.sel ? p.sel : p.card,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        // D-pad / keyboard focus: a clear ring, not only the ink overlay (TV)
+        side: BorderSide(
+          color: focused ? p.acc2 : (w.sel ? p.acc : p.line),
+          width: focused ? 2.5 : 1,
+        ),
+      ),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        focusColor: p.acc.withValues(alpha: .18),
+        onFocusChange: (f) => setState(() => focused = f),
+        onTap: w.onTap,
+        onLongPress: w.onLong,
+        onSecondaryTap: w.onLong,
+        child: Padding(padding: w.padding, child: w.child),
+      ),
+    );
+  }
 }
 
 class _ServerRow extends StatelessWidget {

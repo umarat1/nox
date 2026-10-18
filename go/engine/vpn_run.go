@@ -18,6 +18,9 @@ import (
 const sstpEntry = "Nox SSTP"
 
 func (a *App) connectFullTunnel(ctx context.Context, srv core.Server) error {
+	if runtime.GOOS == "android" {
+		return errors.New("SSTP на Android пока не поддерживается — выберите другой сервер")
+	}
 	if s, err := core.SSTPFrom(srv.Outbound); err == nil {
 		return a.startSSTP(ctx, srv, s)
 	}

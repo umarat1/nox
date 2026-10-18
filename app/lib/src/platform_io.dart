@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:tray_manager/tray_manager.dart';
 import 'package:window_manager/window_manager.dart';
@@ -14,8 +15,77 @@ const _mock = bool.fromEnvironment('NOX_MOCK');
 bool get isDesktop =>
     Platform.isWindows || Platform.isMacOS || Platform.isLinux;
 bool get isWindows => Platform.isWindows;
+bool get isAndroid => Platform.isAndroid;
 
-NoxApi createApi() => _mock ? MockApi() : ServiceApi();
+/// False while the desktop window is hidden (tray), minimized; animations pause on it.
+final windowShown = ValueNotifier<bool>(true);
+
+/// Desktop fullscreen (F11 / button); a no-op elsewhere.
+bool get canFullScreen => isDesktop && !_mock;
+final fullScreen = ValueNotifier<bool>(false);
+Future<void> toggleFullScreen([bool? on]) async {
+  if (!canFullScreen) return;
+  final v = on ?? !await windowManager.isFullScreen();
+  await windowManager.setFullScreen(v);
+  fullScreen.value = v;
+}
+
+NoxApi createApi() =>
+    _mock ? MockApi() : (Platform.isAndroid ? AndroidApi() : ServiceApi());
+
+// ---------------------------------------------------------------- Android
+
+const _ch = MethodChannel('nox/core');
+
+/// Android: the engine runs in this process (gomobile AAR); Kotlin forwards the calls.
+class AndroidApi implements NoxApi {
+  @override
+  String get transport => 'встроенное ядро';
+
+  @override
+  Future<dynamic> call(String method, [List<dynamic> args = const []]) async {
+    final r = await _ch.invokeMethod<String>('call', {
+      'm': method,
+      'a': jsonEncode(args),
+    });
+    final j = jsonDecode(r ?? '{}') as Map<String, dynamic>;
+    if (j['e'] != null) throw NoxError(j['e'].toString());
+    return j['r'];
+  }
+}
+
+/// VPN permission (VpnService.prepare) and, on Android 13+, the notification permission.
+Future<bool> prepareVpn() async {
+  if (!Platform.isAndroid || _mock) return true;
+  return await _ch.invokeMethod<bool>('prepareVpn') ?? false;
+}
+
+/// Android TV / Google TV (leanback): two-pane layout, D-pad focus, autofocus on power.
+Future<bool> isTvDevice() async {
+  if (!Platform.isAndroid || _mock) return false;
+  return await _ch.invokeMethod<bool>('isTv') ?? false;
+}
+
+Future<bool> openUrl(String url) async {
+  try {
+    if (Platform.isAndroid) {
+      return await _ch.invokeMethod<bool>('openUrl', {'url': url}) ?? false;
+    }
+    if (Platform.isWindows) {
+      await Process.run('rundll32', ['url.dll,FileProtocolHandler', url]);
+      return true;
+    }
+    await Process.run(Platform.isMacOS ? 'open' : 'xdg-open', [url]);
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
+/// After a successful import the old 0.7.x file is renamed so it is not imported again.
+Future<void> legacyImported() async {
+  if (Platform.isAndroid && !_mock) await _ch.invokeMethod('legacyDone');
+}
 
 /// Talks to the noxd service. ipc.json (port + token) is written by the service into its data
 /// directory; on Windows %ProgramData%\Nox with an ACL that lets local users read it.
@@ -102,7 +172,21 @@ class _TrayHandler with TrayListener, WindowListener {
 
   /// Closing the window only hides it: the VPN lives in the service and keeps running.
   @override
-  void onWindowClose() => windowManager.hide();
+  void onWindowClose() {
+    windowShown.value = false;
+    windowManager.hide();
+  }
+
+  @override
+  void onWindowMinimize() => windowShown.value = false;
+  @override
+  void onWindowRestore() => windowShown.value = true;
+  @override
+  void onWindowFocus() => windowShown.value = true;
+  @override
+  void onWindowEnterFullScreen() => fullScreen.value = true;
+  @override
+  void onWindowLeaveFullScreen() => fullScreen.value = false;
 }
 
 _TrayHandler? _tray;
@@ -123,7 +207,10 @@ Future<void> initDesktop(
       center: true,
     ),
     () async {
-      if (hidden) return; // autostart: tray only
+      if (hidden) {
+        windowShown.value = false;
+        return; // autostart: tray only
+      }
       await windowManager.show();
       await windowManager.focus();
     },
@@ -131,6 +218,7 @@ Future<void> initDesktop(
   await windowManager.setPreventClose(true);
   _tray = _TrayHandler(
     () async {
+      windowShown.value = true;
       await windowManager.show();
       await windowManager.focus();
       onShow();
@@ -247,6 +335,9 @@ Future<String?> setUserAutostart(bool on) async {
 
 /// Subscriptions of Nox 0.8 / VPS from the user's profile, for the first start of 1.0.
 Future<String?> readLegacyState() async {
+  if (Platform.isAndroid) {
+    return _mock ? null : _ch.invokeMethod<String>('legacyState');
+  }
   final base = Platform.environment['LOCALAPPDATA'];
   if (base == null) return null;
   for (final d in ['Nox', 'VPS']) {

@@ -87,7 +87,7 @@ class MockApi implements NoxApi {
     switch (m) {
       case 'GetState':
         return {
-          'version': '1.0.0',
+          'version': '1.0.1',
           'core': 'sing-box 1.14.3 · qWDTT 1.4.4 · SSTP',
           'status': status,
           'error': '',
@@ -108,13 +108,22 @@ class MockApi implements NoxApi {
               : null,
         };
       case 'GetTraffic':
+        // one sample per second, like the engine; values follow a smooth-ish pattern
+        final seq = DateTime.now().millisecondsSinceEpoch ~/ 1000 - since + 1;
+        int dn(int k) =>
+            ((sin(k / 6) + 1.25) * 1.1e6 + sin(k / 2.3) * 2.5e5).toInt();
+        int up(int k) => ((cos(k / 9) + 1.4) * 1.3e5).toInt();
+        final n = min(120, seq);
         return {
-          'Down': 2400000,
-          'Up': 310000,
-          'Hist': List.generate(
-            120,
-            (i) => [100000, ((sin(i / 7) + 1.3) * 1e6).toInt()],
-          ),
+          'Down': dn(seq - 1),
+          'Up': up(seq - 1),
+          'DownTotal': 1.7e9.toInt(),
+          'UpTotal': 2.1e8.toInt(),
+          'Seq': seq,
+          'Hist': List.generate(n, (i) {
+            final k = seq - n + i;
+            return [up(k), dn(k)];
+          }),
         };
       case 'Select':
         selected = a[0];

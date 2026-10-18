@@ -9,20 +9,25 @@ import (
 	"path/filepath"
 )
 
-const exeExt = ".exe"
-
 func osName() string               { return "windows" }
 func ruleDir(binDir string) string { return binDir }
 
-func startCore(a *App, cfg string, tun bool, out io.WriteCloser) (*exec.Cmd, error) {
-	cmd := exec.Command(a.bin("sing-box"), "run", "-c", cfg, "-D", a.dataDir, "--disable-color")
-	hideWindow(cmd)
-	cmd.Stdout, cmd.Stderr = out, out
-	if err := cmd.Start(); err != nil {
+func binPath(dir, n string) string { return filepath.Join(dir, n+".exe") }
+
+func startCore(a *App, cfg string, tun bool, out io.WriteCloser) (coreProc, error) {
+	c, err := startExecCore(a, cfg, out)
+	if err != nil {
 		return nil, err
 	}
-	attachJob(cmd)
-	return cmd, nil
+	return execProc{c}, nil
+}
+
+func startTestCore(a *App, cfg string, out io.Writer) (coreProc, error) {
+	c, err := startExecCore(a, cfg, out)
+	if err != nil {
+		return nil, err
+	}
+	return execProc{c}, nil
 }
 
 func applyUpdate(a *App, u *UpdateInfo) error {

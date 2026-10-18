@@ -26,7 +26,7 @@ import (
 	"nox/core"
 )
 
-const Version = "1.0.0"
+const Version = "1.0.1"
 
 type Sub struct {
 	ID       string `json:"id"`
@@ -76,7 +76,7 @@ type App struct {
 	pingAll  int
 	since    int64
 
-	box     *exec.Cmd
+	box     coreProc
 	qw      *exec.Cmd
 	qwStdin io.WriteCloser
 	tun     *exec.Cmd // sstpc (Linux)
@@ -86,6 +86,7 @@ type App struct {
 
 	up, down, upTotal, downTotal int64
 	hist                         [][2]int64
+	histSeq                      int64 // samples ever taken this session (UI uses it to scroll the graph smoothly)
 	clashAddr                    string
 	proxySet                     bool
 	upd                          *UpdateInfo
@@ -139,13 +140,19 @@ func NewApp(dataDir, binDir string) *App {
 	return a
 }
 
-func (a *App) bin(n string) string { return filepath.Join(a.binDir, n+exeExt) }
+func (a *App) bin(n string) string { return binPath(a.binDir, n) }
 
 // ImportLegacy takes a state.json of Nox 0.8 / VPS (read by the UI from the user's
 // %LOCALAPPDATA%) when the service has no subscriptions yet. Returns true if imported.
 func (a *App) ImportLegacy(stateJSON string) bool {
 	var p Persist
-	if json.Unmarshal([]byte(stateJSON), &p) != nil || len(p.Servers) == 0 {
+	dropped := 0
+	if ap, n, ok := convertAndroidLegacy([]byte(stateJSON)); ok {
+		p, dropped = ap, n
+		if len(p.Servers) == 0 && len(p.Subs) == 0 {
+			return false
+		}
+	} else if json.Unmarshal([]byte(stateJSON), &p) != nil || len(p.Servers) == 0 {
 		return false
 	}
 	a.mu.Lock()
@@ -164,6 +171,9 @@ func (a *App) ImportLegacy(stateJSON string) bool {
 	}
 	a.save()
 	a.logLocked(fmt.Sprintf("перенесено из старой версии: %d подписок, %d серверов", len(p.Subs), len(p.Servers)))
+	if dropped > 0 {
+		a.logLocked(fmt.Sprintf("не перенесено %d серверов (xray/mihomo/OpenFlux/OpenVPN нет в Nox 1.0)", dropped))
+	}
 	return true
 }
 
@@ -243,6 +253,7 @@ func (a *App) GetState() UIState {
 type Traffic struct {
 	Up, Down, UpTotal, DownTotal int64
 	Hist                         [][2]int64
+	Seq                          int64
 }
 
 func (a *App) GetTraffic() Traffic {
@@ -250,7 +261,7 @@ func (a *App) GetTraffic() Traffic {
 	defer a.mu.Unlock()
 	h := make([][2]int64, len(a.hist))
 	copy(h, a.hist)
-	return Traffic{a.up, a.down, a.upTotal, a.downTotal, h}
+	return Traffic{a.up, a.down, a.upTotal, a.downTotal, h, a.histSeq}
 }
 
 func (a *App) GetLog() string {
@@ -755,19 +766,16 @@ func (a *App) urlTest(list []core.Server, set func(string, int), pn pingNet) {
 	b, _ := json.Marshal(cfg)
 	path := filepath.Join(a.dataDir, "urltest.json")
 	os.WriteFile(path, b, 0o600)
-	cmd := exec.Command(a.bin("sing-box"), "run", "-c", path, "-D", a.dataDir, "--disable-color")
-	hideWindow(cmd)
-	var out strings.Builder
-	cmd.Stdout, cmd.Stderr = &out, &out
-	if err := cmd.Start(); err != nil {
+	var out syncBuf
+	cmd, err := startTestCore(a, path, &out)
+	if err != nil {
 		for _, id := range tags {
 			set(id, -1)
 		}
 		a.log("пинг: не удалось запустить sing-box: " + err.Error())
 		return
 	}
-	attachJob(cmd)
-	defer func() { cmd.Process.Kill(); cmd.Wait(); os.Remove(path) }()
+	defer func() { cmd.Stop(); os.Remove(path) }()
 	cl := &http.Client{Timeout: 4 * time.Second, Transport: &http.Transport{Proxy: nil}}
 	up := false
 	for i := 0; i < 100; i++ {
@@ -906,7 +914,7 @@ func (a *App) Connect() {
 	if h := bestIfNow(); h != 0 {
 		a.physHint = h
 	}
-	a.up, a.down, a.upTotal, a.downTotal, a.hist = 0, 0, 0, 0, nil
+	a.up, a.down, a.upTotal, a.downTotal, a.hist, a.histSeq = 0, 0, 0, 0, nil, 0
 	settings := a.p.Settings
 	ctx, cancel := context.WithCancel(context.Background())
 	a.cancel = cancel
@@ -1054,6 +1062,7 @@ func (a *App) trafficLoop(ctx context.Context) {
 			a.upTotal += t.Up
 			a.downTotal += t.Down
 			a.hist = append(a.hist, [2]int64{t.Up, t.Down})
+			a.histSeq++
 			if len(a.hist) > 120 {
 				a.hist = a.hist[len(a.hist)-120:]
 			}
@@ -1186,8 +1195,8 @@ func (a *App) stopAll() {
 	a.box, a.qw, a.qwStdin = nil, nil, nil
 	a.mu.Unlock()
 	a.stopFullTunnel()
-	if box != nil && box.Process != nil {
-		gracefulStop(box)
+	if box != nil {
+		box.Stop()
 	}
 	if qin != nil {
 		qin.Close()

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 
 import 'api.dart';
+import 'live_graph.dart';
 import 'platform.dart';
 import 'regions.dart';
 
@@ -15,9 +16,10 @@ class NoxController extends ChangeNotifier {
 
   J? state;
   J? traffic;
+  final speed = SpeedSeries();
   String? fatal; // core unreachable
   Set<String> pingWait = {};
-  Timer? _t1;
+  Timer? _t1, _t2;
   bool _proxyApplied = false;
   String _lastStatus = '';
 
@@ -39,30 +41,70 @@ class NoxController extends ChangeNotifier {
   String get selected => (s['selected'] ?? '') as String;
   J? get current => servers.where((x) => x['id'] == selected).firstOrNull;
 
+  /// Android TV (leanback): two-pane layout and D-pad focus hints.
+  bool isTv = false;
+
+  /// The user declined the system VPN dialog.
+  bool vpnDenied = false;
+
   String pref(String k, String d) => ui[k] ?? d;
   bool flag(String k, bool d) => ui.containsKey(k) ? ui[k] == '1' : d;
 
   Future<void> start() async {
+    isTv = await isTvDevice();
     await refresh();
     // first start of 1.0 on a PC that had 0.8 / VPS: take its subscriptions
     if (fatal == null && servers.isEmpty) {
       final legacy = await readLegacyState();
-      if (legacy != null && await call('ImportLegacy', [legacy]) == true)
+      if (legacy != null && await call('ImportLegacy', [legacy]) == true) {
+        await legacyImported();
         await refresh();
+        call('RefreshSubs'); // fresh server lists in the 1.0 format
+      }
     }
     // autostart lives in HKCU\...\Run (per user); re-assert it so a migrated 0.8
     // setting or a moved install keeps working
     if (settings['autostart'] == true) await setUserAutostart(true);
     _t1 = Timer.periodic(const Duration(seconds: 1), (_) => refresh());
+    // speed samples twice a second between full refreshes, so the graph sees each new
+    // engine sample within ~250 ms on average (smoother scrolling); skipped when hidden
+    _t2 = Timer.periodic(
+      const Duration(milliseconds: 500),
+      (_) => _pollTraffic(),
+    );
+  }
+
+  bool _tBusy = false;
+  Future<void> _pollTraffic() async {
+    if (!connected || !windowShown.value || _tBusy) return;
+    _tBusy = true;
+    try {
+      final t = await api.call('GetTraffic');
+      if (t is Map && connected) {
+        traffic = t.cast<String, dynamic>();
+        speed.feed(traffic);
+      }
+    } catch (_) {
+    } finally {
+      _tBusy = false;
+    }
   }
 
   @override
   void dispose() {
     _t1?.cancel();
+    _t2?.cancel();
     super.dispose();
   }
 
   Future<dynamic> call(String m, [List<dynamic> a = const []]) async {
+    if (m == 'Connect' && settings['mode'] != 'proxy' && !await prepareVpn()) {
+      fatal = null;
+      vpnDenied = true;
+      notifyListeners();
+      return null;
+    }
+    if (m == 'Connect') vpnDenied = false;
     try {
       final r = await api.call(m, a);
       fatal = null;
@@ -82,8 +124,10 @@ class NoxController extends ChangeNotifier {
       if (connected) {
         final t = await call('GetTraffic');
         if (t is Map) traffic = t.cast<String, dynamic>();
+        speed.feed(traffic);
       } else {
         traffic = null;
+        speed.reset();
       }
       await _syncDesktop();
     }

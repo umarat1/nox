@@ -1,5 +1,5 @@
 ; Nox 1.0 for Windows: Inno Setup 7 script.
-; Build:  ISCC.exe /DAppVersion=1.0.0 /DDist=..\dist installer\nox.iss
+; Build:  ISCC.exe /DAppVersion=1.0.1 /DDist=..\dist installer\nox.iss
 ; Dist layout (made by CI, see .github/workflows/windows.yml):
 ;   dist\app\   Flutter Release folder (Nox.exe, flutter_windows.dll, plugins, data\) + VC++ runtime DLLs
 ;   dist\core\  noxd.exe, sing-box.exe, libcronet.dll, qwdtt.exe, *.srs, LICENSES.txt
@@ -8,7 +8,7 @@
 ; Silent update (from the service): Setup.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
 
 #ifndef AppVersion
-  #define AppVersion "1.0.0"
+  #define AppVersion "1.0.1"
 #endif
 #ifndef Dist
   #define Dist "..\dist"

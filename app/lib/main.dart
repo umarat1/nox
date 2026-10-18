@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'src/controller.dart';
 import 'src/home.dart';
@@ -17,6 +18,21 @@ Future<void> main(List<String> args) async {
     () => c.toggle(),
     hidden: args.contains('--tray'),
   );
+  if (canFullScreen) {
+    // F11 toggles fullscreen, Esc leaves it (desktop)
+    HardwareKeyboard.instance.addHandler((e) {
+      if (e is! KeyDownEvent) return false;
+      if (e.logicalKey == LogicalKeyboardKey.f11) {
+        toggleFullScreen();
+        return true;
+      }
+      if (e.logicalKey == LogicalKeyboardKey.escape && fullScreen.value) {
+        toggleFullScreen(false);
+        return true;
+      }
+      return false;
+    });
+  }
   runApp(NoxApp(c: c));
   c.start();
 }
