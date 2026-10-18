@@ -1,0 +1,20 @@
+# build outputs
+/build/
+/dist/
+/out/
+app/build/
+app/.dart_tool/
+app/.flutter-plugins
+app/.flutter-plugins-dependencies
+app/**/ephemeral/
+app/android/.gradle/
+app/android/local.properties
+app/android/key.properties
+*.iml
+.idea/
+# secrets: never commit
+*.jks
+*.keystore
+*.pfx
+*ed25519*.key
+*passwords*.txt

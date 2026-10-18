@@ -1,0 +1,11 @@
+Nox 1.0 for Windows: third-party components
+
+sing-box 1.14.3 (GPLv3+) https://github.com/SagerNet/sing-box  (sing-box.exe, libcronet.dll)
+wintun (embedded in sing-box) https://www.wintun.net
+qWDTT client 1.4.4 (go_client, see project LICENSE) https://github.com/SpaceNeuroX/proxy-turn-vk-android
+sing-geoip / sing-geosite rule sets (geoip-ru, geosite-category-ru, geosite-category-ads-all)
+Flutter (BSD-3-Clause) https://flutter.dev
+tray_manager, window_manager (MIT) https://github.com/leanflutter
+flutter_svg (MIT), http (BSD-3-Clause)
+flag-icons (MIT) https://github.com/lipis/flag-icons, Copyright (c) 2013 Panayiotis Lipiridis
+Microsoft Visual C++ Runtime (redistributable DLLs, Microsoft Software License Terms)

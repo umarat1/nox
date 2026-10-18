@@ -1,0 +1,144 @@
+# Nox 1.0: Windows build (Flutter UI + Go service + Inno Setup installer).
+# Flutter cannot cross-compile Windows desktop apps, so this runs on windows-latest.
+# Output: workflow artifact "nox-windows" (Setup exe + update.json). Nothing is published.
+#
+# Optional secrets:
+#   NOX_UPDATE_KEY        ed25519 private key (base64, from `signupdate -gen`) -> signed update.json
+#   WIN_CERT_PFX_BASE64   Authenticode certificate (.pfx, base64)  } sign Nox.exe, noxd.exe
+#   WIN_CERT_PASSWORD     its password                             } and the installer
+name: windows
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  FLUTTER_VERSION: "3.47.7"
+  SINGBOX_VERSION: "1.14.3"
+  SINGBOX_SHA256: "d8b86ef58936dba9230ec6a57ffa4243933f3c14ef4809828b6c553440ed1518"
+  INNO_URL: "https://github.com/jrsoftware/issrc/releases/download/is-7_1_0/innosetup-7.1.0-x64.exe"
+  INNO_SHA256: "0362a383ed217d4c4239b5933866dd96d3eb2102737da92f80f6057a4b40df2f"
+
+jobs:
+  build:
+    runs-on: windows-latest
+    env:
+      HAS_CERT: ${{ secrets.WIN_CERT_PFX_BASE64 != '' }}
+      HAS_KEY: ${{ secrets.NOX_UPDATE_KEY != '' }}
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Version
+        id: ver
+        run: |
+          $line = (Select-String -Path app/pubspec.yaml -Pattern '^version:\s*(\S+)').Matches[0].Groups[1].Value
+          $name, $build = $line -split '\+'
+          "name=$name"   >> $env:GITHUB_OUTPUT
+          "build=$build" >> $env:GITHUB_OUTPUT
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go/go.mod
+          cache-dependency-path: go/go.sum
+
+      - name: Go vet + tests
+        working-directory: go
+        run: |
+          go vet ./...
+          go test ./core ./ipc
+
+      - name: Build noxd.exe
+        working-directory: go
+        run: go build -trimpath -ldflags "-s -w" -o ../dist/core/noxd.exe ./cmd/noxd
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Flutter analyze + test + build
+        working-directory: app
+        run: |
+          flutter pub get
+          flutter analyze --no-fatal-infos
+          flutter test
+          flutter build windows --release --build-name=${{ steps.ver.outputs.name }} --build-number=${{ steps.ver.outputs.build }}
+
+      - name: Fetch sing-box (pinned, checksum verified)
+        run: |
+          $zip = "$env:RUNNER_TEMP\sb.zip"
+          Invoke-WebRequest "https://github.com/SagerNet/sing-box/releases/download/v$env:SINGBOX_VERSION/sing-box-$env:SINGBOX_VERSION-windows-amd64.zip" -OutFile $zip
+          if ((Get-FileHash $zip -Algorithm SHA256).Hash -ne $env:SINGBOX_SHA256) { throw "sing-box checksum mismatch" }
+          Expand-Archive $zip "$env:RUNNER_TEMP\sb"
+          Copy-Item "$env:RUNNER_TEMP\sb\*\sing-box.exe","$env:RUNNER_TEMP\sb\*\libcronet.dll" dist/core/
+
+      - name: Stage dist
+        run: |
+          New-Item -ItemType Directory -Force dist/app | Out-Null
+          Copy-Item -Recurse app/build/windows/x64/runner/Release/* dist/app/
+          # Flutter's runner links the MSVC runtime dynamically; ship it app-local so no VC++ redist is needed
+          foreach ($d in 'msvcp140.dll','vcruntime140.dll','vcruntime140_1.dll') { Copy-Item "$env:WINDIR\System32\$d" dist/app/ }
+          Copy-Item third_party/windows/* dist/core/
+          Get-ChildItem -Recurse dist | Select-Object FullName, Length | Format-Table -AutoSize
+
+      - name: Authenticode (inner binaries)
+        if: ${{ env.HAS_CERT == 'true' }}
+        env:
+          PFX: ${{ secrets.WIN_CERT_PFX_BASE64 }}
+          PFX_PASS: ${{ secrets.WIN_CERT_PASSWORD }}
+        run: |
+          $pfx = "$env:RUNNER_TEMP\c.pfx"; [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:PFX))
+          $st = (Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe" | Select-Object -Last 1).FullName
+          & $st sign /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 /f $pfx /p $env:PFX_PASS dist/app/Nox.exe dist/core/noxd.exe
+          Remove-Item $pfx
+
+      - name: Install Inno Setup 7.1 (pinned, checksum verified)
+        run: |
+          $exe = "$env:RUNNER_TEMP\is.exe"
+          Invoke-WebRequest $env:INNO_URL -OutFile $exe
+          if ((Get-FileHash $exe -Algorithm SHA256).Hash -ne $env:INNO_SHA256) { throw "Inno Setup checksum mismatch" }
+          Start-Process $exe -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/CURRENTUSER',"/DIR=$env:RUNNER_TEMP\IS" -Wait
+
+      - name: Build installer
+        run: |
+          & "$env:RUNNER_TEMP\IS\ISCC.exe" /Q "/DAppVersion=${{ steps.ver.outputs.name }}" "/DDist=$pwd\dist" "/DOutDir=$pwd\out" installer\nox.iss
+          if ($LASTEXITCODE -ne 0) { throw "ISCC failed" }
+
+      - name: Authenticode (installer)
+        if: ${{ env.HAS_CERT == 'true' }}
+        env:
+          PFX: ${{ secrets.WIN_CERT_PFX_BASE64 }}
+          PFX_PASS: ${{ secrets.WIN_CERT_PASSWORD }}
+        run: |
+          $pfx = "$env:RUNNER_TEMP\c.pfx"; [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:PFX))
+          $st = (Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe" | Select-Object -Last 1).FullName
+          & $st sign /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 /f $pfx /p $env:PFX_PASS out/Nox-Setup-*.exe
+          Remove-Item $pfx
+
+      - name: Sign update (ed25519) -> update.json
+        if: ${{ env.HAS_KEY == 'true' }}
+        env:
+          NOX_UPDATE_KEY: ${{ secrets.NOX_UPDATE_KEY }}
+        working-directory: go
+        run: |
+          $setup = (Get-ChildItem ../out/Nox-Setup-*.exe).FullName
+          $s = go run ./cmd/signupdate -key-env NOX_UPDATE_KEY $setup | ConvertFrom-Json
+          $name = Split-Path $setup -Leaf
+          # fragment for version.json; the url is filled in when Murad publishes the file
+          @{ "nox2-windows" = @{ versionName = "${{ steps.ver.outputs.name }}"; url = "https://REPLACE/$name"; sha256 = $s.sha256; sig = $s.sig } } |
+            ConvertTo-Json -Depth 3 | Set-Content ../out/update.json
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nox-windows
+          path: out/*
+          if-no-files-found: error
