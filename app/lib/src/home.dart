@@ -913,7 +913,8 @@ class _SubBlock extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               Expanded(
-                child: Column(
+                child: ClipRect(
+                  child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     Row(
@@ -941,8 +942,10 @@ class _SubBlock extends StatelessWidget {
                           maxLines: 1,
                           style: TextStyle(color: p.sub, fontSize: 12),
                         ),
-                        const SizedBox(width: 6),
-                        Flexible(
+                        const Spacer(),
+                        // Cap width so caption can never paint into the icon buttons.
+                        ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 110),
                           child: Text(
                             trafficTxt,
                             maxLines: 1,
@@ -966,8 +969,9 @@ class _SubBlock extends StatelessWidget {
                     ),
                   ],
                 ),
+                ),
               ),
-              const SizedBox(width: 4),
+              const SizedBox(width: 8),
               _IconBtn(
                 p: p,
                 icon: Icons.refresh,
