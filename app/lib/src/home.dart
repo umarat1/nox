@@ -910,66 +910,64 @@ class _SubBlock extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              // Labels + bar + traffic share space; icons stay fixed (no overlap at any scale).
-              Flexible(
-                flex: 2,
-                child: Row(
-                  children: [
-                    Flexible(
-                      child: Text(
-                        expireTxt,
-                        maxLines: 1,
-                        softWrap: false,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: left != null && left <= 0
-                              ? p.red
-                              : (left != null && left <= 3 ? p.amb : p.txt),
-                          fontWeight: FontWeight.w700,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                    Text(
-                      '$n серв.',
-                      maxLines: 1,
-                      style: TextStyle(color: p.sub, fontSize: 12),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 6),
               Expanded(
-                flex: 3,
-                child: Row(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Expanded(
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(3),
-                        child: LinearProgressIndicator(
-                          value: bar,
-                          minHeight: 3,
-                          backgroundColor: p.chip,
-                          color: p.acc,
+                    Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            expireTxt,
+                            maxLines: 1,
+                            softWrap: false,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: left != null && left <= 0
+                                  ? p.red
+                                  : (left != null && left <= 3
+                                        ? p.amb
+                                        : p.txt),
+                              fontWeight: FontWeight.w700,
+                              fontSize: 12,
+                            ),
+                          ),
                         ),
-                      ),
+                        const SizedBox(width: 6),
+                        Text(
+                          '$n серв.',
+                          maxLines: 1,
+                          style: TextStyle(color: p.sub, fontSize: 12),
+                        ),
+                        const SizedBox(width: 6),
+                        Flexible(
+                          child: Text(
+                            trafficTxt,
+                            maxLines: 1,
+                            softWrap: false,
+                            overflow: TextOverflow.ellipsis,
+                            textAlign: TextAlign.end,
+                            style: TextStyle(color: p.ter, fontSize: 10),
+                          ),
+                        ),
+                      ],
                     ),
-                    const SizedBox(width: 6),
-                    Flexible(
-                      child: Text(
-                        trafficTxt,
-                        maxLines: 1,
-                        softWrap: false,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(color: p.ter, fontSize: 10),
+                    const SizedBox(height: 4),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(3),
+                      child: LinearProgressIndicator(
+                        value: bar,
+                        minHeight: 3,
+                        backgroundColor: p.chip,
+                        color: p.acc,
                       ),
                     ),
                   ],
                 ),
               ),
-              const SizedBox(width: 2),
+              const SizedBox(width: 4),
               _IconBtn(
                 p: p,
                 icon: Icons.refresh,
