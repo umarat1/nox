@@ -114,9 +114,9 @@ class _Body extends StatelessWidget {
     final view = c.pref('view', 'list');
     final list = c.visible();
     final head = <Widget>[
-      _TopBar(c: c, p: p),
+      if (!wide) _TopBar(c: c, p: p),
       _Hero(c: c, p: p, wide: wide),
-      if (wide) _GraphCard(c: c, p: p, height: (h * .3).clamp(170.0, 320.0)),
+      if (wide) const _GraphSlot(),
       if (c.vpnDenied)
         _Banner(
           p: p,
@@ -151,32 +151,78 @@ class _Body extends StatelessWidget {
     ];
     final servers = _serverSlivers(list, view);
     if (wide) {
-      return Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: (w * .34).clamp(390.0, 540.0),
-            child: FocusTraversalGroup(
-              child: ListView(
-                padding: const EdgeInsets.fromLTRB(20, 12, 10, 24),
-                children: head,
-              ),
-            ),
-          ),
-          Expanded(
-            child: FocusTraversalGroup(
-              child: CustomScrollView(
-                slivers: [
-                  SliverPadding(
-                    padding: const EdgeInsets.fromLTRB(10, 12, 20, 0),
-                    sliver: SliverList.list(children: listHead),
+      // Two columns sharing top and bottom edges, equal outer padding (pad) on every side:
+      // left = connect card, live graph (flexes to fill), subscriptions; right = one panel
+      // with filters on top and the server list scrolling inside it.
+      const pad = 20.0, gap = 16.0;
+      final leftW = (w * .34).clamp(390.0, 540.0);
+      final graph = _GraphCard(c: c, p: p);
+      final banners = head.length - 2 - c.subs.length; // between hero and graph
+      final need = 140 + 230 + 60.0 * banners + 150.0 * c.subs.length;
+      final avail = h - pad * 2 - 56;
+      Widget left;
+      if (avail >= need) {
+        left = Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            for (final wdg in head)
+              if (wdg is _GraphSlot) Expanded(child: graph) else wdg,
+          ],
+        );
+      } else {
+        // short window: scroll the column, graph gets a fixed height
+        left = ListView(
+          padding: EdgeInsets.zero,
+          children: [
+            for (final wdg in head)
+              if (wdg is _GraphSlot)
+                SizedBox(height: 230, child: graph)
+              else
+                wdg,
+          ],
+        );
+      }
+      return Padding(
+        padding: const EdgeInsets.all(pad),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _TopBar(c: c, p: p),
+            Expanded(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  SizedBox(
+                    width: leftW,
+                    child: FocusTraversalGroup(child: left),
                   ),
-                  ...servers,
+                  const SizedBox(width: gap),
+                  Expanded(
+                    child: FocusTraversalGroup(
+                      child: Container(
+                        decoration: _box(p, r: 22),
+                        clipBehavior: Clip.antiAlias,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Padding(
+                              padding: const EdgeInsets.fromLTRB(14, 14, 14, 0),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: listHead,
+                              ),
+                            ),
+                            Expanded(child: CustomScrollView(slivers: servers)),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
                 ],
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       );
     }
     return CustomScrollView(
@@ -192,7 +238,7 @@ class _Body extends StatelessWidget {
 
   List<Widget> _serverSlivers(List<J> list, String view) {
     final h = wide
-        ? const EdgeInsets.fromLTRB(10, 0, 20, 40)
+        ? const EdgeInsets.fromLTRB(14, 0, 14, 14)
         : const EdgeInsets.fromLTRB(12, 0, 12, 40);
     if (list.isEmpty) {
       return [
@@ -601,11 +647,17 @@ class _Pill extends StatelessWidget {
 }
 
 /// Wide layout: big live speed graph with totals under the connect card.
+/// Marks where the wide layout puts the flexing graph card.
+class _GraphSlot extends StatelessWidget {
+  const _GraphSlot();
+  @override
+  Widget build(BuildContext context) => const SizedBox.shrink();
+}
+
 class _GraphCard extends StatelessWidget {
   final NoxController c;
   final Pal p;
-  final double height;
-  const _GraphCard({required this.c, required this.p, required this.height});
+  const _GraphCard({required this.c, required this.p});
   @override
   Widget build(BuildContext context) {
     final t = c.traffic;
@@ -637,9 +689,7 @@ class _GraphCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 10),
-          SizedBox(
-            height: height,
-            width: double.infinity,
+          Expanded(
             child: LiveGraph(
               series: c.speed,
               p: p,

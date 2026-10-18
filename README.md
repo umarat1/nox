@@ -29,7 +29,7 @@ For the disconnected URL test, server domains are resolved through public DNS (w
 fake-IP answers are skipped, so a stale or poisoned system resolver can't break pings.
 
 ## Android / TV
-`scripts/build-android.sh` builds the AAR if needed (`go/mobile/build-aar.sh`) and fetches Xray (pinned
+`scripts/build-android.sh` (`SPLIT=1` for per-ABI APKs: armeabi-v7a versionCode 1xxx, arm64-v8a 2xxx) builds the AAR if needed (`go/mobile/build-aar.sh`) and fetches Xray (pinned
 sha256). It then builds a release APK signed with lumen.jks (passwords come from
 lumen-passwords.txt through env vars). versionCode is the pubspec build number, which is above 0.7.71's 99.
 At first start, `files/lumen-data.json` from 0.7.x is imported.
@@ -56,7 +56,7 @@ cd app && flutter test && flutter build web --dart-define=NOX_MOCK=true   # UI p
 go run ./cmd/noxd run -data /tmp/noxd   # dev daemon; then: flutter test test/service_it_test.dart
 ```
 Windows (manual): `flutter build windows`, stage `dist\app` + `dist\core` as in the workflow, then
-`ISCC /DAppVersion=1.0.2 /DDist=..\dist installer\nox.iss`.
+`ISCC /DAppVersion=1.0.3 /DDist=..\dist installer\nox.iss`.
 
 ## Secrets (CI)
 * `NOX_UPDATE_KEY`: ed25519 private key for update signing (`go run ./cmd/signupdate -gen key`; keep it offline).

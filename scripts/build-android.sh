@@ -23,5 +23,12 @@ NOX_KEY_ALIAS="$(field 'alias')"; export NOX_KEY_ALIAS
 "$ROOT/scripts/fetch-xray-android.sh"
 
 cd "$ROOT/app"
-flutter build apk --release
-ls -la build/app/outputs/flutter-apk/app-release.apk
+if [[ "${SPLIT:-0}" == 1 ]]; then
+  # per-ABI APKs (~50 MB): Flutter sets versionCode = abi*1000 + build (armeabi-v7a 1xxx, arm64-v8a 2xxx),
+  # all above 0.7.71's 99; arm64 devices prefer the higher arm64 code over v7a.
+  flutter build apk --release --split-per-abi --target-platform android-arm,android-arm64
+  ls -la build/app/outputs/flutter-apk/app-*-release.apk
+else
+  flutter build apk --release   # universal (arm, arm64, x86_64)
+  ls -la build/app/outputs/flutter-apk/app-release.apk
+fi
