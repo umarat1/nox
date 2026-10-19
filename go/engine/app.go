@@ -26,7 +26,7 @@ import (
 	"nox/core"
 )
 
-const Version = "1.0.11"
+const Version = "1.0.12"
 
 type Sub struct {
 	ID       string `json:"id"`
@@ -81,6 +81,8 @@ type App struct {
 	xr      *xrayProc // Xray-core for an XHTTP server
 	captcha *CaptchaReq
 	qwStdin io.WriteCloser
+	qwRetry int   // consecutive automatic qWDTT restarts
+	qwToken int64 // pending restart; Disconnect clears it
 	tun     *exec.Cmd // sstpc (Linux)
 	sstpUp  bool      // Windows RAS SSTP entry dialed / Android bridge up
 	sstpBr  *sstpBridge
@@ -1019,6 +1021,9 @@ func (a *App) Connect() {
 		if err != nil {
 			a.log("ошибка: " + err.Error())
 			a.stopAll()
+			if ctx.Err() == nil && srv.Type == "qWDTT" && a.qwdttRestartFailed(err) {
+				return
+			}
 			a.mu.Lock()
 			if ctx.Err() == nil {
 				a.errMsg = err.Error()
@@ -1263,7 +1268,10 @@ func (a *App) startQwdtt(ctx context.Context, q core.Qwdtt) (map[string]any, err
 		}
 		select {
 		case <-exited:
-			return nil, errors.New("qWDTT: клиент завершился. " + t)
+			fmu.Lock()
+			r := qwdttExitReason(cmd, fatal, tail)
+			fmu.Unlock()
+			return nil, errors.New("qWDTT: клиент завершился: " + r)
 		case <-ctx.Done():
 			return nil, errors.New("отменено")
 		default:
@@ -1280,14 +1288,13 @@ func (a *App) startQwdtt(ctx context.Context, q core.Qwdtt) (map[string]any, err
 			ep["peers"].([]any)[0].(map[string]any)["address"] = "127.0.0.1"
 			ep["peers"].([]any)[0].(map[string]any)["port"] = q.LocalPort
 			a.log("qWDTT: конфиг получен")
+			started := time.Now()
 			go func() {
 				<-exited
-				a.mu.Lock()
-				if a.status == "connected" || a.status == "connecting" {
-					a.errMsg = "qWDTT: клиент завершился"
-				}
-				a.mu.Unlock()
-				a.stopAll()
+				fmu.Lock()
+				reason := qwdttExitReason(cmd, fatal, tail)
+				fmu.Unlock()
+				a.qwdttExited(cmd, reason, fatal != "", time.Since(started))
 			}()
 			return ep, nil
 		}
@@ -1300,6 +1307,7 @@ func (a *App) startQwdtt(ctx context.Context, q core.Qwdtt) (map[string]any, err
 
 func (a *App) Disconnect() {
 	a.mu.Lock()
+	a.qwToken, a.qwRetry = 0, 0
 	if a.status == "disconnected" {
 		a.mu.Unlock()
 		return
