@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"context"
 	"crypto/ed25519"
 	"crypto/sha256"
 	"encoding/base64"
@@ -9,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -193,44 +195,121 @@ func (a *App) DoUpdate() string {
 }
 
 func (a *App) download(u *UpdateInfo) (string, error) {
+	return a.downloadCtx(context.Background(), u, nil)
+}
+
+// downloadCtx fetches u.URL into dataDir, resuming a previous partial file with a Range
+// request when the server allows it, reports (done, total) to prog, then verifies sha256/sig.
+func (a *App) downloadCtx(ctx context.Context, u *UpdateInfo, prog func(done, total int64)) (string, error) {
 	cl := a.httpClient()
-	cl.Timeout = 10 * time.Minute
-	resp, err := cl.Get(u.URL)
+	cl.Timeout = 0 // ctx + idle watchdog below; a 140 MB APK on a slow link can take long
+	path := filepath.Join(a.dataDir, "update-"+filepath.Base(u.URL))
+	part := path + ".part"
+	meta := part + ".src"
+	h := sha256.New()
+	var have int64
+	if b, _ := os.ReadFile(meta); string(b) == u.URL+"|"+u.SHA256 {
+		if f, err := os.Open(part); err == nil {
+			have, _ = io.Copy(h, f)
+			f.Close()
+		}
+	}
+	if have == 0 {
+		os.Remove(part)
+		h.Reset()
+	}
+	req, _ := http.NewRequestWithContext(ctx, "GET", u.URL, nil)
+	if have > 0 {
+		req.Header.Set("Range", fmt.Sprintf("bytes=%d-", have))
+	}
+	resp, err := cl.Do(req)
 	if err != nil {
 		return "", err
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != 200 {
+	flag := os.O_CREATE | os.O_WRONLY | os.O_APPEND
+	switch {
+	case resp.StatusCode == 206 && have > 0:
+	case resp.StatusCode == 200:
+		have = 0
+		h.Reset()
+		flag = os.O_CREATE | os.O_WRONLY | os.O_TRUNC
+	case resp.StatusCode == 416 && have > 0: // nothing left to fetch
+	default:
 		return "", fmt.Errorf("HTTP %d", resp.StatusCode)
 	}
-	path := filepath.Join(a.dataDir, "update-"+filepath.Base(u.URL))
-	f, err := os.Create(path)
+	total := int64(-1)
+	if resp.ContentLength >= 0 {
+		total = have + resp.ContentLength
+	}
+	if resp.StatusCode == 416 {
+		total = have
+	}
+	os.WriteFile(meta, []byte(u.URL+"|"+u.SHA256), 0o644)
+	f, err := os.OpenFile(part, flag, 0o644)
 	if err != nil {
 		return "", err
 	}
-	h := sha256.New()
-	_, err = io.Copy(io.MultiWriter(f, h), resp.Body)
+	done := have
+	if prog != nil {
+		prog(done, total)
+	}
+	if resp.StatusCode != 416 {
+		buf := make([]byte, 64<<10)
+		idle := time.AfterFunc(60*time.Second, func() { resp.Body.Close() })
+		for {
+			n, rerr := resp.Body.Read(buf)
+			if n > 0 {
+				idle.Reset(60 * time.Second)
+				if _, werr := f.Write(buf[:n]); werr != nil {
+					rerr = werr
+				}
+				h.Write(buf[:n])
+				done += int64(n)
+				if prog != nil {
+					prog(done, total)
+				}
+			}
+			if rerr == io.EOF {
+				break
+			}
+			if rerr != nil {
+				idle.Stop()
+				f.Close()
+				if ctx.Err() != nil {
+					return "", ctx.Err()
+				}
+				return "", fmt.Errorf("загрузка прервалась: %v", rerr)
+			}
+		}
+		idle.Stop()
+	}
 	f.Close()
-	if err != nil {
-		return "", err
+	if total >= 0 && done != total {
+		return "", fmt.Errorf("загрузка прервалась (%d из %d байт)", done, total)
 	}
 	sum := hex.EncodeToString(h.Sum(nil))
+	drop := func() { os.Remove(part); os.Remove(meta) }
 	if u.SHA256 != "" && !strings.EqualFold(sum, u.SHA256) {
-		os.Remove(path)
+		drop()
 		return "", errors.New("контрольная сумма не совпала")
 	}
 	// Signed channel (nox2-windows): sig required. Top-level Android APKs (0.7.x style): sha256 only.
 	if u.Sig != "" {
 		if !verifySig(sum, u.Sig) {
-			os.Remove(path)
+			drop()
 			return "", errors.New("подпись обновления неверна — установка отменена")
 		}
 	} else if runtime.GOOS != "android" && osName() != "android" {
-		os.Remove(path)
+		drop()
 		return "", errors.New("подпись обновления отсутствует — установка отменена")
 	} else if u.SHA256 == "" {
-		os.Remove(path)
+		drop()
 		return "", errors.New("нет sha256 обновления — установка отменена")
+	}
+	os.Remove(meta)
+	if err := os.Rename(part, path); err != nil {
+		return "", err
 	}
 	return path, nil
 }

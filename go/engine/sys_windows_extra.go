@@ -35,6 +35,10 @@ func applyUpdate(a *App, u *UpdateInfo) error {
 	if err != nil {
 		return err
 	}
+	return installUpdate(a, path)
+}
+
+func installUpdate(a *App, path string) error {
 	// signed installer verified in download(); it stops/replaces the service itself
 	a.stopAll()
 	// the installer closes Nox.exe; the restarted service brings the UI back (cmd/noxd relaunch)

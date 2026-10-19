@@ -40,6 +40,10 @@ func applyUpdate(a *App, u *UpdateInfo) error {
 	if err != nil {
 		return err
 	}
+	return installUpdate(a, path)
+}
+
+func installUpdate(a *App, path string) error {
 	if AndroidInstallApk == nil {
 		return errors.New("установщик недоступен")
 	}
