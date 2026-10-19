@@ -154,10 +154,7 @@ class _Body extends StatelessWidget {
       if (c.s['update'] != null) _UpdateBanner(c: c, p: p),
       for (final b in c.subs) _SubBlock(c: c, p: p, b: b),
     ];
-    final listHead = <Widget>[
-      _Chips(c: c, p: p),
-      _Toolbar(c: c, p: p, shown: list.length),
-    ];
+    final listHead = <Widget>[_FilterBar(c: c, p: p, shown: list.length)];
     final servers = _serverSlivers(list, view);
     if (wide) {
       // Two columns sharing top and bottom edges, equal outer padding (pad) on every side:
@@ -372,29 +369,41 @@ class _IconBtn extends StatelessWidget {
   final IconData icon;
   final String tip;
   final VoidCallback onTap;
+  final bool small; // flat 34×34 (filter bar) instead of a 38×38 chip
   const _IconBtn({
     required this.p,
     required this.icon,
     required this.tip,
     required this.onTap,
+    this.small = false,
   });
   @override
-  Widget build(BuildContext context) => Tooltip(
-    message: tip,
-    child: Material(
-      color: p.chip,
-      borderRadius: BorderRadius.circular(12),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(12),
-        onTap: onTap,
-        child: SizedBox(
-          width: 38,
-          height: 38,
-          child: Center(child: Icon(icon, color: p.txt, size: 19)),
+  Widget build(BuildContext context) {
+    final d = small ? 34.0 : 38.0;
+    return Tooltip(
+      message: tip,
+      child: Material(
+        color: small ? Colors.transparent : p.chip,
+        borderRadius: BorderRadius.circular(small ? 10 : 12),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(small ? 10 : 12),
+          focusColor: p.acc.withValues(alpha: .28),
+          onTap: onTap,
+          child: SizedBox(
+            width: d,
+            height: d,
+            child: Center(
+              child: Icon(
+                icon,
+                color: small ? p.sub : p.txt,
+                size: small ? 18 : 19,
+              ),
+            ),
+          ),
         ),
       ),
-    ),
-  );
+    );
+  }
 }
 
 class _Btn extends StatelessWidget {
@@ -641,10 +650,11 @@ class _Hero extends StatelessWidget {
                   style: TextStyle(color: p.sub, fontSize: 12),
                 ),
                 const SizedBox(height: 8),
-                Row(
+                Wrap(
+                  spacing: 10,
+                  runSpacing: 6,
                   children: [
                     _Pill(p: p, text: '↓ ${fmtBytes(t?['Down'] ?? 0)}/с'),
-                    const SizedBox(width: 10),
                     _Pill(p: p, text: '↑ ${fmtBytes(t?['Up'] ?? 0)}/с'),
                   ],
                 ),
@@ -720,11 +730,17 @@ class _GraphCard extends StatelessWidget {
                   letterSpacing: 1,
                 ),
               ),
-              const Spacer(),
+              const SizedBox(width: 12),
               if (on)
-                Text(
-                  'за сеанс: ↓ ${fmtBytes(t['DownTotal'] ?? 0)}  ↑ ${fmtBytes(t['UpTotal'] ?? 0)}',
-                  style: TextStyle(color: p.sub, fontSize: 12),
+                Expanded(
+                  child: Text(
+                    'за сеанс: ↓ ${fmtBytes(t['DownTotal'] ?? 0)}  ↑ ${fmtBytes(t['UpTotal'] ?? 0)}',
+                    maxLines: 1,
+                    softWrap: false,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.end,
+                    style: TextStyle(color: p.sub, fontSize: 12),
+                  ),
                 ),
             ],
           ),
@@ -917,43 +933,57 @@ class _SubBlock extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      Row(
-                        children: [
-                          // Expiry has priority: never flexed, never ellipsized.
-                          Text(
-                            expireTxt,
-                            maxLines: 1,
-                            softWrap: false,
-                            style: TextStyle(
-                              color: left != null && left <= 0
-                                  ? p.red
-                                  : (left != null && left <= 3 ? p.amb : p.txt),
-                              fontWeight: FontWeight.w700,
-                              fontSize: 12,
+                      LayoutBuilder(
+                        builder: (_, box) => Row(
+                          children: [
+                            // Expiry has priority: never ellipsized; only at extreme
+                            // scales (wider than the whole row) it scales down to fit.
+                            ConstrainedBox(
+                              constraints: BoxConstraints(
+                                maxWidth: math.max(0, box.maxWidth - 12),
+                              ),
+                              child: FittedBox(
+                                fit: BoxFit.scaleDown,
+                                alignment: Alignment.centerLeft,
+                                child: Text(
+                                  expireTxt,
+                                  maxLines: 1,
+                                  softWrap: false,
+                                  style: TextStyle(
+                                    color: left != null && left <= 0
+                                        ? p.red
+                                        : (left != null && left <= 3
+                                              ? p.amb
+                                              : p.txt),
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ),
                             ),
-                          ),
-                          const SizedBox(width: 6),
-                          Flexible(
-                            child: Text(
-                              '$n серв.',
-                              maxLines: 1,
-                              softWrap: false,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(color: p.sub, fontSize: 12),
+                            const SizedBox(width: 6),
+                            Flexible(
+                              child: Text(
+                                '$n серв.',
+                                maxLines: 1,
+                                softWrap: false,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(color: p.sub, fontSize: 12),
+                              ),
                             ),
-                          ),
-                          const SizedBox(width: 6),
-                          Expanded(
-                            child: Text(
-                              trafficTxt,
-                              maxLines: 1,
-                              softWrap: false,
-                              overflow: TextOverflow.ellipsis,
-                              textAlign: TextAlign.end,
-                              style: TextStyle(color: p.ter, fontSize: 10),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Text(
+                                trafficTxt,
+                                maxLines: 1,
+                                softWrap: false,
+                                overflow: TextOverflow.ellipsis,
+                                textAlign: TextAlign.end,
+                                style: TextStyle(color: p.ter, fontSize: 10),
+                              ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
                       const SizedBox(height: 4),
                       ClipRRect(
@@ -1006,7 +1036,7 @@ class _SubBlock extends StatelessWidget {
           if ((b['webPage'] ?? '') != '' || (b['support'] ?? '') != '')
             Padding(
               padding: const EdgeInsets.only(top: 2),
-              child: Row(
+              child: Wrap(
                 children: [
                   if ((b['webPage'] ?? '') != '')
                     _Link(p: p, text: 'Подробнее', url: b['webPage']),
@@ -1046,116 +1076,218 @@ class _Link extends StatelessWidget {
   );
 }
 
-class _Chips extends StatelessWidget {
+/// One row: horizontally scrolling text tabs (small flags, accent text + underline when
+/// selected, fade at the edges) and three fixed icon buttons on the right (ping-all,
+/// refresh subscriptions, ⋮ which also shows «N из M · пинг: …»). D-pad friendly.
+class _FilterBar extends StatefulWidget {
   final NoxController c;
   final Pal p;
-  const _Chips({required this.c, required this.p});
+  final int shown;
+  const _FilterBar({required this.c, required this.p, required this.shown});
+  @override
+  State<_FilterBar> createState() => _FilterBarState();
+}
+
+class _FilterBarState extends State<_FilterBar> {
+  final _sc = ScrollController();
+  bool _fadeL = false, _fadeR = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _sc.addListener(_edges);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _edges());
+  }
+
+  @override
+  void dispose() {
+    _sc.dispose();
+    super.dispose();
+  }
+
+  void _edges() {
+    if (!_sc.hasClients || !mounted) return;
+    final m = _sc.position;
+    final l = m.pixels > 2, r = m.pixels < m.maxScrollExtent - 2;
+    if (l != _fadeL || r != _fadeR) setState(() => (_fadeL = l, _fadeR = r));
+  }
+
   @override
   Widget build(BuildContext context) {
+    final c = widget.c, p = widget.p;
     final cs = c.chips(), cat = c.category;
-    return SizedBox(
-      height: 52,
-      child: ListView.separated(
+    final s = c.s;
+    final pinging = s['pinging'] == true;
+    final ts = MediaQuery.textScalerOf(context);
+    final h = ts.scale(13) + 24; // text + paddings + indicator
+    WidgetsBinding.instance.addPostFrameCallback((_) => _edges());
+    final strip = ShaderMask(
+      blendMode: BlendMode.dstIn,
+      shaderCallback: (r) => LinearGradient(
+        colors: [
+          _fadeL ? Colors.transparent : Colors.white,
+          Colors.white,
+          Colors.white,
+          _fadeR ? Colors.transparent : Colors.white,
+        ],
+        stops: const [0, .06, .90, 1],
+      ).createShader(r),
+      child: ListView.builder(
+        controller: _sc,
         scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.only(top: 12, bottom: 6),
         itemCount: cs.length,
-        separatorBuilder: (_, _) => const SizedBox(width: 6),
         itemBuilder: (_, i) {
           final (k, t, iso) = cs[i];
-          final on = k == cat;
-          return Material(
-            color: on ? p.acc : p.chip,
-            borderRadius: BorderRadius.circular(20),
-            child: InkWell(
-              borderRadius: BorderRadius.circular(20),
-              onTap: () => c.setPref('cat', k),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 7,
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    if (iso != null && hasFlag(iso)) ...[
-                      ClipOval(
-                        child: SvgPicture.asset(
-                          'assets/flags/${iso.toLowerCase()}.svg',
-                          width: 16,
-                          height: 16,
-                          fit: BoxFit.cover,
-                        ),
-                      ),
-                      const SizedBox(width: 6),
-                    ],
-                    Text(
-                      t,
-                      style: TextStyle(
-                        color: on ? Colors.white : p.txt,
-                        fontSize: 13,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
+          return _Tab(
+            p: p,
+            text: t,
+            iso: iso,
+            on: k == cat,
+            onTap: () => c.setPref('cat', k),
           );
         },
+      ),
+    );
+    return Padding(
+      padding: const EdgeInsets.only(top: 8, bottom: 6),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: SizedBox(height: h, child: strip),
+              ),
+              const SizedBox(width: 4),
+              _IconBtn(
+                p: p,
+                small: true,
+                icon: Icons.bolt,
+                tip: 'Пинг',
+                onTap: () {
+                  c.ping(c.visible().map((e) => e['id'] as String).toList());
+                  toast(context, 'Проверяю пинг…');
+                },
+              ),
+              _IconBtn(
+                p: p,
+                small: true,
+                icon: Icons.refresh,
+                tip: 'Обновить подписки',
+                onTap: () async {
+                  toast(context, 'Обновляю подписки…');
+                  final r = await c.call('RefreshSubs');
+                  await c.refresh();
+                  if (context.mounted) {
+                    toast(context, (r ?? 'Готово').toString());
+                  }
+                },
+              ),
+              _IconBtn(
+                p: p,
+                small: true,
+                icon: Icons.more_vert,
+                tip: 'Ещё',
+                onTap: () => listSheet(
+                  context,
+                  c,
+                  p,
+                  caption: listCaption(c, widget.shown),
+                ),
+              ),
+            ],
+          ),
+          // hairline under the strip; ping progress as a tiny caption only while pinging
+          Container(height: 1, color: p.line.withValues(alpha: .6)),
+          if (pinging)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text(
+                'Пинг ${s['pingDone']}/${s['pingAll']}…',
+                style: TextStyle(color: p.sub, fontSize: 11),
+              ),
+            ),
+        ],
       ),
     );
   }
 }
 
-class _Toolbar extends StatelessWidget {
-  final NoxController c;
+/// «25 из 25 · пинг: через прокси» (shown in the ⋮ list sheet).
+String listCaption(NoxController c, int shown) =>
+    '$shown из ${c.servers.length} · пинг: ${c.settings['pingMode'] == 'tcp' ? 'TCP' : 'через прокси'}';
+
+class _Tab extends StatelessWidget {
   final Pal p;
-  final int shown;
-  const _Toolbar({required this.c, required this.p, required this.shown});
+  final String text;
+  final String? iso;
+  final bool on;
+  final VoidCallback onTap;
+  const _Tab({
+    required this.p,
+    required this.text,
+    required this.iso,
+    required this.on,
+    required this.onTap,
+  });
   @override
-  Widget build(BuildContext context) {
-    final s = c.s;
-    final txt = s['pinging'] == true
-        ? 'Пинг ${s['pingDone']}/${s['pingAll']}…'
-        : '$shown из ${c.servers.length} · пинг: ${c.settings['pingMode'] == 'tcp' ? 'TCP' : 'через прокси'}';
-    return Padding(
-      padding: const EdgeInsets.only(top: 4, bottom: 8),
-      child: Row(
-        children: [
-          Expanded(
-            child: Text(txt, style: TextStyle(color: p.sub, fontSize: 12)),
+  Widget build(BuildContext context) => Semantics(
+    selected: on,
+    button: true,
+    child: InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      focusColor: p.acc.withValues(alpha: .22),
+      hoverColor: p.acc.withValues(alpha: .10),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 10),
+        child: IntrinsicWidth(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Spacer(),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (iso != null && hasFlag(iso!)) ...[
+                    ClipOval(
+                      child: SvgPicture.asset(
+                        'assets/flags/${iso!.toLowerCase()}.svg',
+                        width: 14,
+                        height: 14,
+                        fit: BoxFit.cover,
+                      ),
+                    ),
+                    const SizedBox(width: 5),
+                  ],
+                  Text(
+                    text,
+                    maxLines: 1,
+                    softWrap: false,
+                    style: TextStyle(
+                      color: on ? p.acc2 : p.sub,
+                      fontSize: 13,
+                      fontWeight: on ? FontWeight.w700 : FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
+              const Spacer(),
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 180),
+                height: 2.5,
+                decoration: BoxDecoration(
+                  color: on ? p.acc2 : Colors.transparent,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ],
           ),
-          _IconBtn(
-            p: p,
-            icon: Icons.bolt,
-            tip: 'Пинг',
-            onTap: () {
-              c.ping(c.visible().map((e) => e['id'] as String).toList());
-              toast(context, 'Проверяю пинг…');
-            },
-          ),
-          const SizedBox(width: 6),
-          _IconBtn(
-            p: p,
-            icon: Icons.refresh,
-            tip: 'Обновить подписки',
-            onTap: () async {
-              toast(context, 'Обновляю подписки…');
-              final r = await c.call('RefreshSubs');
-              await c.refresh();
-              if (context.mounted) toast(context, (r ?? 'Готово').toString());
-            },
-          ),
-          const SizedBox(width: 6),
-          _IconBtn(
-            p: p,
-            icon: Icons.more_vert,
-            tip: 'Ещё',
-            onTap: () => listSheet(context, c, p),
-          ),
-        ],
+        ),
       ),
-    );
-  }
+    ),
+  );
 }
 
 // ------------------------------------------------------------------ servers
@@ -1869,13 +2001,23 @@ void pingSheet(BuildContext context, NoxController c, Pal p) {
   });
 }
 
-void listSheet(BuildContext context, NoxController c, Pal p) {
+void listSheet(
+  BuildContext context,
+  NoxController c,
+  Pal p, {
+  String? caption,
+}) {
   sheet(context, p, 'Список', (ctx) {
     final h = c.flag('hideDead', true),
         d = c.flag('dedup', true),
         v = c.pref('view', 'list');
     final undo = (c.s['canUndo'] ?? 0) as int;
     return [
+      if (caption != null)
+        Padding(
+          padding: const EdgeInsets.only(bottom: 6),
+          child: Text(caption, style: TextStyle(color: p.sub, fontSize: 12.5)),
+        ),
       item(
         p,
         'Сортировка',
