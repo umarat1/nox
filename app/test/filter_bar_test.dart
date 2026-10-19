@@ -104,6 +104,17 @@ void main() {
 
     // Remote: Down until we land on the filter-bar row (⋮ / ↻ / ⚡), then Left along the tabs.
     final barY = t.getCenter(find.byTooltip('Пинг')).dy;
+    // first key focuses «+» (header left); walk Right across the header to ⚙
+    await t.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await t.pump();
+    for (var i = 0; i < 8; i++) {
+      final f = FocusManager.instance.primaryFocus?.context;
+      if (f != null &&
+          t.getCenter(find.byWidget(f.widget).first).dx > 1920 * .8)
+        break;
+      await t.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+      await t.pump();
+    }
     var onBar = false;
     for (var i = 0; i < 12 && !onBar; i++) {
       await t.sendKeyEvent(LogicalKeyboardKey.arrowDown);

@@ -70,13 +70,13 @@ cd app && flutter test && flutter build web --dart-define=NOX_MOCK=true   # UI p
 go run ./cmd/noxd run -data /tmp/noxd   # dev daemon; then: flutter test test/service_it_test.dart
 ```
 Windows (manual): `flutter build windows`, stage `dist\app` + `dist\core` as in the workflow, then
-`ISCC /DAppVersion=1.0.8 /DDist=..\dist installer\nox.iss`.
+`ISCC /DAppVersion=1.0.9 /DDist=..\dist installer\nox.iss`.
 
 ## Updates (`version.json`)
 
 Android 1.0 reads **top-level** fields (same as 0.7.x; old clients ignore unknown keys):
 
-- `versionCode` (int) — compared to the app build number (108 for 1.0.8)
+- `versionCode` (int) — compared to the app build number (109 for 1.0.9)
 - `versionName`, `url`, `sha256`, `notes`
 - optional per-ABI: `url_arm64` / `sha256_arm64`, `url_armv7` / `sha256_armv7` (fallback `url_armeabi_v7a`)
 - Windows signed channel: `nox2-windows` object with `versionName`, `url`, `sha256`, `sig` (ed25519), `notes`

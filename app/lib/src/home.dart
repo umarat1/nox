@@ -11,6 +11,7 @@ import 'live_graph.dart';
 import 'platform.dart';
 import 'regions.dart';
 import 'theme.dart';
+import 'tour.dart';
 
 class Home extends StatelessWidget {
   final NoxController c;
@@ -26,28 +27,41 @@ class Home extends StatelessWidget {
           data: materialTheme(p),
           child: Scaffold(
             backgroundColor: p.bg,
-            body: SafeArea(
-              child: LayoutBuilder(
-                builder: (context, box) {
-                  // TV / wide window: two panes (controls left, servers right)
-                  // (fills the whole window; narrow keeps the phone column)
-                  final wide = box.maxWidth >= 840;
-                  return Center(
-                    child: ConstrainedBox(
-                      constraints: BoxConstraints(
-                        maxWidth: wide ? double.infinity : 560,
-                      ),
-                      child: _Body(
-                        c: c,
-                        p: p,
-                        wide: wide,
-                        w: box.maxWidth,
-                        h: box.maxHeight,
-                      ),
+            body: Stack(
+              children: [
+                SafeArea(
+                  child: LayoutBuilder(
+                    builder: (context, box) {
+                      // TV / wide window: two panes (controls left, servers right)
+                      // (fills the whole window; narrow keeps the phone column)
+                      final wide = box.maxWidth >= 840;
+                      return Center(
+                        child: ConstrainedBox(
+                          constraints: BoxConstraints(
+                            maxWidth: wide ? double.infinity : 560,
+                          ),
+                          child: _Body(
+                            c: c,
+                            p: p,
+                            wide: wide,
+                            w: box.maxWidth,
+                            h: box.maxHeight,
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+                if (c.tourOn)
+                  Positioned.fill(
+                    child: TourOverlay(
+                      key: ValueKey('tour${c.tourRun}'),
+                      p: p,
+                      steps: tourSteps(),
+                      onDone: c.endTour,
                     ),
-                  );
-                },
-              ),
+                  ),
+              ],
             ),
           ),
         );
@@ -152,7 +166,8 @@ class _Body extends StatelessWidget {
           onTap: () => c.call('ClearError'),
         ),
       if (c.s['update'] != null) _UpdateBanner(c: c, p: p),
-      for (final b in c.subs) _SubBlock(c: c, p: p, b: b),
+      for (final (i, b) in c.subs.indexed)
+        _SubBlock(key: i == 0 ? TourKeys.sub : null, c: c, p: p, b: b),
     ];
     final listHead = <Widget>[_FilterBar(c: c, p: p, shown: list.length)];
     final servers = _serverSlivers(list, view);
@@ -296,7 +311,8 @@ class _Body extends StatelessWidget {
               mainAxisExtent: 128,
             ),
             itemCount: list.length,
-            itemBuilder: (_, i) => _ServerCard(c: c, p: p, s: list[i]),
+            itemBuilder: (_, i) =>
+                _ServerCard(c: c, p: p, s: list[i], first: i == 0),
           ),
         ),
       ];
@@ -314,7 +330,8 @@ class _Body extends StatelessWidget {
         padding: h,
         sliver: SliverList.builder(
           itemCount: list.length,
-          itemBuilder: (_, i) => _ServerRow(c: c, p: p, s: list[i]),
+          itemBuilder: (_, i) =>
+              _ServerRow(c: c, p: p, s: list[i], first: i == 0),
         ),
       ),
     ];
@@ -371,6 +388,7 @@ class _IconBtn extends StatelessWidget {
   final VoidCallback onTap;
   final bool small; // flat 34×34 (filter bar) instead of a 38×38 chip
   const _IconBtn({
+    super.key,
     required this.p,
     required this.icon,
     required this.tip,
@@ -456,79 +474,182 @@ class _TopBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final th = (c.settings['theme'] ?? 'dark') as String;
+    final logo = Text.rich(
+      TextSpan(
+        children: [
+          TextSpan(
+            text: 'n',
+            style: TextStyle(color: p.txt),
+          ),
+          TextSpan(
+            text: 'o',
+            style: TextStyle(color: p.acc2),
+          ),
+          TextSpan(
+            text: 'x',
+            style: TextStyle(color: p.txt),
+          ),
+        ],
+      ),
+      style: const TextStyle(
+        fontSize: 22,
+        fontWeight: FontWeight.w800,
+        letterSpacing: .5,
+      ),
+    );
+    // Equal Expanded sides keep the logo exactly centred whatever the button counts.
     return Padding(
-      padding: const EdgeInsets.fromLTRB(2, 4, 2, 10),
+      padding: const EdgeInsets.fromLTRB(0, 2, 0, 8),
       child: Row(
         children: [
           Expanded(
-            child: Text.rich(
-              TextSpan(
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerLeft,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  TextSpan(
-                    text: 'n',
-                    style: TextStyle(color: p.txt),
+                  _GhostBtn(
+                    key: TourKeys.add,
+                    p: p,
+                    icon: Icons.add,
+                    tip: 'Добавить подписку',
+                    onTap: () => addSheet(context, c, p),
                   ),
-                  TextSpan(
-                    text: 'o',
-                    style: TextStyle(color: p.acc2),
-                  ),
-                  TextSpan(
-                    text: 'x',
-                    style: TextStyle(color: p.txt),
+                  const SizedBox(width: 2),
+                  _GhostBtn(
+                    key: TourKeys.theme,
+                    p: p,
+                    icon: th == 'light'
+                        ? Icons.light_mode_outlined
+                        : Icons.dark_mode_outlined,
+                    tip: 'Тема',
+                    onTap: () {
+                      final i = themeNames.indexWhere((e) => e.$1 == th);
+                      final n = themeNames[(i + 1) % 3].$1;
+                      c.saveSettings({'theme': n});
+                      toast(context, 'Тема: ${themeName(n)}');
+                    },
                   ),
                 ],
               ),
-              style: const TextStyle(
-                fontSize: 22,
-                fontWeight: FontWeight.w800,
-                letterSpacing: .5,
-              ),
             ),
           ),
-          _MailBtn(c: c, p: p),
-          const SizedBox(width: 8),
-          _IconBtn(
-            p: p,
-            icon: th == 'light'
-                ? Icons.light_mode_outlined
-                : Icons.dark_mode_outlined,
-            tip: 'Тема',
-            onTap: () {
-              final i = themeNames.indexWhere((e) => e.$1 == th);
-              final n = themeNames[(i + 1) % 3].$1;
-              c.saveSettings({'theme': n});
-              toast(context, 'Тема: ${themeName(n)}');
-            },
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            child: logo,
           ),
-          const SizedBox(width: 8),
-          if (canFullScreen) ...[
-            ValueListenableBuilder<bool>(
-              valueListenable: fullScreen,
-              builder: (_, fs, _) => _IconBtn(
-                p: p,
-                icon: fs ? Icons.fullscreen_exit : Icons.fullscreen,
-                tip: fs
-                    ? 'Выйти из полноэкранного режима (F11)'
-                    : 'Во весь экран (F11)',
-                onTap: () => toggleFullScreen(),
+          Expanded(
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerRight,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (canFullScreen) ...[
+                    ValueListenableBuilder<bool>(
+                      valueListenable: fullScreen,
+                      builder: (_, fs, _) => _GhostBtn(
+                        p: p,
+                        icon: fs ? Icons.fullscreen_exit : Icons.fullscreen,
+                        tip: fs
+                            ? 'Выйти из полноэкранного режима (F11)'
+                            : 'Во весь экран (F11)',
+                        onTap: () => toggleFullScreen(),
+                      ),
+                    ),
+                    const SizedBox(width: 2),
+                  ],
+                  _MailBtn(c: c, p: p),
+                  const SizedBox(width: 2),
+                  _GhostBtn(
+                    key: TourKeys.settings,
+                    p: p,
+                    icon: Icons.settings_outlined,
+                    tip: 'Настройки',
+                    onTap: () => settingsSheet(context, c, p),
+                  ),
+                ],
               ),
             ),
-            const SizedBox(width: 8),
-          ],
-          _IconBtn(
-            p: p,
-            icon: Icons.add,
-            tip: 'Добавить подписку',
-            onTap: () => addSheet(context, c, p),
-          ),
-          const SizedBox(width: 8),
-          _IconBtn(
-            p: p,
-            icon: Icons.settings_outlined,
-            tip: 'Настройки',
-            onTap: () => settingsSheet(context, c, p),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Flat header button: no fill, circular ripple, accent focus ring for TV D-pad.
+class _GhostBtn extends StatefulWidget {
+  final Pal p;
+  final IconData icon;
+  final String tip;
+  final VoidCallback onTap;
+  final Color? tint;
+  final bool badge;
+  const _GhostBtn({
+    super.key,
+    required this.p,
+    required this.icon,
+    required this.tip,
+    required this.onTap,
+    this.tint,
+    this.badge = false,
+  });
+  @override
+  State<_GhostBtn> createState() => _GhostBtnState();
+}
+
+class _GhostBtnState extends State<_GhostBtn> {
+  bool _f = false;
+  @override
+  Widget build(BuildContext context) {
+    final p = widget.p;
+    return Tooltip(
+      message: widget.tip,
+      child: Material(
+        type: MaterialType.transparency,
+        child: InkWell(
+          customBorder: const CircleBorder(),
+          onTap: widget.onTap,
+          onFocusChange: (f) => setState(() => _f = f),
+          focusColor: p.acc.withValues(alpha: .16),
+          hoverColor: p.acc.withValues(alpha: .10),
+          splashColor: p.acc.withValues(alpha: .22),
+          highlightColor: p.acc.withValues(alpha: .10),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 140),
+            width: 42,
+            height: 42,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              border: Border.all(
+                color: _f ? p.acc2 : Colors.transparent,
+                width: 2,
+              ),
+            ),
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                Icon(widget.icon, size: 22, color: widget.tint ?? p.txt),
+                if (widget.badge)
+                  Positioned(
+                    right: 8,
+                    top: 8,
+                    child: Container(
+                      width: 9,
+                      height: 9,
+                      decoration: BoxDecoration(
+                        color: p.acc2,
+                        shape: BoxShape.circle,
+                        border: Border.all(color: p.bg, width: 1.5),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -557,6 +678,7 @@ class _Hero extends StatelessWidget {
       child: Row(
         children: [
           Focus(
+            key: TourKeys.power,
             autofocus: c.isTv,
             child: Builder(
               builder: (ctx) {
@@ -802,32 +924,15 @@ class _MailBtn extends StatelessWidget {
   const _MailBtn({required this.c, required this.p});
   @override
   Widget build(BuildContext context) {
-    final u = c.s['update'];
-    final has = u is Map;
-    return Stack(
-      clipBehavior: Clip.none,
-      children: [
-        _IconBtn(
-          p: p,
-          icon: Icons.mail_outline,
-          tip: has ? 'Доступно обновление' : 'Обновления',
-          onTap: () => updateSheet(context, c, p),
-        ),
-        if (has)
-          Positioned(
-            right: 2,
-            top: 2,
-            child: Container(
-              width: 9,
-              height: 9,
-              decoration: BoxDecoration(
-                color: const Color(0xFFFF3B5C),
-                shape: BoxShape.circle,
-                border: Border.all(color: p.bg, width: 1.5),
-              ),
-            ),
-          ),
-      ],
+    final has = c.s['update'] is Map;
+    return _GhostBtn(
+      key: TourKeys.mail,
+      p: p,
+      icon: has ? Icons.mark_email_unread_outlined : Icons.mail_outline,
+      tint: has ? p.acc2 : null,
+      badge: has,
+      tip: has ? 'Доступно обновление' : 'Обновления и сообщения',
+      onTap: () => updateSheet(context, c, p),
     );
   }
 }
@@ -898,7 +1003,12 @@ class _SubBlock extends StatelessWidget {
   final NoxController c;
   final Pal p;
   final J b;
-  const _SubBlock({required this.c, required this.p, required this.b});
+  const _SubBlock({
+    super.key,
+    required this.c,
+    required this.p,
+    required this.b,
+  });
   @override
   Widget build(BuildContext context) {
     final n = c.servers.where((s) => s['subId'] == b['id']).length;
@@ -1156,10 +1266,11 @@ class _FilterBarState extends State<_FilterBar> {
           Row(
             children: [
               Expanded(
-                child: SizedBox(height: h, child: strip),
+                child: SizedBox(key: TourKeys.tabs, height: h, child: strip),
               ),
               const SizedBox(width: 4),
               _IconBtn(
+                key: TourKeys.ping,
                 p: p,
                 small: true,
                 icon: Icons.bolt,
@@ -1170,6 +1281,7 @@ class _FilterBarState extends State<_FilterBar> {
                 },
               ),
               _IconBtn(
+                key: TourKeys.refresh,
                 p: p,
                 small: true,
                 icon: Icons.refresh,
@@ -1184,6 +1296,7 @@ class _FilterBarState extends State<_FilterBar> {
                 },
               ),
               _IconBtn(
+                key: TourKeys.more,
                 p: p,
                 small: true,
                 icon: Icons.more_vert,
@@ -1421,7 +1534,13 @@ class _ServerRow extends StatelessWidget {
   final NoxController c;
   final Pal p;
   final J s;
-  const _ServerRow({required this.c, required this.p, required this.s});
+  final bool first; // carries the tour target
+  const _ServerRow({
+    required this.c,
+    required this.p,
+    required this.s,
+    this.first = false,
+  });
   @override
   Widget build(BuildContext context) => Padding(
     padding: const EdgeInsets.only(bottom: 7),
@@ -1457,6 +1576,7 @@ class _ServerRow extends StatelessWidget {
           ),
           PingChip(p: p, text: _pingOf(c, s)),
           IconButton(
+            key: first ? TourKeys.server : null,
             onPressed: () => serverSheet(context, c, p, s),
             icon: Icon(Icons.more_vert, color: p.sub, size: 20),
             tooltip: 'Ещё',
@@ -1471,7 +1591,13 @@ class _ServerCard extends StatelessWidget {
   final NoxController c;
   final Pal p;
   final J s;
-  const _ServerCard({required this.c, required this.p, required this.s});
+  final bool first;
+  const _ServerCard({
+    required this.c,
+    required this.p,
+    required this.s,
+    this.first = false,
+  });
   @override
   Widget build(BuildContext context) => _Tap(
     p: p,
@@ -1487,6 +1613,7 @@ class _ServerCard extends StatelessWidget {
             _flag(p, s),
             const Spacer(),
             InkWell(
+              key: first ? TourKeys.server : null,
               onTap: () => serverSheet(context, c, p, s),
               child: Icon(Icons.more_vert, color: p.sub, size: 18),
             ),
@@ -1917,6 +2044,16 @@ void settingsSheet(BuildContext context, NoxController c, Pal p) {
         onTap: () {
           c.setPref('anim60', c.animSmooth ? '0' : '1');
           Navigator.pop(ctx);
+        },
+      ),
+      item(
+        p,
+        'Показать подсказки снова',
+        desc: 'Короткий тур: где что находится',
+        arrow: true,
+        onTap: () {
+          Navigator.pop(ctx);
+          c.replayTour();
         },
       ),
       swItem('ipv6', 'IPv6'),

@@ -6,6 +6,7 @@ import 'api.dart';
 import 'live_graph.dart';
 import 'platform.dart';
 import 'regions.dart';
+import 'tour.dart';
 
 typedef J = Map<String, dynamic>;
 
@@ -66,6 +67,28 @@ class NoxController extends ChangeNotifier {
 
   /// Smooth 60fps+ animations (graph ticker); off = economy (ticker still vsync but UI can skip).
   bool get animSmooth => flag('anim60', true);
+
+  /// First-launch coach marks (shown once per [tourVersion], upgraders included).
+  bool tourForce = false, tourClosed = false;
+  int tourRun = 0;
+  bool get tourOn =>
+      state != null &&
+      fatal == null &&
+      !tourClosed &&
+      (tourForce || pref('tourV', '') != tourVersion);
+  void endTour() {
+    tourClosed = true;
+    tourForce = false;
+    notifyListeners();
+    setPref('tourV', tourVersion);
+  }
+
+  void replayTour() {
+    tourClosed = false;
+    tourForce = true;
+    tourRun++;
+    notifyListeners();
+  }
 
   Future<void> start() async {
     isTv = await isTvDevice();

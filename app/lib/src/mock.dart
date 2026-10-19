@@ -1,6 +1,7 @@
 import 'dart:math';
 
 import 'api.dart';
+import 'tour.dart';
 
 /// In-memory demo core: web preview, screenshots and widget tests (`--dart-define=NOX_MOCK=true`).
 class MockApi implements NoxApi {
@@ -30,6 +31,11 @@ class MockApi implements NoxApi {
       'hideDead': const String.fromEnvironment(
         'NOX_MOCK_HIDE',
         defaultValue: '1',
+      ),
+      // tour already seen unless NOX_MOCK_TOUR= (empty) asks for it
+      'tourV': const String.fromEnvironment(
+        'NOX_MOCK_TOUR',
+        defaultValue: tourVersion,
       ),
     },
   };
@@ -87,7 +93,7 @@ class MockApi implements NoxApi {
     switch (m) {
       case 'GetState':
         return {
-          'version': '1.0.8',
+          'version': '1.0.9',
           'core': 'sing-box 1.14.3 · Xray 26.3.27 · qWDTT 1.4.4 · SSTP',
           'status': status,
           'error': '',
