@@ -383,3 +383,43 @@ Future<String?> readLegacyState() async {
   }
   return null;
 }
+
+/// Android phones: a camera for scanning the TV's pairing QR (TVs usually have none).
+Future<bool> hasCamera() async {
+  if (!Platform.isAndroid || _mock) return false;
+  try {
+    return await _ch.invokeMethod<bool>('hasCamera') ?? false;
+  } catch (_) {
+    return false;
+  }
+}
+
+/// Scans a QR (camera permission is asked right here, only when scanning).
+/// Returns the text, null when cancelled, or "error:denied" / "error:nocamera".
+Future<String?> scanQr() async {
+  if (!Platform.isAndroid || _mock) return 'error:nocamera';
+  try {
+    return await _ch.invokeMethod<String>('scanQr');
+  } catch (_) {
+    return 'error:nocamera';
+  }
+}
+
+/// nox://pair links opened from outside (the TV QR scanned with the system camera app).
+final pairLinks = ValueNotifier<String?>(null);
+bool _pairInit = false;
+Future<void> initPairLinks() async {
+  if (!Platform.isAndroid || _mock || _pairInit) return;
+  _pairInit = true;
+  _ch.setMethodCallHandler((call) async {
+    if (call.method == 'pair') {
+      pairLinks.value = '${call.arguments}';
+      await _ch.invokeMethod('takePair');
+    }
+    return null;
+  });
+  try {
+    final p = await _ch.invokeMethod<String>('takePair');
+    if (p != null) pairLinks.value = p;
+  } catch (_) {}
+}

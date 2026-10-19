@@ -87,8 +87,9 @@ func startCore(a *App, cfg string, tun bool, out io.WriteCloser) (coreProc, erro
 		return nil, errors.New("VPN-служба недоступна")
 	}
 	a.mu.Lock()
-	split, apps := a.p.Settings.SplitMode, a.p.Settings.SplitApps
+	st := a.p.Settings
 	a.mu.Unlock()
+	split, apps := effectiveSplit(st.SplitMode, st.SplitApps, st.RuApps, st.RuAppsOff)
 	if err := PatchAndroidConfigSplit(cfg, true, split, apps); err != nil {
 		return nil, err
 	}
@@ -168,6 +169,9 @@ func PatchAndroidConfigSplit(path string, vpn bool, split string, apps []string)
 			if m, ok := in.(map[string]any); ok && m["type"] == "tun" {
 				delete(m, "interface_name")
 				m["stack"] = "gvisor" // "system" stack needs a writable TUN address on the host side
+				// LAN bypasses the VPN entirely (pairing with a TV, printers, NAS); 172.19.0.0/16 stays
+				// inside because it holds our own TUN address and DNS.
+				m["route_exclude_address"] = LanExclude4
 				if len(apps) > 0 && (split == "include" || split == "exclude") {
 					m[split+"_package"] = apps
 				}

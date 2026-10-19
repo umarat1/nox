@@ -92,6 +92,7 @@ class NoxController extends ChangeNotifier {
 
   Future<void> start() async {
     isTv = await isTvDevice();
+    initPairLinks();
     await requestHighRefreshRate();
     await refresh();
     // first start of 1.0 on a PC that had 0.8 / VPS: take its subscriptions

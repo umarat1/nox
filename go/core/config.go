@@ -34,10 +34,17 @@ type Settings struct {
 	// Android per-app split tunnelling: "" (all apps) | "include" (only SplitApps) | "exclude" (all but SplitApps)
 	SplitMode string   `json:"splitMode,omitempty"`
 	SplitApps []string `json:"splitApps,omitempty"`
+	// 1.0.10 (as 0.7.22+): installed Russian apps (engine.RuApps) bypass the VPN on Android;
+	// RuAppsOff are the ones the user switched back into the VPN.
+	RuApps    bool     `json:"ruApps"`
+	RuAppsOff []string `json:"ruAppsOff,omitempty"`
+	// Custom routing: domain suffixes always direct / always through the VPN (wins over RU rules).
+	DirectDomains []string `json:"directDomains,omitempty"`
+	ProxyDomains  []string `json:"proxyDomains,omitempty"`
 }
 
 func DefaultSettings() Settings {
-	return Settings{Mode: "tun", DNS: "cloudflare", DirectRU: true, IPv6: false, ProxyPort: 2080, PingMode: "url", MTU: 9000, Sniff: true, LogLevel: "warn"}
+	return Settings{Mode: "tun", DNS: "cloudflare", DirectRU: true, RuApps: true, IPv6: false, ProxyPort: 2080, PingMode: "url", MTU: 9000, Sniff: true, LogLevel: "warn"}
 }
 
 func dnsServer(s Settings) map[string]any {
@@ -70,9 +77,28 @@ func dnsServer(s Settings) map[string]any {
 	return map[string]any{"type": "https", "server": "1.1.1.1"}
 }
 
-var RuSuffixes = []string{"ru", "su", "xn--p1ai", "xn--d1acj3b", "xn--80asehdb", "xn--c1avg", "xn--80aswg", "moscow", "xn--80adxhks",
-	"gov.ru", "yandex.net", "yandex.com", "yastatic.net", "yandex.cloud", "ya.ru", "dzen.ru", "vk.com", "vk.me", "vk.ru", "vkuser.net", "userapi.com", "vk-cdn.net",
-	"mail.ru", "mycdn.me", "ok.ru", "max.ru", "gosuslugi.ru", "sberbank.com", "tinkoff.ru", "tbank.ru", "ozon.ru", "wildberries.ru", "wb.ru", "avito.st", "kaspersky.com", "1c.ru"}
+// RuSuffixes: Russian sites bypassing the VPN (0.7.24 RuSites list + 1.0 additions). sing-box
+// domain_suffix is label-aware ("ru" matches *.ru, not "guru"). geosite-category-ru / geoip-ru
+// rule sets (bundled) cover the rest.
+var RuSuffixes = []string{
+	// TLDs: .ru .su .рф .москва .дети .рус .сайт .орг .moscow
+	"ru", "su", "xn--p1ai", "xn--80adxhks", "xn--d1acj3b", "xn--p1acf", "xn--80asehdb", "xn--c1avg", "xn--80aswg", "moscow", "tatar",
+	// government
+	"gov.ru", "gosuslugi.ru", "esia.gosuslugi.ru", "nalog.ru", "nalog.gov.ru", "mos.ru", "kremlin.ru", "government.ru",
+	"sfr.gov.ru", "mvd.ru", "cbr.ru", "rosreestr.ru", "rosreestr.gov.ru", "gibdd.ru", "fssp.gov.ru", "fssprus.ru", "emias.info",
+	// Yandex
+	"yandex.net", "yandex.com", "yandex.by", "yandex.kz", "yandex.uz", "yandex.com.tr", "yandex.az", "yandex.com.am", "yandex.com.ge",
+	"yastatic.net", "yandex.cloud", "yandexcloud.net", "yandex-team.ru", "ya.ru", "yandex.ru", "dzen.ru", "kinopoisk.ru", "kinopoisk.tv", "kp.ru",
+	// VK / Mail.ru / OK / MAX
+	"mail.ru", "imgsmail.ru", "mycdn.me", "ok.ru", "odnoklassniki.ru", "odkl.ru", "mradx.net", "list.ru", "bk.ru", "inbox.ru",
+	"vk.com", "vk.ru", "vk.me", "vk.cc", "vk.link", "userapi.com", "vkuser.net", "vk-cdn.net", "vkuservideo.net", "vkvideo.ru", "vk-portal.net",
+	"max.ru", "oneme.ru",
+	// marketplaces / banks / services / TV
+	"ozon.ru", "ozon.com", "ozonusercontent.com", "ozone.ru", "wildberries.ru", "wb.ru", "wbbasket.ru", "wbstatic.net",
+	"sber.ru", "sberbank.ru", "sberbank.com", "sbrf.ru", "tbank.ru", "tinkoff.ru", "tcsbank.ru", "tbank-online.com",
+	"avito.ru", "avito.st", "2gis.ru", "2gis.com", "2gis.io", "rutube.ru", "rutubelist.ru", "kaspersky.com", "1c.ru",
+	"ivi.tv", "okko.tv", "wink.ru", "start.ru", "premier.one", "smotrim.ru", "kion.ru", "24h.tv", "limehd.tv", "peers.tv", "megogo.ru",
+}
 
 // BuildConfig builds a sing-box 1.14 config. proxy is the outbound/endpoint JSON (already resolved for qWDTT).
 func BuildConfig(proxy map[string]any, s Settings, clashAddr string, ruleDir string) ([]byte, error) {
@@ -133,6 +159,12 @@ func BuildConfig(proxy map[string]any, s Settings, clashAddr string, ruleDir str
 	ds["detour"] = "proxy"
 	servers := []any{ds, map[string]any{"type": "local", "tag": "local"}}
 	dnsRules := []any{}
+	if pd := cleanDomains(s.ProxyDomains); len(pd) > 0 {
+		dnsRules = append(dnsRules, map[string]any{"domain_suffix": pd, "server": "remote"})
+	}
+	if dd := cleanDomains(s.DirectDomains); len(dd) > 0 {
+		dnsRules = append(dnsRules, map[string]any{"domain_suffix": dd, "server": "local"})
+	}
 	if s.DirectRU {
 		dnsRules = append(dnsRules, map[string]any{"domain_suffix": RuSuffixes, "server": "local"})
 		if ruSets {
@@ -155,6 +187,12 @@ func BuildConfig(proxy map[string]any, s Settings, clashAddr string, ruleDir str
 	rules = append(rules, map[string]any{"process_name": procs, "outbound": "direct"})
 	if s.BlockAds {
 		rules = append(rules, map[string]any{"rule_set": "ads", "action": "reject"})
+	}
+	if pd := cleanDomains(s.ProxyDomains); len(pd) > 0 {
+		rules = append(rules, map[string]any{"domain_suffix": pd, "outbound": "proxy"})
+	}
+	if dd := cleanDomains(s.DirectDomains); len(dd) > 0 {
+		rules = append(rules, map[string]any{"domain_suffix": dd, "outbound": "direct"})
 	}
 	if s.DirectRU {
 		rules = append(rules, map[string]any{"domain_suffix": RuSuffixes, "outbound": "direct"})
@@ -219,4 +257,26 @@ func TestConfig(proxy map[string]any, port int) ([]byte, error) {
 		cfg["outbounds"] = []any{proxy}
 	}
 	return json.Marshal(cfg)
+}
+
+// cleanDomains: user lists ("https://Site.ru/path", "*.example.com", ".рф") -> suffixes.
+func cleanDomains(in []string) []string {
+	var out []string
+	seen := map[string]bool{}
+	for _, d := range in {
+		d = strings.ToLower(strings.TrimSpace(d))
+		if i := strings.Index(d, "://"); i >= 0 {
+			d = d[i+3:]
+		}
+		d = strings.Trim(strings.SplitN(d, "/", 2)[0], ". *")
+		if h, _, ok := strings.Cut(d, ":"); ok {
+			d = h
+		}
+		if d == "" || strings.ContainsAny(d, " ,;") || seen[d] {
+			continue
+		}
+		seen[d] = true
+		out = append(out, toASCII(d))
+	}
+	return out
 }

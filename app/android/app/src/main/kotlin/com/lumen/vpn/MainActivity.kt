@@ -11,6 +11,8 @@ import android.os.Build
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
+import com.google.zxing.client.android.Intents
+import com.journeyapps.barcodescanner.ScanOptions
 import java.io.File
 import java.util.concurrent.Executors
 
@@ -19,11 +21,16 @@ class MainActivity : FlutterActivity() {
     private var vpnResult: MethodChannel.Result? = null
     private var askedNotif = false
     private var captchaResult: MethodChannel.Result? = null
+    private var scanResult: MethodChannel.Result? = null
+    private var channel: MethodChannel? = null
+    private var pendingPair: String? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         Core.boot(this)
-        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "nox/core").setMethodCallHandler { call, res ->
+        val ch = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "nox/core")
+        channel = ch
+        ch.setMethodCallHandler { call, res ->
             when (call.method) {
                 "call" -> {
                     val m = call.argument<String>("m") ?: ""
@@ -48,6 +55,9 @@ class MainActivity : FlutterActivity() {
                     val t = if (f.exists()) f.readText() else null
                     runOnUiThread { res.success(t) }
                 }
+                "hasCamera" -> res.success(packageManager.hasSystemFeature(PackageManager.FEATURE_CAMERA_ANY))
+                "scanQr" -> scanQr(res)
+                "takePair" -> { res.success(pendingPair); pendingPair = null }
                 "legacyDone" -> {
                     File(filesDir, "lumen-data.json").renameTo(File(filesDir, "lumen-data.json.migrated"))
                     res.success(null)
@@ -60,6 +70,11 @@ class MainActivity : FlutterActivity() {
     override fun onCreate(savedInstanceState: android.os.Bundle?) {
         super.onCreate(savedInstanceState)
         handleShare(intent)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        NoxHost.resumePending(this) // update APK waiting for «Install unknown apps»
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -76,6 +91,11 @@ class MainActivity : FlutterActivity() {
         }?.trim()
         if (text.isNullOrEmpty()) return
         i?.action = Intent.ACTION_MAIN // not again on rotation
+        if (text.startsWith("nox://pair", ignoreCase = true)) { // TV QR scanned with the system camera
+            pendingPair = text
+            channel?.invokeMethod("pair", text)
+            return
+        }
         exec.execute { Core.call("Import", org.json.JSONArray().put(text).toString()) }
     }
 
@@ -116,6 +136,36 @@ class MainActivity : FlutterActivity() {
         } catch (_: Exception) {
             captchaResult = null
             res.success("error:webview")
+        }
+    }
+
+    // Camera permission is requested only here, right before scanning.
+    private fun scanQr(res: MethodChannel.Result) {
+        if (scanResult != null) { res.success("error:busy"); return }
+        if (!packageManager.hasSystemFeature(PackageManager.FEATURE_CAMERA_ANY)) { res.success("error:nocamera"); return }
+        scanResult = res
+        if (checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(arrayOf(Manifest.permission.CAMERA), 45)
+        } else startScan()
+    }
+
+    private fun startScan() {
+        val o = ScanOptions().setDesiredBarcodeFormats(ScanOptions.QR_CODE)
+            .setPrompt("Наведите камеру на QR-код на экране ТВ")
+            .setBeepEnabled(false).setOrientationLocked(false)
+        try {
+            @Suppress("DEPRECATION")
+            startActivityForResult(o.createScanIntent(this), 46)
+        } catch (_: Exception) {
+            scanResult?.success("error:nocamera"); scanResult = null
+        }
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == 45) {
+            if (grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) startScan()
+            else { scanResult?.success("error:denied"); scanResult = null }
         }
     }
 
@@ -182,6 +232,10 @@ class MainActivity : FlutterActivity() {
         if (requestCode == 44) {
             captchaResult?.success(data?.getStringExtra("r") ?: "error:cancelled")
             captchaResult = null
+        }
+        if (requestCode == 46) {
+            scanResult?.success(if (resultCode == RESULT_OK) data?.getStringExtra(Intents.Scan.RESULT) else null)
+            scanResult = null
         }
         if (requestCode == 42) {
             vpnResult?.success(resultCode == RESULT_OK)

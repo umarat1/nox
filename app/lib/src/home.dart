@@ -11,6 +11,7 @@ import 'live_graph.dart';
 import 'platform.dart';
 import 'regions.dart';
 import 'theme.dart';
+import 'pair.dart';
 import 'tour.dart';
 
 class Home extends StatelessWidget {
@@ -27,41 +28,44 @@ class Home extends StatelessWidget {
           data: materialTheme(p),
           child: Scaffold(
             backgroundColor: p.bg,
-            body: Stack(
-              children: [
-                SafeArea(
-                  child: LayoutBuilder(
-                    builder: (context, box) {
-                      // TV / wide window: two panes (controls left, servers right)
-                      // (fills the whole window; narrow keeps the phone column)
-                      final wide = box.maxWidth >= 840;
-                      return Center(
-                        child: ConstrainedBox(
-                          constraints: BoxConstraints(
-                            maxWidth: wide ? double.infinity : 560,
+            body: PairGlue(
+              c: c,
+              child: Stack(
+                children: [
+                  SafeArea(
+                    child: LayoutBuilder(
+                      builder: (context, box) {
+                        // TV / wide window: two panes (controls left, servers right)
+                        // (fills the whole window; narrow keeps the phone column)
+                        final wide = box.maxWidth >= 840;
+                        return Center(
+                          child: ConstrainedBox(
+                            constraints: BoxConstraints(
+                              maxWidth: wide ? double.infinity : 560,
+                            ),
+                            child: _Body(
+                              c: c,
+                              p: p,
+                              wide: wide,
+                              w: box.maxWidth,
+                              h: box.maxHeight,
+                            ),
                           ),
-                          child: _Body(
-                            c: c,
-                            p: p,
-                            wide: wide,
-                            w: box.maxWidth,
-                            h: box.maxHeight,
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-                ),
-                if (c.tourOn)
-                  Positioned.fill(
-                    child: TourOverlay(
-                      key: ValueKey('tour${c.tourRun}'),
-                      p: p,
-                      steps: tourSteps(),
-                      onDone: c.endTour,
+                        );
+                      },
                     ),
                   ),
-              ],
+                  if (c.tourOn)
+                    Positioned.fill(
+                      child: TourOverlay(
+                        key: ValueKey('tour${c.tourRun}'),
+                        p: p,
+                        steps: tourSteps(tv: c.isTv),
+                        onDone: c.endTour,
+                      ),
+                    ),
+                ],
+              ),
             ),
           ),
         );
@@ -1920,9 +1924,15 @@ void settingsSheet(BuildContext context, NoxController c, Pal p) {
       t,
       desc: d,
       trailing: sw(p, s[k] == true),
-      onTap: () {
-        c.saveSettings({k: !(s[k] == true)});
+      onTap: () async {
         Navigator.pop(ctx);
+        await c.saveSettings({k: !(s[k] == true)});
+        // routing is part of the running config: reconnect to apply now
+        const live = {'directRu', 'ruApps', 'blockAds', 'ipv6'};
+        if (live.contains(k) && c.connected) {
+          await c.call('Disconnect');
+          await c.call('Connect');
+        }
       },
     );
     return [
@@ -2006,13 +2016,45 @@ void settingsSheet(BuildContext context, NoxController c, Pal p) {
             ).push(MaterialPageRoute(builder: (_) => SplitAppsPage(c: c)));
           },
         ),
-      swItem('directRu', 'Российские сайты мимо VPN'),
+      Padding(
+        padding: const EdgeInsets.fromLTRB(4, 16, 4, 2),
+        child: Text(
+          'Маршрутизация',
+          style: TextStyle(
+            color: p.acc2,
+            fontSize: 13,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ),
+      swItem(
+        'directRu',
+        'Российские сайты напрямую',
+        '.ru .рф .su, Госуслуги, банки, Яндекс, VK, маркетплейсы и российские IP — мимо VPN',
+      ),
+      if (canSplitApps)
+        swItem(
+          'ruApps',
+          'Российские приложения напрямую',
+          'Банки, Госуслуги, Ozon, Wildberries, онлайн-кинотеатры… — мимо VPN',
+        ),
+      swItem('blockAds', 'Блокировка рекламы'),
+      item(
+        p,
+        'Свои правила',
+        desc: domainsDesc(s),
+        arrow: true,
+        onTap: () {
+          Navigator.pop(ctx);
+          domainsSheet(context, c, p);
+        },
+      ),
+      const SizedBox(height: 10),
       swItem(
         'autoSwitch',
         'Автопереключение при блокировке',
         'Каждые 20 с проверка через туннель; после 3 неудач — переход на рабочий сервер (сначала та же страна, другой протокол)',
       ),
-      swItem('blockAds', 'Блокировка рекламы'),
       swItem('autoConnect', 'Автоподключение при запуске'),
       swItem('autostart', 'Запуск вместе с системой'),
       item(
@@ -2504,6 +2546,29 @@ void addSheet(BuildContext context, NoxController c, Pal p) {
     p,
     'Добавить',
     (ctx) => [
+      for (final send in c.isTv ? [false, true] : [true, false])
+        send
+            ? item(
+                p,
+                'Передать на ТВ',
+                desc: 'Подписки и серверы на ТВ в этой же Wi‑Fi сети',
+                arrow: true,
+                onTap: () {
+                  Navigator.pop(ctx);
+                  openSend(context, c);
+                },
+              )
+            : item(
+                p,
+                'Принять с телефона',
+                desc: 'QR-код и код для передачи профилей с другого устройства',
+                arrow: true,
+                onTap: () {
+                  Navigator.pop(ctx);
+                  openReceive(context, c);
+                },
+              ),
+      const SizedBox(height: 12),
       TextField(
         controller: tc,
         maxLines: 5,
@@ -2542,6 +2607,84 @@ void addSheet(BuildContext context, NoxController c, Pal p) {
             final errs = (r['errors'] as List?)?.length ?? 0;
             toast(context, '${r['msg']}${errs > 0 ? ' · ошибок: $errs' : ''}');
           }
+        },
+      ),
+    ],
+  );
+}
+
+String domainsDesc(Map<String, dynamic> s) {
+  final d = ((s['directDomains'] as List?) ?? []).length;
+  final x = ((s['proxyDomains'] as List?) ?? []).length;
+  if (d == 0 && x == 0) return 'Свои сайты напрямую или через VPN';
+  return 'Напрямую: $d · через VPN: $x';
+}
+
+/// Custom domain lists: one per line; suffix match (site.ru also covers www.site.ru).
+void domainsSheet(BuildContext context, NoxController c, Pal p) {
+  String join(String k) =>
+      ((c.settings[k] as List?) ?? const []).map((e) => '$e').join('\n');
+  final direct = TextEditingController(text: join('directDomains'));
+  final proxy = TextEditingController(text: join('proxyDomains'));
+  List<String> lines(TextEditingController t) => t.text
+      .split(RegExp(r'[\n,; ]+'))
+      .map((e) => e.trim())
+      .where((e) => e.isNotEmpty)
+      .toList();
+  InputDecoration dec(String h) => InputDecoration(
+    hintText: h,
+    hintStyle: TextStyle(color: p.ter, fontSize: 13),
+    filled: true,
+    fillColor: p.chip,
+    border: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(12),
+      borderSide: BorderSide(color: p.line),
+    ),
+  );
+  sheet(
+    context,
+    p,
+    'Свои правила',
+    (ctx) => [
+      Text(
+        'По одному сайту в строке. Правило действует и на поддомены. «Через VPN» сильнее, чем «Российские сайты напрямую».',
+        style: TextStyle(color: p.sub, fontSize: 12),
+      ),
+      const SizedBox(height: 12),
+      Text('Напрямую (мимо VPN)', style: TextStyle(color: p.txt)),
+      const SizedBox(height: 6),
+      TextField(
+        controller: direct,
+        minLines: 2,
+        maxLines: 6,
+        style: TextStyle(color: p.txt),
+        decoration: dec('example.com\nмойсайт.рф'),
+      ),
+      const SizedBox(height: 12),
+      Text('Всегда через VPN', style: TextStyle(color: p.txt)),
+      const SizedBox(height: 6),
+      TextField(
+        controller: proxy,
+        minLines: 2,
+        maxLines: 6,
+        style: TextStyle(color: p.txt),
+        decoration: dec('kinopoisk.ru'),
+      ),
+      const SizedBox(height: 14),
+      _Btn(
+        p: p,
+        label: 'Сохранить',
+        onTap: () async {
+          Navigator.pop(ctx);
+          await c.saveSettings({
+            'directDomains': lines(direct),
+            'proxyDomains': lines(proxy),
+          });
+          if (c.connected) {
+            await c.call('Disconnect');
+            await c.call('Connect');
+          }
+          if (context.mounted) toast(context, 'Правила сохранены');
         },
       ),
     ],

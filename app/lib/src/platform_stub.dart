@@ -47,3 +47,12 @@ Future<List<AppInfo>> listApps() async => [
 
 /// Android: prefer the panel's max refresh rate (90/120 Hz). No-op elsewhere.
 Future<void> requestHighRefreshRate() async {}
+
+Future<bool> hasCamera() async => const bool.fromEnvironment('NOX_MOCK_CAMERA');
+Future<String?> scanQr() async {
+  const q = String.fromEnvironment('NOX_MOCK_QR');
+  return q.isEmpty ? null : q;
+}
+
+final pairLinks = ValueNotifier<String?>(null);
+Future<void> initPairLinks() async {}

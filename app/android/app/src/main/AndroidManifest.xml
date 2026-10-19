@@ -1,4 +1,5 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
     <!-- Nox 1.0 for Android phones and Android TV. Same package as Nox 0.7.x (com.lumen.vpn),
          installs over it; component names of the launcher activity, QS tile and boot receiver
          are kept so home-screen shortcuts, the tile and always-on VPN survive the upgrade. -->
@@ -16,6 +17,11 @@
     <!-- Android TV: no touchscreen required, leanback optional (one APK for phone and TV) -->
     <uses-feature android:name="android.software.leanback" android:required="false"/>
     <uses-feature android:name="android.hardware.touchscreen" android:required="false"/>
+    <!-- QR scan for «Передать на ТВ»: runtime permission only when scanning; TVs have no camera -->
+    <uses-permission android:name="android.permission.CAMERA"/>
+    <uses-feature android:name="android.hardware.camera" android:required="false" tools:replace="android:required"/>
+    <uses-feature android:name="android.hardware.camera.any" android:required="false"/>
+    <uses-feature android:name="android.hardware.camera.autofocus" android:required="false"/>
 
     <application
         android:name="com.lumen.vpn.NoxApp"
@@ -64,6 +70,7 @@
                 <data android:scheme="anytls"/>
                 <data android:scheme="qwdtt"/>
                 <data android:scheme="sstp"/>
+                <data android:scheme="nox"/>
             </intent-filter>
             <intent-filter>
                 <action android:name="android.intent.action.SEND"/>
@@ -71,6 +78,12 @@
                 <data android:mimeType="text/plain"/>
             </intent-filter>
         </activity>
+
+        <activity
+            android:name="com.journeyapps.barcodescanner.CaptureActivity"
+            android:screenOrientation="fullSensor"
+            android:exported="false"
+            tools:replace="android:screenOrientation"/>
 
         <service
             android:name="com.lumen.vpn.NoxVpnService"

@@ -65,6 +65,8 @@ android {
 dependencies {
     implementation(files("libs/noxcore.aar")) // Go engine + sing-box (go/mobile/build-aar.sh)
     implementation("androidx.core:core:1.17.0")
+    // QR scanner for «Передать на ТВ» (camera asked only when scanning)
+    implementation("com.journeyapps:zxing-android-embedded:4.3.0")
 }
 
 kotlin {

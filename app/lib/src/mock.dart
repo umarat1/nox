@@ -85,6 +85,10 @@ class MockApi implements NoxApi {
   ];
   final since = DateTime.now().millisecondsSinceEpoch ~/ 1000 - 754;
 
+  /// Pairing (tests set pair['result'] to simulate the phone).
+  Map<String, dynamic> pair = {};
+  List<dynamic>? pairSent;
+
   @override
   String get transport => 'демо-режим';
 
@@ -93,7 +97,7 @@ class MockApi implements NoxApi {
     switch (m) {
       case 'GetState':
         return {
-          'version': '1.0.9',
+          'version': '1.0.10',
           'core': 'sing-box 1.14.3 · Xray 26.3.27 · qWDTT 1.4.4 · SSTP',
           'status': status,
           'error': '',
@@ -160,6 +164,44 @@ class MockApi implements NoxApi {
         return '19:33:01 подключено: 🇬🇧 Лондон 1';
       case 'DeleteDead':
         return 0;
+      case 'PairStart':
+        pair = {
+          'active': true,
+          'host': '192.168.1.23',
+          'hosts': ['192.168.1.23'],
+          'port': 41234,
+          'code': '482913',
+          'token': 'q7Yd1kQ0vX3m9PZbN2s4Lg',
+          'uri': 'nox://pair?h=192.168.1.23:41234&t=q7Yd1kQ0vX3m9PZbN2s4Lg',
+          'expires': DateTime.now().millisecondsSinceEpoch ~/ 1000 + 300,
+          'result': null,
+          'error': '',
+        };
+        return pair;
+      case 'PairStatus':
+        return pair;
+      case 'PairStop':
+        pair = {...pair, 'active': false};
+      case 'PairSend':
+        pairSent = a;
+        final t = '${a[0]}';
+        if (t.contains('10.9.9.9')) {
+          throw NoxError(
+            'ТВ не отвечает (10.9.9.9:41234). Подключите оба устройства к одной Wi‑Fi сети',
+          );
+        }
+        return {
+          'subs': 2,
+          'servers': 9,
+          'dups': 0,
+          'msg': 'Получено: 2 подписки, 9 серверов',
+        };
+      case 'RuApps':
+        return [
+          {'pkg': 'ru.sberbankmobile', 'label': 'СберБанк'},
+          {'pkg': 'com.vkontakte.android', 'label': 'ВКонтакте'},
+          {'pkg': 'ru.yandex.*', 'label': 'Яндекс'},
+        ];
     }
     return null;
   }

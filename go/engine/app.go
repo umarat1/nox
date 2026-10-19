@@ -26,7 +26,7 @@ import (
 	"nox/core"
 )
 
-const Version = "1.0.9"
+const Version = "1.0.10"
 
 type Sub struct {
 	ID       string `json:"id"`
@@ -132,6 +132,13 @@ func NewApp(dataDir, binDir string) *App {
 	if a.p.SetVer < 25 { // 0.7.25: Russian sites bypass on by default (as on Android)
 		a.p.Settings.DirectRU = true
 		a.p.SetVer = 25
+		a.save()
+	}
+	if a.p.SetVer < 110 { // 1.0.10: Russian apps bypass the VPN again (0.7.x default), unless split was customised
+		st := &a.p.Settings
+		// (absent "ruApps" keeps the DefaultSettings value, so set it explicitly both ways)
+		st.RuApps = st.SplitMode == "" || (st.SplitMode == "exclude" && len(st.SplitApps) == 0)
+		a.p.SetVer = 110
 		a.save()
 	}
 	if a.p.DeviceID == "" {

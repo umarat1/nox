@@ -12,6 +12,8 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"sync"
 	"time"
 
@@ -46,7 +48,24 @@ var (
 // Init starts the engine once per process. dataDir: filesDir/nox; libDir:
 // applicationInfo.nativeLibraryDir (libqwdtt.so); ruleDir: rule sets copied from assets.
 // SetABI records the device ABI so update checks can pick url_arm64 / url_armv7.
-func SetABI(abi string) { engine.AndroidABI = abi }
+//
+// 1.0.10: the ABI of the *installed* APK is what matters (a split arm64 APK can run on an
+// x86_64 device through native-bridge translation, and Build.SUPPORTED_ABIS[0] would then pick
+// the universal APK, whose lower versionCode Android rejects as a downgrade). This library is
+// loaded from the installed APK's lib/<abi>, so its GOARCH is that ABI.
+func SetABI(abi string) {
+	switch runtime.GOARCH {
+	case "arm64":
+		abi = "arm64-v8a"
+	case "arm":
+		abi = "armeabi-v7a"
+	case "amd64":
+		abi = "x86_64"
+	case "386":
+		abi = "x86"
+	}
+	engine.AndroidABI = abi
+}
 
 func Init(dataDir, libDir, ruleDir string, h Host) error {
 	mu.Lock()
@@ -69,6 +88,7 @@ func Init(dataDir, libDir, ruleDir string, h Host) error {
 	engine.AndroidStopVpn = stopVpn
 	engine.AndroidTestCore = testCore
 	engine.AndroidInstallApk = func(p string) error { return host.InstallApk(p) }
+	engine.LanAddrs = lanAddrs
 	setResolver()
 	app = engine.NewApp(dataDir, libDir)
 	rpc = ipc.New(app)
@@ -161,4 +181,36 @@ func setResolver() {
 		}
 		return c, err
 	}}
+}
+
+// lanAddrs: IPv4 of Wi‑Fi / Ethernet interfaces (net.Interfaces is restricted on Android 11+).
+func lanAddrs() []string {
+	mu.Lock()
+	h := host
+	mu.Unlock()
+	if h == nil {
+		return nil
+	}
+	js, err := h.GetInterfaces()
+	if err != nil {
+		return nil
+	}
+	var ifs []struct {
+		Name  string   `json:"name"`
+		Type  int      `json:"type"`
+		Addrs []string `json:"addrs"`
+	}
+	json.Unmarshal([]byte(js), &ifs)
+	var wifi, other []string
+	for _, i := range ifs {
+		if i.Type == 1 || strings.HasPrefix(i.Name, "tun") || strings.HasPrefix(i.Name, "lo") {
+			continue
+		}
+		if i.Type == 0 || i.Type == 2 {
+			wifi = append(wifi, i.Addrs...)
+		} else {
+			other = append(other, i.Addrs...)
+		}
+	}
+	return append(wifi, other...)
 }

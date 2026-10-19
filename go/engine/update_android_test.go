@@ -19,7 +19,9 @@ func TestParseUpdateTopLevelAndroid(t *testing.T) {
 	u = &UpdateInfo{Version: "1.0.9", Code: 109, URL: "https://iji.by/dl/u.apk", SHA256: "aa"}
 	m2 := map[string]json.RawMessage{}
 	json.Unmarshal([]byte(`{"url_armv7":"https://iji.by/dl/v.apk","sha256_armv7":"cc"}`), &m2)
-	for k, v := range m2 { m[k] = v }
+	for k, v := range m2 {
+		m[k] = v
+	}
 	pickAndroidURL(u, m)
 	if u.URL != "https://iji.by/dl/v.apk" || u.SHA256 != "cc" {
 		t.Fatalf("armv7 %+v", u)

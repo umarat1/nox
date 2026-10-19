@@ -19,9 +19,9 @@ import (
 
 var UpdateURL = "https://canada2.iji.by/dl/version.json"
 
-// VersionCode is the pubspec build number (109 for 1.0.9). Split APKs use abi*1000+VersionCode;
+// VersionCode is the pubspec build number (110 for 1.0.10). Split APKs use abi*1000+VersionCode;
 // update checks compare VersionCode to the server's top-level versionCode (0.7.x style).
-const VersionCode = 109
+const VersionCode = 110
 
 type UpdateInfo struct {
 	Version string `json:"versionName"`

@@ -1,4 +1,7 @@
+import 'dart:io';
+
 import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 /// Prints every RenderFlex whose children exceed its main axis (for overflow failures).
@@ -21,4 +24,27 @@ void dumpOverflow(WidgetTester t) {
   }
 
   visit(t.binding.rootElement!.renderObject!);
+}
+
+Future<void> loadFonts() async {
+  final root =
+      Platform.environment['FLUTTER_ROOT'] ?? '/workspace/tools/flutter';
+  final dir = '$root/bin/cache/artifacts/material_fonts';
+  final r = FontLoader('Roboto');
+  for (final f in ['Regular', 'Medium', 'Bold']) {
+    r.addFont(
+      Future.value(
+        ByteData.view(File('$dir/Roboto-$f.ttf').readAsBytesSync().buffer),
+      ),
+    );
+  }
+  await r.load();
+  await (FontLoader('MaterialIcons')..addFont(
+        Future.value(
+          ByteData.view(
+            File('$dir/MaterialIcons-Regular.otf').readAsBytesSync().buffer,
+          ),
+        ),
+      ))
+      .load();
 }

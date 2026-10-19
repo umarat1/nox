@@ -134,7 +134,10 @@ class NoxVpnService : VpnService() {
         for (p in only) try { b.addAllowedApplication(p); allowed++ } catch (_: Exception) {}
         if (allowed == 0) {
             val skip = mutableSetOf(packageName)
-            each(o.optJSONArray("exclude")) { skip.add(it) }
+            val prefixes = mutableListOf<String>()
+            each(o.optJSONArray("exclude")) { if (it.endsWith("*")) prefixes.add(it.trimEnd('*')) else skip.add(it) }
+            if (prefixes.isNotEmpty()) skip.addAll(installedWith(prefixes)) // ru.yandex.* → installed Yandex apps
+            // not-installed packages throw NameNotFoundException and are skipped
             for (p in skip) try { b.addDisallowedApplication(p) } catch (_: Exception) {}
         }
         if (Build.VERSION.SDK_INT >= 29) {
@@ -171,5 +174,19 @@ class NoxVpnService : VpnService() {
         pfd?.close()
         pfd = null
         super.onDestroy()
+    }
+
+    /** Installed packages (phone + TV launchers) whose id starts with one of the prefixes. */
+    private fun installedWith(prefixes: List<String>): Set<String> {
+        val out = HashSet<String>()
+        for (cat in listOf(Intent.CATEGORY_LAUNCHER, Intent.CATEGORY_LEANBACK_LAUNCHER)) {
+            val q = Intent(Intent.ACTION_MAIN).addCategory(cat)
+            val l = try { packageManager.queryIntentActivities(q, 0) } catch (_: Exception) { emptyList() }
+            for (ri in l) {
+                val p = ri.activityInfo?.packageName ?: continue
+                if (p != packageName && prefixes.any { p.startsWith(it) }) out.add(p)
+            }
+        }
+        return out
     }
 }

@@ -30,11 +30,13 @@ class TourStep {
   const TourStep(this.key, this.title, this.text, {this.circle = false});
 }
 
-List<TourStep> tourSteps() => [
+List<TourStep> tourSteps({bool tv = false}) => [
   TourStep(
     TourKeys.add,
     'Добавить подписку',
-    'Вставьте ссылку на подписку или сервер.',
+    tv
+        ? 'Ссылка на подписку или приём профилей с телефона по QR-коду.'
+        : 'Ссылка на подписку или сервер. Здесь же — передача на ТВ.',
     circle: true,
   ),
   TourStep(TourKeys.theme, 'Тема', 'Тёмная, чёрная или светлая.', circle: true),
