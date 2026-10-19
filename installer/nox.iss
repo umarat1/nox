@@ -83,9 +83,13 @@ Name: "{autodesktop}\Nox"; Filename: "{app}\Nox.exe"; Tasks: desktopicon
 [Run]
 Filename: "{app}\core\noxd.exe"; Parameters: "install"; Flags: runhidden waituntilterminated; StatusMsg: "Nox service…"; AfterInstall: CheckSvc
 Filename: "{app}\core\noxd.exe"; Parameters: "start"; Flags: runhidden waituntilterminated
+; «Принять с телефона»: noxd listens on a random LAN port for a few minutes (private networks only)
+Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""Nox pairing"""; Flags: runhidden waituntilterminated
+Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall add rule name=""Nox pairing"" dir=in action=allow protocol=TCP profile=private program=""{app}\core\noxd.exe"""; Flags: runhidden waituntilterminated
 Filename: "{app}\Nox.exe"; Description: "{cm:RunNox}"; Flags: nowait postinstall skipifsilent runasoriginaluser
 
 [UninstallRun]
+Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""Nox pairing"""; Flags: runhidden waituntilterminated; RunOnceId: "NoxFw"
 Filename: "{app}\core\noxd.exe"; Parameters: "stop"; Flags: runhidden waituntilterminated; RunOnceId: "NoxStop"
 Filename: "{app}\core\noxd.exe"; Parameters: "uninstall"; Flags: runhidden waituntilterminated; RunOnceId: "NoxUninstall"
 Filename: "{sys}\taskkill.exe"; Parameters: "/F /IM Nox.exe"; Flags: runhidden waituntilterminated; RunOnceId: "NoxKillUI"

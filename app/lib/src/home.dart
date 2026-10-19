@@ -37,7 +37,9 @@ class Home extends StatelessWidget {
                       builder: (context, box) {
                         // TV / wide window: two panes (controls left, servers right)
                         // (fills the whole window; narrow keeps the phone column)
-                        final wide = box.maxWidth >= 840;
+                        // A 1080p TV is ~960 dp; with TV UI scale (≤1.3) it is ≥738,
+                        // so TVs keep the two panes from 640 dp.
+                        final wide = box.maxWidth >= (c.isTv ? 640 : 840);
                         return Center(
                           child: ConstrainedBox(
                             constraints: BoxConstraints(
@@ -1695,43 +1697,73 @@ Widget item(
   Color? color,
   bool arrow = false,
 }) {
-  return InkWell(
+  return _SheetItem(
+    p: p,
     onTap: onTap,
-    child: Container(
-      padding: const EdgeInsets.symmetric(vertical: 11, horizontal: 4),
-      decoration: BoxDecoration(
-        border: Border(bottom: BorderSide(color: p.line)),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text.rich(
-                  TextSpan(
-                    children: [
-                      if (checked)
-                        TextSpan(
-                          text: '✓ ',
-                          style: TextStyle(color: p.acc2),
-                        ),
-                      TextSpan(text: label),
-                    ],
-                  ),
-                  style: TextStyle(color: color ?? p.txt, fontSize: 14),
+    child: Row(
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text.rich(
+                TextSpan(
+                  children: [
+                    if (checked)
+                      TextSpan(
+                        text: '✓ ',
+                        style: TextStyle(color: p.acc2),
+                      ),
+                    TextSpan(text: label),
+                  ],
                 ),
-                if (desc != null && desc.isNotEmpty)
-                  Text(desc, style: TextStyle(color: p.sub, fontSize: 12)),
-              ],
-            ),
+                style: TextStyle(color: color ?? p.txt, fontSize: 14),
+              ),
+              if (desc != null && desc.isNotEmpty)
+                Text(desc, style: TextStyle(color: p.sub, fontSize: 12)),
+            ],
           ),
-          if (trailing != null) trailing,
-          if (arrow) Text('›', style: TextStyle(color: p.sub, fontSize: 18)),
-        ],
-      ),
+        ),
+        if (trailing != null) trailing,
+        if (arrow) Text('›', style: TextStyle(color: p.sub, fontSize: 18)),
+      ],
     ),
   );
+}
+
+/// Sheet row. The sheet body is an opaque container above the Material, so InkWell's
+/// own focus ink would be hidden: draw the D-pad focus (TV, keyboard) here instead.
+class _SheetItem extends StatefulWidget {
+  final Pal p;
+  final VoidCallback? onTap;
+  final Widget child;
+  const _SheetItem({required this.p, required this.onTap, required this.child});
+  @override
+  State<_SheetItem> createState() => _SheetItemState();
+}
+
+class _SheetItemState extends State<_SheetItem> {
+  bool _f = false;
+  @override
+  Widget build(BuildContext context) {
+    final p = widget.p;
+    return InkWell(
+      onTap: widget.onTap,
+      focusColor: Colors.transparent,
+      onFocusChange: (v) => setState(() => _f = v),
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 11, horizontal: 4),
+        decoration: BoxDecoration(
+          color: _f ? p.acc.withValues(alpha: .18) : null,
+          border: _f
+              ? Border.all(color: p.acc, width: 2)
+              : Border(bottom: BorderSide(color: p.line)),
+          borderRadius: _f ? BorderRadius.circular(10) : null,
+        ),
+        child: widget.child,
+      ),
+    );
+  }
 }
 
 Widget sw(Pal p, bool on) => Container(

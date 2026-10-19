@@ -158,8 +158,17 @@ func (s *Server) Call(name string, args []json.RawMessage) (res any, err error) 
 		}
 	}()
 	out := m.Call(in)
+	// a trailing error result (func() error, func() (T, error)) is the call's error
+	if n := len(out); n > 0 && t.Out(n-1) == errType {
+		if e, _ := out[n-1].Interface().(error); e != nil {
+			return nil, e
+		}
+		out = out[:n-1]
+	}
 	if len(out) == 0 {
 		return nil, nil
 	}
 	return out[0].Interface(), nil
 }
+
+var errType = reflect.TypeOf((*error)(nil)).Elem()

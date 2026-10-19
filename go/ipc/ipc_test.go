@@ -59,3 +59,24 @@ func TestRPC(t *testing.T) {
 		t.Fatal("select")
 	}
 }
+
+// Engine methods shaped (T, error) must surface the error, not an empty T as success
+// (a wrong pairing code showed «Отправлено на ТВ: 0 подписок, 0 серверов»).
+func TestCallReturnsMethodError(t *testing.T) {
+	d := t.TempDir()
+	s := New(engine.NewApp(d, d))
+	arg := func(v any) json.RawMessage { b, _ := json.Marshal(v); return b }
+	r, err := s.Call("PairSend", []json.RawMessage{arg("nox://pair?h=bad"), arg(""), arg(engine.PairOpts{})})
+	if err == nil {
+		t.Fatalf("PairSend with a bad target: want error, got result %#v", r)
+	}
+	// PairStart (T, error) still returns its value on success
+	r, err = s.Call("PairStart", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info, ok := r.(engine.PairInfo); !ok || info.Port == 0 || len(info.Code) != 6 {
+		t.Fatalf("PairStart result: %#v", r)
+	}
+	s.Call("PairStop", nil)
+}

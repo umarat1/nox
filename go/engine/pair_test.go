@@ -161,7 +161,9 @@ func TestPairUnreachable(t *testing.T) {
 }
 
 func TestLanHostsHook(t *testing.T) {
-	LanAddrs = func() []string { return []string{"172.19.0.1/30", "10.0.0.5/24", "fe80::1", "192.168.1.7/24", "100.64.0.1"} }
+	LanAddrs = func() []string {
+		return []string{"172.19.0.1/30", "10.0.0.5/24", "fe80::1", "192.168.1.7/24", "100.64.0.1"}
+	}
 	defer func() { LanAddrs = nil }()
 	h := lanHosts()
 	if len(h) != 2 || h[0] != "192.168.1.7" || h[1] != "10.0.0.5" {
