@@ -15,12 +15,29 @@ import kotlin.concurrent.thread
 /** Quick-settings tile (same component name as in Nox 0.7.x, so an added tile keeps working). */
 class VpnTileService : TileService() {
     companion object {
-        fun refresh(ctx: Context) = try {
-            requestListeningState(ctx, ComponentName(ctx, VpnTileService::class.java))
-        } catch (_: Exception) {}
+        /** The tile while the shade shows it (status pushes must repaint it directly then). */
+        @Volatile private var live: VpnTileService? = null
+
+        fun refresh(ctx: Context) {
+            val t = live
+            if (t != null) {
+                android.os.Handler(android.os.Looper.getMainLooper()).post { t.update() }
+                return
+            }
+            try {
+                requestListeningState(ctx, ComponentName(ctx, VpnTileService::class.java))
+            } catch (_: Exception) {}
+        }
     }
 
-    override fun onStartListening() = update()
+    override fun onStartListening() {
+        live = this
+        update()
+    }
+
+    override fun onStopListening() {
+        if (live === this) live = null
+    }
 
     override fun onTileAdded() = update()
 
