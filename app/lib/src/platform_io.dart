@@ -423,3 +423,12 @@ Future<void> initPairLinks() async {
     if (p != null) pairLinks.value = p;
   } catch (_) {}
 }
+
+/// Android: mirror the update progress in a notification (pct < 0 = indeterminate,
+/// state: download | verify | install | done | error | canceled | clear).
+Future<void> updNotify(String state, int pct, String text) async {
+  if (!Platform.isAndroid || _mock) return;
+  try {
+    await _ch.invokeMethod('updNotify', {'state': state, 'pct': pct, 'text': text});
+  } catch (_) {}
+}

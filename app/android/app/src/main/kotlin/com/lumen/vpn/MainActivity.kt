@@ -58,6 +58,11 @@ class MainActivity : FlutterActivity() {
                 "hasCamera" -> res.success(packageManager.hasSystemFeature(PackageManager.FEATURE_CAMERA_ANY))
                 "scanQr" -> scanQr(res)
                 "takePair" -> { res.success(pendingPair); pendingPair = null }
+                "updNotify" -> {
+                    UpdNote.show(this, call.argument<String>("state") ?: "clear",
+                        call.argument<Int>("pct") ?: -1, call.argument<String>("text") ?: "")
+                    res.success(null)
+                }
                 "legacyDone" -> {
                     File(filesDir, "lumen-data.json").renameTo(File(filesDir, "lumen-data.json.migrated"))
                     res.success(null)

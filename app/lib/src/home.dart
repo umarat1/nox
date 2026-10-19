@@ -12,6 +12,7 @@ import 'platform.dart';
 import 'regions.dart';
 import 'theme.dart';
 import 'pair.dart';
+import 'update_ui.dart';
 import 'tour.dart';
 
 class Home extends StatelessWidget {
@@ -982,11 +983,7 @@ class _UpdateBanner extends StatelessWidget {
             ),
           ),
           TextButton(
-            onPressed: () async {
-              final r = await c.call('DoUpdate');
-              if (context.mounted && r is String && r.isNotEmpty)
-                toast(context, r);
-            },
+            onPressed: () => openUpdate(context, c, p),
             child: Text(
               'Обновить',
               style: TextStyle(color: p.acc2, fontWeight: FontWeight.w700),
@@ -1830,11 +1827,9 @@ void updateSheet(BuildContext context, NoxController c, Pal p) async {
         item(
           p,
           'Обновить',
-          onTap: () async {
+          onTap: () {
             Navigator.pop(ctx);
-            final r = await c.call('DoUpdate');
-            if (context.mounted && r is String && r.isNotEmpty)
-              toast(context, r);
+            openUpdate(context, c, p);
           },
         ),
         item(

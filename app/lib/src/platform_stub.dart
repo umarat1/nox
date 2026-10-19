@@ -56,3 +56,5 @@ Future<String?> scanQr() async {
 
 final pairLinks = ValueNotifier<String?>(null);
 Future<void> initPairLinks() async {}
+
+Future<void> updNotify(String state, int pct, String text) async {}

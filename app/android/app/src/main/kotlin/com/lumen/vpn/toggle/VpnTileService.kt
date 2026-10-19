@@ -22,30 +22,55 @@ class VpnTileService : TileService() {
 
     override fun onStartListening() = update()
 
+    override fun onTileAdded() = update()
+
     override fun onClick() {
         Core.boot(this)
         if (Core.status == "connected" || Core.status == "connecting") {
+            show("disconnecting")
             thread { Core.call("Disconnect") }
             return
         }
-        if (VpnService.prepare(this) != null) { // permission dialog needs the app
-            val i = Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            if (Build.VERSION.SDK_INT >= 34) {
-                startActivityAndCollapse(PendingIntent.getActivity(this, 0, i, PendingIntent.FLAG_IMMUTABLE))
-            } else {
-                @Suppress("DEPRECATION")
-                startActivityAndCollapse(i)
-            }
+        // VPN permission not granted yet, or nothing selected: the app shows the system dialog / list
+        if (VpnService.prepare(this) != null || Core.server.isEmpty()) {
+            openApp()
             return
         }
-        thread { Core.call("Connect") }
+        show("connecting")
+        thread {
+            val r = Core.call("Connect")
+            if (r.contains("\"e\"")) android.os.Handler(mainLooper).post { openApp() }
+        }
+    }
+
+    private fun openApp() {
+        val i = Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        if (Build.VERSION.SDK_INT >= 34) {
+            startActivityAndCollapse(PendingIntent.getActivity(this, 0, i, PendingIntent.FLAG_IMMUTABLE))
+        } else {
+            @Suppress("DEPRECATION")
+            startActivityAndCollapse(i)
+        }
     }
 
     private fun update() {
+        Core.boot(this) // tile may be the first thing to start the process: status + server come within ~1 s
+        show(Core.status)
+    }
+
+    private fun show(st: String) {
         val t = qsTile ?: return
-        t.state = if (Core.status == "connected") Tile.STATE_ACTIVE else Tile.STATE_INACTIVE
+        val on = st == "connected" || st == "connecting"
+        t.state = if (on) Tile.STATE_ACTIVE else Tile.STATE_INACTIVE
         t.label = "Nox"
-        if (Build.VERSION.SDK_INT >= 29) t.subtitle = if (Core.status == "connected") Core.server else null
+        val sub = when (st) {
+            "connecting" -> "Подключение…"
+            "disconnecting" -> "Отключение…"
+            "connected" -> Core.server.ifEmpty { "Подключено" }
+            else -> Core.server.ifEmpty { "Отключено" }
+        }
+        if (Build.VERSION.SDK_INT >= 29) t.subtitle = sub
+        t.contentDescription = "Nox: " + sub
         t.updateTile()
     }
 }
