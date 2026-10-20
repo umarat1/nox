@@ -39,7 +39,7 @@ func chainable(h Server) error {
 	}
 	t, _ := m["type"].(string)
 	switch {
-	case IsXray(h.Outbound), IsFullTunnel(h.Outbound), t == "_qwdtt", h.Type == "qWDTT":
+	case IsXray(h.Outbound), IsExt(h.Outbound), IsFullTunnel(h.Outbound), t == "_qwdtt", h.Type == "qWDTT":
 		return fmt.Errorf("«%s» (%s) нельзя поставить в цепочку", h.Name, h.Type)
 	case t == BalancerType || t == ChainType || t == "wireguard" || t == "":
 		return fmt.Errorf("«%s» (%s) нельзя поставить в цепочку", h.Name, h.Type)

@@ -230,6 +230,15 @@ SystemUiOverlayStyle systemBars(Pal p) => SystemUiOverlayStyle(
 bool vol3d = true;
 bool vol3dFromUi(Map<String, String> ui) => ui['vol3d'] != '0';
 
+/// Speed graph style: '' classic, 'smooth', 'matrix' (settings.ui['graph']).
+String graphStyle = '';
+String graphFromUi(Map<String, String> ui) => ui['graph'] ?? '';
+const graphStyles = [
+  ('', 'Классический'),
+  ('smooth', 'Плавный'),
+  ('matrix', 'Матрица'),
+];
+
 /// Green → amber → red as [left] (0..1 of remaining) runs low.
 Color levelColor(Pal p, double left) => left > .5
     ? Color.lerp(p.amb, p.grn, ((left - .5) / .5).clamp(0, 1))!

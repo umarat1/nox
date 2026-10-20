@@ -26,7 +26,7 @@ import (
 	"nox/core"
 )
 
-const Version = "1.0.17"
+const Version = "1.0.18"
 
 type Sub struct {
 	ID       string `json:"id"`
@@ -79,6 +79,7 @@ type App struct {
 	box     coreProc
 	qw      *exec.Cmd
 	xr      *xrayProc // Xray-core for an XHTTP server
+	ext     *extProc  // Mieru/Juicity/Naive/TrustTunnel/Snell/ShadowQUIC local SOCKS
 	captcha *CaptchaReq
 	qwStdin io.WriteCloser
 	qwRetry int       // consecutive automatic qWDTT restarts
@@ -774,9 +775,28 @@ func (a *App) urlTest(list []core.Server, set func(string, int), pn pingNet) {
 			}
 		}
 	}
+	extPort := map[int]int{}
+	for i, s := range list {
+		if core.IsExt(s.Outbound) {
+			e, err := a.startExt(s.Outbound)
+			if err != nil {
+				a.log("пинг " + s.Type + ": " + err.Error())
+				set(s.ID, -1)
+				continue
+			}
+			defer e.Stop()
+			extPort[i] = e.port
+		}
+	}
 	for i, s := range list {
 		var ob map[string]any
-		if core.IsXray(s.Outbound) {
+		if core.IsExt(s.Outbound) {
+			p, ok := extPort[i]
+			if !ok {
+				continue
+			}
+			ob = socksOut(p)
+		} else if core.IsXray(s.Outbound) {
 			p, ok := xport[i]
 			if !ok {
 				continue
@@ -1046,11 +1066,31 @@ func (a *App) connect(ctx context.Context, srv core.Server, s core.Settings) err
 		if err != nil {
 			return err
 		}
+		if !hasIPv4() {
+			return errors.New("qWDTT: нет IPv4-интернета (сеть только IPv6/NAT64) — звонки VK через неё не работают; подключитесь к другой сети или выберите сервер VLESS/Trojan")
+		}
+		s.MTU = 1280 // VK TURN + WireGuard: avoid fragmentation
 		ep, err := a.startQwdtt(ctx, q)
+		if err != nil && !q.TurnTCP && ctx.Err() == nil && !strings.Contains(err.Error(), "парол") {
+			a.log("qWDTT: по UDP не вышло (" + err.Error() + "), пробую TURN по TCP")
+			a.stopQwdttProc()
+			q.TurnTCP = true
+			ep, err = a.startQwdtt(ctx, q)
+		}
 		if err != nil {
 			return err
 		}
 		proxy = ep
+	} else if core.IsExt(srv.Outbound) {
+		e, err := a.startExt(srv.Outbound)
+		if err != nil {
+			return err
+		}
+		a.mu.Lock()
+		a.ext = e
+		a.mu.Unlock()
+		a.log(srv.Type + ": через локальный SOCKS5")
+		proxy = socksOut(e.port)
 	} else if core.IsXray(srv.Outbound) {
 		x, err := a.startXray("main", []json.RawMessage{srv.Outbound}, pingNet{})
 		if err != nil {
@@ -1129,7 +1169,7 @@ func (a *App) connect(ctx context.Context, srv core.Server, s core.Settings) err
 		}
 		time.Sleep(150 * time.Millisecond)
 	}
-	if s.Mode == "proxy" && !a.Service {
+	if s.Mode == "proxy" && !a.Service && !s.NoSysProxy {
 		port := s.ProxyPort
 		if port == 0 {
 			port = 2080
@@ -1356,11 +1396,14 @@ func (a *App) stopAll() {
 		a.proxySet = false
 		setSystemProxy(false, 0)
 	}
-	box, qw, qin, xr := a.box, a.qw, a.qwStdin, a.xr
-	a.box, a.qw, a.qwStdin, a.xr, a.captcha = nil, nil, nil, nil, nil
+	box, qw, qin, xr, ext := a.box, a.qw, a.qwStdin, a.xr, a.ext
+	a.box, a.qw, a.qwStdin, a.xr, a.captcha, a.ext = nil, nil, nil, nil, nil, nil
 	a.mu.Unlock()
 	if xr != nil {
 		defer xr.Stop()
+	}
+	if ext != nil {
+		defer ext.Stop()
 	}
 	a.stopFullTunnel()
 	if box != nil {
@@ -1431,4 +1474,69 @@ func (a *App) CreateChain(name string, ids []string) string {
 	a.p.Selected = c.ID
 	a.save()
 	return ""
+}
+
+// AddManual saves one server entered by hand («Добавить вручную»): a share link built by the form.
+// Unlike Import it accepts http(s):// proxies without credentials. Returns "" or an error text.
+func (a *App) AddManual(link string) string {
+	s, err := core.ParseLink(strings.TrimSpace(link))
+	if err != nil {
+		return err.Error()
+	}
+	s.ID = newID()
+	a.mu.Lock()
+	a.p.Servers = append([]core.Server{s}, a.p.Servers...)
+	a.p.Selected = s.ID
+	a.save()
+	a.mu.Unlock()
+	return ""
+}
+
+// hasIPv4: some IPv4 route to the Internet exists (no packets are sent).
+func hasIPv4() bool {
+	c, err := net.Dial("udp4", "77.88.8.8:53")
+	if err != nil {
+		return false
+	}
+	c.Close()
+	return true
+}
+
+// stopQwdttProc kills a qwdtt left from a failed attempt before retrying.
+func (a *App) stopQwdttProc() {
+	a.mu.Lock()
+	qw, qin := a.qw, a.qwStdin
+	a.qw, a.qwStdin, a.captcha = nil, nil, nil
+	a.mu.Unlock()
+	if qin != nil {
+		qin.Close()
+	}
+	if qw != nil && qw.Process != nil {
+		qw.Process.Kill()
+	}
+}
+
+// SetQwdttTCP: per-server «TURN по TCP» toggle for a qWDTT server.
+func (a *App) SetQwdttTCP(id string, on bool) string {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	for i, s := range a.p.Servers {
+		if s.ID != id || s.Type != "qWDTT" {
+			continue
+		}
+		var m map[string]any
+		if err := json.Unmarshal(s.Outbound, &m); err != nil {
+			return err.Error()
+		}
+		if on {
+			m["turn_tcp"] = true
+		} else {
+			delete(m, "turn_tcp")
+		}
+		b, _ := json.Marshal(m)
+		a.p.Servers[i].Outbound = b
+		a.save()
+		return ""
+	}
+	return "Сервер не найден"
 }

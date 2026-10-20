@@ -186,12 +186,15 @@ class NoxController extends ChangeNotifier {
         current == null ? '' : dispName(current!['name'] ?? ''),
       );
     }
-    final wantProxy = connected && settings['mode'] == 'proxy';
+    final wantProxy =
+        connected &&
+        settings['mode'] == 'proxy' &&
+        settings['noSysProxy'] != true;
     if (wantProxy != _proxyApplied) {
       _proxyApplied = wantProxy;
       await applySystemProxy(
         wantProxy,
-        (settings['proxyPort'] as int?) ?? 2080,
+        (settings['proxyPort'] as int?) ?? 10808,
       );
     }
   }

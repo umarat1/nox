@@ -12,21 +12,22 @@ import (
 func fileExists(p string) bool { _, err := os.Stat(p); return err == nil }
 
 type Settings struct {
-	Mode      string `json:"mode"` // "tun" | "proxy"
-	DNS       string `json:"dns"`  // auto|cloudflare|google|quad9|adguard|yandex|dnsai|comss|xbox|controld|mullvad|nextdns|custom
-	CustomDNS string `json:"customDns"`
-	DirectRU  bool   `json:"directRu"`
-	BlockAds  bool   `json:"blockAds"`
-	IPv6      bool   `json:"ipv6"`
-	ProxyPort int    `json:"proxyPort"`
-	AllowLAN  bool   `json:"allowLan"`
-	AutoConn  bool   `json:"autoConnect"`
-	Autostart bool   `json:"autostart"`
-	PingMode  string `json:"pingMode"` // url|tcp
-	MTU       int    `json:"mtu"`
-	Sniff     bool   `json:"sniff"`
-	LogLevel  string `json:"logLevel"`
-	Theme     string `json:"theme"` // black|dark|light (as on Android)
+	Mode       string `json:"mode"` // "tun" | "proxy"
+	DNS        string `json:"dns"`  // auto|cloudflare|google|quad9|adguard|yandex|dnsai|comss|xbox|controld|mullvad|nextdns|custom
+	CustomDNS  string `json:"customDns"`
+	DirectRU   bool   `json:"directRu"`
+	BlockAds   bool   `json:"blockAds"`
+	IPv6       bool   `json:"ipv6"`
+	ProxyPort  int    `json:"proxyPort"`
+	AllowLAN   bool   `json:"allowLan"`
+	NoSysProxy bool   `json:"noSysProxy"` // proxy mode: do not set the Windows system proxy
+	AutoConn   bool   `json:"autoConnect"`
+	Autostart  bool   `json:"autostart"`
+	PingMode   string `json:"pingMode"` // url|tcp
+	MTU        int    `json:"mtu"`
+	Sniff      bool   `json:"sniff"`
+	LogLevel   string `json:"logLevel"`
+	Theme      string `json:"theme"` // black|dark|light (as on Android)
 	// 0.8.1
 	AutoSwitch bool   `json:"autoSwitch"` // switch server when the current one stops passing traffic
 	PingURL    string `json:"pingUrl"`    // check point for «через прокси» ping ("" = gstatic)
@@ -45,7 +46,7 @@ type Settings struct {
 }
 
 func DefaultSettings() Settings {
-	return Settings{Mode: "tun", DNS: "auto", DirectRU: true, RuApps: true, IPv6: false, ProxyPort: 2080, PingMode: "url", MTU: 9000, Sniff: true, LogLevel: "warn"}
+	return Settings{Mode: "tun", DNS: "auto", DirectRU: true, RuApps: true, IPv6: false, ProxyPort: 10808, PingMode: "url", MTU: 9000, Sniff: true, LogLevel: "warn"}
 }
 
 func dnsServer(s Settings) map[string]any {

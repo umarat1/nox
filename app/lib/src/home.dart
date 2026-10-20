@@ -1,3 +1,5 @@
+import 'dart:convert';
+import 'dart:ui' as ui;
 import 'split_apps.dart';
 
 import 'dart:math' as math;
@@ -28,6 +30,7 @@ class Home extends StatelessWidget {
       builder: (context, _) {
         final p = Pal.of(c.settings['theme'] as String?);
         vol3d = vol3dFromUi(c.ui);
+        graphStyle = graphFromUi(c.ui);
         return Theme(
           data: materialTheme(p),
           child: Scaffold(
@@ -1229,6 +1232,12 @@ class _SubBlock extends StatelessWidget {
     final tFrac = total > 0 ? (1 - used / total).clamp(0.0, 1.0) : 1.0;
     // days ring: 30-day scale (typical period)
     final dFrac = left == null ? 1.0 : (left / 30).clamp(0.0, 1.0);
+    final dt = expire > 0
+        ? DateTime.fromMillisecondsSinceEpoch(expire * 1000)
+        : null;
+    final dateTxt = dt == null
+        ? 'без срока'
+        : 'до ${dt.day.toString().padLeft(2, '0')}.${dt.month.toString().padLeft(2, '0')}.${dt.year}';
     return Container(
       margin: const EdgeInsets.only(top: 8),
       padding: const EdgeInsets.fromLTRB(12, 10, 6, 8),
@@ -1284,8 +1293,9 @@ class _SubBlock extends StatelessWidget {
                   p: p,
                   frac: dFrac,
                   icon: Icons.event_rounded,
+                  label: '',
                   value: expireTxt,
-                  sub: '',
+                  sub: dateTxt,
                 ),
               ),
               const SizedBox(width: 8),
@@ -1294,8 +1304,11 @@ class _SubBlock extends StatelessWidget {
                   p: p,
                   frac: tFrac,
                   icon: Icons.data_usage_rounded,
+                  label: '',
                   value: trafficTxt,
-                  sub: total > 0 ? '/ ${fmtBytes(total)}' : '',
+                  sub: total > 0
+                      ? 'из ${fmtBytes(total)}'
+                      : 'израсходовано ${fmtBytes(used)}',
                 ),
               ),
               const SizedBox(width: 6),
@@ -1325,67 +1338,84 @@ class _Meter extends StatelessWidget {
   final Pal p;
   final double frac;
   final IconData icon;
-  final String value, sub;
+  final String label, value, sub;
   const _Meter({
     required this.p,
     required this.frac,
     required this.icon,
+    required this.label,
     required this.value,
     required this.sub,
   });
   @override
   Widget build(BuildContext context) {
     final col = levelColor(p, frac);
-    // label-free: icon · bar · number
-    return Row(
-      children: [
-        Icon(icon, size: 16, color: col),
-        const SizedBox(width: 6),
-        Expanded(
-          child: Container(
-            height: 8,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(8),
-              boxShadow: vol3d
-                  ? [
-                      BoxShadow(
-                        color: col.withValues(alpha: .25),
-                        blurRadius: 8,
-                      ),
-                    ]
-                  : const [],
-            ),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: LinearProgressIndicator(
-                value: frac.clamp(0.0, 1.0),
-                minHeight: 8,
-                backgroundColor: p.line,
-                color: col,
-              ),
-            ),
-          ),
-        ),
-        const SizedBox(width: 6),
-        Flexible(
-          flex: 0,
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 96),
-            child: FittedBox(
-              fit: BoxFit.scaleDown,
-              child: Text(
-                sub.isEmpty ? value : '$value $sub',
-                maxLines: 1,
-                style: TextStyle(
-                  color: frac < .15 ? col : p.txt,
-                  fontWeight: FontWeight.w700,
-                  fontSize: 12,
+    return Container(
+      padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        color: p.amoled ? const Color(0xFF000000) : p.chip,
+        gradient: vol3d && !p.amoled ? raisedGradient(p, p.chip) : null,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: vol3d ? col.withValues(alpha: .35) : p.line),
+        boxShadow: vol3d
+            ? [BoxShadow(color: col.withValues(alpha: .18), blurRadius: 14)]
+            : const [],
+      ),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 40,
+            height: 40,
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                CircularProgressIndicator(
+                  value: frac,
+                  strokeWidth: 4,
+                  strokeCap: StrokeCap.round,
+                  backgroundColor: p.line,
+                  color: col,
                 ),
-              ),
+                Icon(icon, size: 17, color: col),
+              ],
             ),
           ),
-        ),
-      ],
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (label.isNotEmpty)
+                  Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(color: p.sub, fontSize: 10.5),
+                  ),
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    value,
+                    maxLines: 1,
+                    style: TextStyle(
+                      color: frac < .15 ? col : p.txt,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 15,
+                    ),
+                  ),
+                ),
+                Text(
+                  sub,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(color: p.ter, fontSize: 10),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -1402,104 +1432,307 @@ class _Announce extends StatefulWidget {
 
 class _AnnounceState extends State<_Announce> {
   bool open = false;
+
+  /// Light markup: **bold**, lines starting with •/-/* become bullets, URLs accent-coloured.
+  List<InlineSpan> _rich(Pal p, String t) {
+    final out = <InlineSpan>[];
+    final re = RegExp(r'\*\*(.+?)\*\*|(https?://\S+)');
+    final lines = t.split('\n');
+    for (var li = 0; li < lines.length; li++) {
+      var line = lines[li];
+      final m = RegExp(r'^\s*[•\-*]\s+').firstMatch(line);
+      if (m != null) {
+        out.add(
+          TextSpan(
+            text: '•  ',
+            style: TextStyle(color: p.acc2, fontWeight: FontWeight.w800),
+          ),
+        );
+        line = line.substring(m.end);
+      }
+      var i = 0;
+      for (final x in re.allMatches(line)) {
+        if (x.start > i) out.add(TextSpan(text: line.substring(i, x.start)));
+        if (x.group(1) != null) {
+          out.add(
+            TextSpan(
+              text: x.group(1),
+              style: const TextStyle(fontWeight: FontWeight.w800),
+            ),
+          );
+        } else {
+          out.add(
+            TextSpan(
+              text: x.group(2),
+              style: TextStyle(
+                color: p.acc2,
+                decoration: TextDecoration.underline,
+                decorationColor: p.acc2,
+              ),
+            ),
+          );
+        }
+        i = x.end;
+      }
+      if (i < line.length) out.add(TextSpan(text: line.substring(i)));
+      if (li < lines.length - 1) out.add(const TextSpan(text: '\n'));
+    }
+    return out;
+  }
+
   @override
   Widget build(BuildContext context) {
     final p = widget.p;
     final key = '${widget.text.hashCode}';
     if (widget.c.ui['annHide'] == key) return const SizedBox.shrink();
     final long = widget.text.length > 90 || widget.text.contains('\n');
-    return Container(
-      width: double.infinity,
-      margin: const EdgeInsets.only(top: 8, right: 6),
-      decoration: BoxDecoration(
-        color: p.amoled
-            ? const Color(0xFF000000)
-            : p.acc.withValues(alpha: .10),
-        gradient: vol3d
-            ? LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  p.acc.withValues(alpha: p.amoled ? .22 : .26),
-                  p.acc2.withValues(alpha: p.amoled ? .04 : .08),
-                ],
-              )
-            : null,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: p.acc.withValues(alpha: vol3d ? .45 : .3)),
-        boxShadow: vol3d
-            ? [BoxShadow(color: p.acc.withValues(alpha: .22), blurRadius: 16)]
-            : const [],
-      ),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(14),
-        onTap: long ? () => setState(() => open = !open) : null,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(10, 8, 4, 8),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Container(
-                width: 30,
-                height: 30,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: p.acc.withValues(alpha: .2),
-                  gradient: vol3d ? accentGradient(p) : null,
-                ),
-                child: Icon(
-                  Icons.campaign_rounded,
-                  size: 17,
-                  color: vol3d ? Colors.white : p.acc2,
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Объявление',
-                      style: TextStyle(
-                        color: p.acc2,
-                        fontWeight: FontWeight.w700,
-                        fontSize: 11.5,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    AnimatedSize(
-                      duration: const Duration(milliseconds: 200),
-                      alignment: Alignment.topCenter,
-                      child: Text(
-                        widget.text,
-                        maxLines: open ? null : 2,
-                        overflow: open
-                            ? TextOverflow.visible
-                            : TextOverflow.ellipsis,
-                        style: TextStyle(color: p.txt, fontSize: 12.5),
-                      ),
-                    ),
-                    if (long)
-                      Text(
-                        open ? 'Свернуть' : 'Читать полностью',
-                        style: TextStyle(
-                          color: p.sub,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
+    final r = BorderRadius.circular(18);
+    final glass = Stack(
+      children: [
+        // soft glow blobs behind the glass
+        if (vol3d)
+          Positioned(
+            right: -30,
+            top: -40,
+            child: Container(
+              width: 140,
+              height: 140,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: RadialGradient(
+                  colors: [
+                    p.acc2.withValues(alpha: .35),
+                    p.acc2.withValues(alpha: 0),
                   ],
                 ),
               ),
-              IconButton(
-                tooltip: 'Скрыть',
-                visualDensity: VisualDensity.compact,
-                icon: Icon(Icons.close_rounded, size: 18, color: p.sub),
-                onPressed: () => widget.c.setPref('annHide', key),
+            ),
+          ),
+        if (vol3d)
+          Positioned(
+            left: -40,
+            bottom: -50,
+            child: Container(
+              width: 150,
+              height: 150,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: RadialGradient(
+                  colors: [
+                    p.acc.withValues(alpha: .30),
+                    p.acc.withValues(alpha: 0),
+                  ],
+                ),
               ),
-            ],
+            ),
+          ),
+        BackdropFilter(
+          filter: ui.ImageFilter.blur(sigmaX: 14, sigmaY: 14),
+          child: Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: vol3d
+                    ? [
+                        Colors.white.withValues(alpha: p.light ? .55 : .09),
+                        p.acc.withValues(alpha: p.amoled ? .14 : .18),
+                        p.acc2.withValues(alpha: p.amoled ? .06 : .10),
+                      ]
+                    : [
+                        p.acc.withValues(alpha: .10),
+                        p.acc.withValues(alpha: .10),
+                      ],
+              ),
+            ),
+            child: InkWell(
+              onTap: long ? () => setState(() => open = !open) : null,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(12, 12, 8, 12),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // glowing orb icon
+                    Container(
+                      width: 38,
+                      height: 38,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        gradient: RadialGradient(
+                          center: const Alignment(-.35, -.4),
+                          colors: [
+                            Color.lerp(p.acc2, Colors.white, .35)!,
+                            p.acc,
+                          ],
+                        ),
+                        border: Border.all(
+                          color: Colors.white.withValues(alpha: .25),
+                        ),
+                        boxShadow: vol3d
+                            ? [
+                                BoxShadow(
+                                  color: p.acc.withValues(alpha: .55),
+                                  blurRadius: 16,
+                                ),
+                              ]
+                            : const [],
+                      ),
+                      child: const Icon(
+                        Icons.campaign_rounded,
+                        size: 20,
+                        color: Colors.white,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              ShaderMask(
+                                shaderCallback: (b) => LinearGradient(
+                                  colors: [p.txt, p.acc2],
+                                ).createShader(b),
+                                child: const Text(
+                                  'Объявление',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w800,
+                                    fontSize: 13.5,
+                                    letterSpacing: .2,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 7,
+                                  vertical: 2,
+                                ),
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(20),
+                                  color: p.acc.withValues(alpha: .22),
+                                  border: Border.all(
+                                    color: p.acc2.withValues(alpha: .4),
+                                  ),
+                                ),
+                                child: Text(
+                                  'новое',
+                                  style: TextStyle(
+                                    color: p.acc2,
+                                    fontSize: 9.5,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 5),
+                          AnimatedSize(
+                            duration: const Duration(milliseconds: 220),
+                            curve: Curves.easeOutCubic,
+                            alignment: Alignment.topCenter,
+                            child: Text.rich(
+                              TextSpan(children: _rich(p, widget.text)),
+                              maxLines: open ? null : 3,
+                              overflow: open
+                                  ? TextOverflow.visible
+                                  : TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: p.txt.withValues(alpha: .92),
+                                fontSize: 13,
+                                height: 1.35,
+                              ),
+                            ),
+                          ),
+                          if (long)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 6),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    open ? 'Свернуть' : 'Читать полностью',
+                                    style: TextStyle(
+                                      color: p.acc2,
+                                      fontSize: 11.5,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                  Icon(
+                                    open
+                                        ? Icons.expand_less_rounded
+                                        : Icons.expand_more_rounded,
+                                    size: 16,
+                                    color: p.acc2,
+                                  ),
+                                ],
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    Tooltip(
+                      message: 'Скрыть',
+                      child: InkWell(
+                        customBorder: const CircleBorder(),
+                        onTap: () => widget.c.setPref('annHide', key),
+                        child: Container(
+                          width: 26,
+                          height: 26,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: Colors.white.withValues(
+                              alpha: p.light ? .5 : .07,
+                            ),
+                            border: Border.all(
+                              color: Colors.white.withValues(alpha: .14),
+                            ),
+                          ),
+                          child: Icon(
+                            Icons.close_rounded,
+                            size: 15,
+                            color: p.sub,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           ),
         ),
+      ],
+    );
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(top: 10, right: 6),
+      decoration: BoxDecoration(
+        borderRadius: r,
+        border: Border.all(
+          color: Colors.white.withValues(alpha: vol3d ? .16 : .08),
+        ),
+        boxShadow: vol3d
+            ? [
+                BoxShadow(
+                  color: p.acc.withValues(alpha: .28),
+                  blurRadius: 22,
+                  offset: const Offset(0, 6),
+                ),
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: .45),
+                  blurRadius: 8,
+                  offset: const Offset(0, 3),
+                ),
+              ]
+            : const [],
+      ),
+      child: ClipRRect(
+        borderRadius: r,
+        child: Material(type: MaterialType.transparency, child: glass),
       ),
     );
   }
@@ -2452,12 +2685,19 @@ void settingsSheet(BuildContext context, NoxController c, Pal p) {
       p,
       t,
       desc: d,
-      trailing: sw(p, s[k] == true),
+      trailing: sw(
+        p,
+        k == 'noSysProxyOn' ? s['noSysProxy'] != true : s[k] == true,
+      ),
       onTap: () async {
         Navigator.pop(ctx);
+        if (k == 'noSysProxyOn') {
+          await c.saveSettings({'noSysProxy': !(s['noSysProxy'] == true)});
+          return;
+        }
         await c.saveSettings({k: !(s[k] == true)});
         // routing is part of the running config: reconnect to apply now
-        const live = {'directRu', 'ruApps', 'blockAds', 'ipv6'};
+        const live = {'directRu', 'ruApps', 'blockAds', 'ipv6', 'allowLan'};
         if (live.contains(k) && c.connected) {
           await c.call('Disconnect');
           await c.call('Connect');
@@ -2468,13 +2708,76 @@ void settingsSheet(BuildContext context, NoxController c, Pal p) {
       item(
         p,
         'Режим',
-        desc: s['mode'] == 'proxy' ? 'Системный прокси' : 'TUN (весь трафик)',
+        desc: s['mode'] == 'proxy'
+            ? 'Прокси-сервер'
+            : 'VPN (TUN) — весь трафик',
         arrow: true,
         onTap: () {
-          c.saveSettings({'mode': s['mode'] == 'proxy' ? 'tun' : 'proxy'});
           Navigator.pop(ctx);
+          sheet(
+            context,
+            p,
+            'Режим',
+            (c2) => [
+              for (final (k, n, d) in [
+                ('tun', 'VPN (TUN)', 'Весь трафик компьютера идёт через VPN'),
+                (
+                  'proxy',
+                  'Прокси-сервер',
+                  'HTTP и SOCKS5 на 127.0.0.1, без виртуального адаптера',
+                ),
+              ])
+                item(
+                  p,
+                  n,
+                  desc: d,
+                  checked: (s['mode'] ?? 'tun') == k,
+                  onTap: () async {
+                    Navigator.pop(c2);
+                    await c.saveSettings({'mode': k});
+                    if (c.connected) {
+                      await c.call('Disconnect');
+                      await c.call('Connect');
+                    }
+                  },
+                ),
+            ],
+          );
         },
       ),
+      if (s['mode'] == 'proxy') ...[
+        item(
+          p,
+          'Порт прокси',
+          desc: '127.0.0.1:${s['proxyPort'] ?? 10808} · HTTP и SOCKS5',
+          arrow: true,
+          onTap: () async {
+            Navigator.pop(ctx);
+            final v = await portDialog(
+              context,
+              p,
+              (s['proxyPort'] as int?) ?? 10808,
+            );
+            if (v != null) {
+              await c.saveSettings({'proxyPort': v});
+              if (c.connected) {
+                await c.call('Disconnect');
+                await c.call('Connect');
+              }
+            }
+          },
+        ),
+        swItem(
+          'noSysProxyOn',
+          'Системный прокси',
+          'Включать прокси Windows при подключении',
+        ),
+        swItem(
+          'allowLan',
+          'Разрешить из локальной сети',
+          'Прокси доступен другим устройствам в вашей сети',
+        ),
+      ],
       item(
         p,
         'Тема',
@@ -2509,6 +2812,42 @@ void settingsSheet(BuildContext context, NoxController c, Pal p) {
         onTap: () {
           Navigator.pop(ctx);
           c.setPref('vol3d', vol3dFromUi(c.ui) ? '0' : '1');
+        },
+      ),
+      item(
+        p,
+        'Вид графика',
+        desc: graphStyles
+            .firstWhere(
+              (x) => x.$1 == graphFromUi(c.ui),
+              orElse: () => graphStyles.first,
+            )
+            .$2,
+        arrow: true,
+        onTap: () {
+          Navigator.pop(ctx);
+          sheet(
+            context,
+            p,
+            'Вид графика',
+            (c2) => [
+              for (final (k, n) in graphStyles)
+                item(
+                  p,
+                  n,
+                  desc: k == ''
+                      ? 'Линии скорости как раньше'
+                      : k == 'smooth'
+                      ? 'Сглаженные кривые, градиентная заливка и свечение'
+                      : 'Зелёный цифровой дождь и светящаяся линия',
+                  checked: graphFromUi(c.ui) == k,
+                  onTap: () {
+                    Navigator.pop(c2);
+                    c.setPref('graph', k);
+                  },
+                ),
+            ],
+          );
         },
       ),
       item(
@@ -3067,6 +3406,21 @@ void serverSheet(BuildContext context, NoxController c, Pal p, J s) {
           if (context.mounted) toast(context, 'Скопировано');
         },
       ),
+      if (s['type'] == 'qWDTT')
+        item(
+          p,
+          'TURN по TCP',
+          desc: 'Если по UDP не подключается (Nox и так пробует TCP сам)',
+          trailing: sw(p, (s['outbound'] as Map?)?['turn_tcp'] == true),
+          onTap: () async {
+            Navigator.pop(ctx);
+            await c.call('SetQwdttTCP', [
+              s['id'],
+              (s['outbound'] as Map?)?['turn_tcp'] != true,
+            ]);
+            c.refresh();
+          },
+        ),
       item(
         p,
         'Удалить',
@@ -3334,7 +3688,7 @@ void chainSheet(BuildContext context, NoxController c, Pal p) {
             Text(
               'Выберите 2–3 сервера по порядку: первый — вход, последний — выход в интернет. '
               'Подходят VLESS, Trojan, VMess, Shadowsocks, SOCKS, HTTP, AnyTLS, TUIC, Hysteria2. '
-              'qWDTT, XHTTP и WireGuard в цепочку не ставятся.',
+              'qWDTT, XHTTP, WireGuard, Naive, Mieru, Juicity, TrustTunnel, Snell и ShadowQUIC в прокси-цепь не ставятся.',
               style: TextStyle(color: p.sub, fontSize: 13),
             ),
             const SizedBox(height: 10),
@@ -3385,7 +3739,7 @@ void chainSheet(BuildContext context, NoxController c, Pal p) {
               p: p,
               label: picked.length < 2
                   ? 'Выберите ещё ${2 - picked.length}'
-                  : 'Сохранить цепочку',
+                  : 'Сохранить прокси-цепь',
               onTap: () async {
                 if (picked.length < 2) return;
                 final r = await c.call('CreateChain', [nc.text.trim(), picked]);
@@ -3396,12 +3750,500 @@ void chainSheet(BuildContext context, NoxController c, Pal p) {
                   return;
                 }
                 Navigator.pop(ctx);
-                if (context.mounted) toast(context, 'Цепочка сохранена');
+                if (context.mounted) toast(context, 'Прокси-цепь сохранена');
               },
             ),
           ],
         ),
       ),
     ],
+  );
+}
+
+/// One form field of «Добавить вручную».
+class _MF {
+  final String k, label;
+  final String def;
+  final List<String>? opts; // dropdown
+  final bool flag; // switch
+  const _MF(this.k, this.label, {this.def = '', this.opts, this.flag = false});
+}
+
+const _mfHost = _MF('host', 'Адрес (IP или домен)');
+const _mfPort = _MF('port', 'Порт', def: '443');
+const _mfName = _MF('name', 'Название');
+const _mfSni = _MF('sni', 'SNI (необязательно)');
+const _mfIns = _MF('insecure', 'Не проверять сертификат', flag: true);
+
+Iterable<String> get manualProtocols => _manualProtos.keys;
+
+final Map<String, List<_MF>> _manualProtos = {
+  'HTTP': [
+    _mfName,
+    _mfHost,
+    const _MF('port', 'Порт', def: '8080'),
+    const _MF('user', 'Логин'),
+    const _MF('pass', 'Пароль'),
+    const _MF('tls', 'TLS (HTTPS)', flag: true),
+    _mfSni,
+  ],
+  'SOCKS5': [
+    _mfName,
+    _mfHost,
+    const _MF('port', 'Порт', def: '1080'),
+    const _MF('user', 'Логин'),
+    const _MF('pass', 'Пароль'),
+  ],
+  'Shadowsocks': [
+    _mfName,
+    _mfHost,
+    const _MF('port', 'Порт', def: '8388'),
+    const _MF(
+      'method',
+      'Шифрование',
+      def: '2022-blake3-aes-128-gcm',
+      opts: [
+        '2022-blake3-aes-128-gcm',
+        '2022-blake3-aes-256-gcm',
+        '2022-blake3-chacha20-poly1305',
+        'aes-128-gcm',
+        'aes-256-gcm',
+        'chacha20-ietf-poly1305',
+      ],
+    ),
+    const _MF('pass', 'Пароль'),
+  ],
+  'VLESS': [
+    _mfName,
+    _mfHost,
+    _mfPort,
+    const _MF('uuid', 'UUID'),
+    const _MF(
+      'security',
+      'Защита',
+      def: 'tls',
+      opts: ['tls', 'reality', 'none'],
+    ),
+    _mfSni,
+    const _MF('pbk', 'Публичный ключ Reality'),
+    const _MF('sid', 'Short ID Reality'),
+    const _MF('flow', 'Flow', def: '', opts: ['', 'xtls-rprx-vision']),
+    const _MF(
+      'type',
+      'Транспорт',
+      def: 'tcp',
+      opts: ['tcp', 'ws', 'grpc', 'httpupgrade', 'xhttp'],
+    ),
+    const _MF('path', 'Путь / serviceName'),
+    const _MF(
+      'fp',
+      'Отпечаток TLS',
+      def: 'chrome',
+      opts: ['chrome', 'firefox', 'safari', 'edge', 'random', 'none'],
+    ),
+  ],
+  'VMess': [
+    _mfName,
+    _mfHost,
+    _mfPort,
+    const _MF('uuid', 'UUID'),
+    const _MF('tls', 'TLS', flag: true),
+    _mfSni,
+    const _MF(
+      'type',
+      'Транспорт',
+      def: 'tcp',
+      opts: ['tcp', 'ws', 'grpc', 'httpupgrade'],
+    ),
+    const _MF('path', 'Путь / serviceName'),
+  ],
+  'Trojan': [
+    _mfName,
+    _mfHost,
+    _mfPort,
+    const _MF('pass', 'Пароль'),
+    _mfSni,
+    const _MF('type', 'Транспорт', def: 'tcp', opts: ['tcp', 'ws', 'grpc']),
+    const _MF('path', 'Путь / serviceName'),
+    _mfIns,
+  ],
+  'AnyTLS': [
+    _mfName,
+    _mfHost,
+    _mfPort,
+    const _MF('pass', 'Пароль'),
+    _mfSni,
+    _mfIns,
+  ],
+  'TUIC': [
+    _mfName,
+    _mfHost,
+    _mfPort,
+    const _MF('uuid', 'UUID'),
+    const _MF('pass', 'Пароль'),
+    _mfSni,
+    const _MF(
+      'cc',
+      'Управление перегрузкой',
+      def: 'bbr',
+      opts: ['bbr', 'cubic', 'new_reno'],
+    ),
+    _mfIns,
+  ],
+  'Hysteria2': [
+    _mfName,
+    _mfHost,
+    _mfPort,
+    const _MF('pass', 'Пароль'),
+    _mfSni,
+    const _MF('obfs', 'Обфускация salamander (пароль)'),
+    _mfIns,
+  ],
+  'WireGuard': [
+    _mfName,
+    _mfHost,
+    const _MF('port', 'Порт', def: '51820'),
+    const _MF('priv', 'Приватный ключ'),
+    const _MF('pub', 'Публичный ключ сервера'),
+    const _MF('addr', 'Адрес интерфейса', def: '10.0.0.2/32'),
+    const _MF('psk', 'Общий ключ (необязательно)'),
+    const _MF('mtu', 'MTU', def: '1420'),
+  ],
+  'Naive': [
+    _mfName,
+    _mfHost,
+    _mfPort,
+    const _MF('user', 'Логин'),
+    const _MF('pass', 'Пароль'),
+    const _MF('quic', 'QUIC вместо HTTPS', flag: true),
+    _mfSni,
+  ],
+  'Mieru': [
+    _mfName,
+    _mfHost,
+    const _MF('port', 'Порт или диапазон', def: '2999'),
+    const _MF('user', 'Логин'),
+    const _MF('pass', 'Пароль'),
+    const _MF('proto', 'Транспорт', def: 'TCP', opts: ['TCP', 'UDP']),
+    const _MF(
+      'mux',
+      'Мультиплексирование',
+      def: 'MULTIPLEXING_LOW',
+      opts: [
+        'MULTIPLEXING_OFF',
+        'MULTIPLEXING_LOW',
+        'MULTIPLEXING_MIDDLE',
+        'MULTIPLEXING_HIGH',
+      ],
+    ),
+  ],
+  'Juicity': [
+    _mfName,
+    _mfHost,
+    _mfPort,
+    const _MF('uuid', 'UUID'),
+    const _MF('pass', 'Пароль'),
+    _mfSni,
+    const _MF(
+      'cc',
+      'Управление перегрузкой',
+      def: 'bbr',
+      opts: ['bbr', 'cubic', 'new_reno'],
+    ),
+    _mfIns,
+  ],
+  'TrustTunnel': [
+    _mfName,
+    _mfHost,
+    _mfPort,
+    const _MF('user', 'Логин'),
+    const _MF('pass', 'Пароль'),
+    _mfSni,
+    const _MF('quic', 'HTTP/3 (QUIC)', flag: true),
+    _mfIns,
+  ],
+  'Snell': [
+    _mfName,
+    _mfHost,
+    _mfPort,
+    const _MF('psk', 'Ключ (PSK)'),
+    const _MF('ver', 'Версия', def: '4', opts: ['1', '2', '3', '4', '5']),
+    const _MF('obfs', 'Обфускация', def: 'none', opts: ['none', 'http', 'tls']),
+    const _MF('ohost', 'Хост обфускации'),
+  ],
+  'ShadowQUIC': [
+    _mfName,
+    _mfHost,
+    _mfPort,
+    const _MF('user', 'Логин'),
+    const _MF('pass', 'Пароль'),
+    _mfSni,
+    const _MF('alpn', 'ALPN', def: 'h3'),
+    const _MF(
+      'cc',
+      'Управление перегрузкой',
+      def: 'bbr',
+      opts: ['bbr', 'cubic', 'new_reno'],
+    ),
+  ],
+};
+
+String _enc(String s) => Uri.encodeComponent(s);
+
+String _q(Map<String, String> m) {
+  final e = m.entries
+      .where((x) => x.value.isNotEmpty)
+      .map((x) => '${x.key}=${_enc(x.value)}');
+  return e.isEmpty ? '' : '?${e.join('&')}';
+}
+
+/// Builds a share link from the form; the engine parses it like any subscription link.
+String manualLink(String proto, Map<String, String> v) {
+  String g(String k) => (v[k] ?? '').trim();
+  final hp =
+      '${g('host').contains(':') && !g('host').startsWith('[') ? '[${g('host')}]' : g('host')}:${g('port')}';
+  final name = g('name').isEmpty ? '' : '#${_enc(g('name'))}';
+  final ins = g('insecure') == '1' ? '1' : '';
+  String up(String u, String p) => u.isEmpty && p.isEmpty
+      ? ''
+      : '${_enc(u)}${p.isEmpty ? '' : ':${_enc(p)}'}@';
+  switch (proto) {
+    case 'HTTP':
+      return '${g('tls') == '1' ? 'https' : 'http'}://${up(g('user'), g('pass'))}$hp${_q({'sni': g('sni')})}$name';
+    case 'SOCKS5':
+      return 'socks5://${up(g('user'), g('pass'))}$hp$name';
+    case 'Shadowsocks':
+      final ui = base64Url
+          .encode(utf8.encode('${g('method')}:${g('pass')}'))
+          .replaceAll('=', '');
+      return 'ss://$ui@$hp$name';
+    case 'VLESS':
+      final t = g('type');
+      return 'vless://${g('uuid')}@$hp${_q({'encryption': 'none', 'security': g('security'), 'sni': g('sni'), 'pbk': g('pbk'), 'sid': g('sid'), 'flow': g('flow'), 'type': t, if (t == 'grpc') 'serviceName': g('path') else 'path': g('path'), 'fp': g('fp')})}$name';
+    case 'VMess':
+      final j = {
+        'v': '2',
+        'ps': g('name'),
+        'add': g('host'),
+        'port': g('port'),
+        'id': g('uuid'),
+        'aid': '0',
+        'scy': 'auto',
+        'net': g('type'),
+        'path': g('path'),
+        'tls': g('tls') == '1' ? 'tls' : '',
+        'sni': g('sni'),
+      };
+      return 'vmess://${base64.encode(utf8.encode(jsonEncode(j)))}';
+    case 'Trojan':
+      final t = g('type');
+      return 'trojan://${_enc(g('pass'))}@$hp${_q({'security': 'tls', 'sni': g('sni'), 'type': t, if (t == 'grpc') 'serviceName': g('path') else 'path': g('path'), 'allowInsecure': ins})}$name';
+    case 'AnyTLS':
+      return 'anytls://${_enc(g('pass'))}@$hp${_q({'sni': g('sni'), 'insecure': ins})}$name';
+    case 'TUIC':
+      return 'tuic://${up(g('uuid'), g('pass'))}$hp${_q({'sni': g('sni'), 'congestion_control': g('cc'), 'alpn': 'h3', 'allow_insecure': ins})}$name';
+    case 'Hysteria2':
+      return 'hy2://${_enc(g('pass'))}@$hp${_q({'sni': g('sni'), if (g('obfs').isNotEmpty) 'obfs': 'salamander', 'obfs-password': g('obfs'), 'insecure': ins})}$name';
+    case 'WireGuard':
+      return 'wireguard://${_enc(g('priv'))}@$hp${_q({'publickey': g('pub'), 'address': g('addr'), 'presharedkey': g('psk'), 'mtu': g('mtu')})}$name';
+    case 'Naive':
+      return '${g('quic') == '1' ? 'naive+quic' : 'naive+https'}://${up(g('user'), g('pass'))}$hp${_q({'sni': g('sni')})}$name';
+    case 'Mieru':
+      return 'mierus://${up(g('user'), g('pass'))}${g('host')}${_q({'port': g('port'), 'protocol': g('proto'), 'multiplexing': g('mux')})}$name';
+    case 'Juicity':
+      return 'juicity://${up(g('uuid'), g('pass'))}$hp${_q({'sni': g('sni'), 'congestion_control': g('cc'), 'allow_insecure': ins})}$name';
+    case 'TrustTunnel':
+      return 'trusttunnel://${up(g('user'), g('pass'))}$hp${_q({'sni': g('sni'), 'quic': g('quic'), 'insecure': ins})}$name';
+    case 'Snell':
+      return 'snell://${_enc(g('psk'))}@$hp${_q({'version': g('ver'), 'obfs': g('obfs') == 'none' ? '' : g('obfs'), 'obfs-host': g('ohost')})}$name';
+    case 'ShadowQUIC':
+      return 'shadowquic://${up(g('user'), g('pass'))}$hp${_q({'sni': g('sni'), 'alpn': g('alpn'), 'congestion': g('cc')})}$name';
+  }
+  return '';
+}
+
+/// «Добавить вручную»: protocol picker + per-protocol form (Exclave-style).
+void manualSheet(BuildContext context, NoxController c, Pal p) {
+  var proto = 'VLESS';
+  final vals = <String, Map<String, String>>{};
+  final ctrls = <String, TextEditingController>{};
+  Map<String, String> cur() => vals.putIfAbsent(
+    proto,
+    () => {for (final f in _manualProtos[proto]!) f.k: f.def},
+  );
+  TextEditingController tc(String k) => ctrls.putIfAbsent(
+    '$proto/$k',
+    () => TextEditingController(text: cur()[k]),
+  );
+  InputDecoration deco(String l) => InputDecoration(
+    labelText: l,
+    labelStyle: TextStyle(color: p.sub, fontSize: 13),
+    filled: true,
+    fillColor: p.chip,
+    isDense: true,
+    border: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(12),
+      borderSide: BorderSide(color: p.line),
+    ),
+    enabledBorder: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(12),
+      borderSide: BorderSide(color: p.line),
+    ),
+  );
+  sheet(
+    context,
+    p,
+    'Добавить вручную',
+    (ctx) => [
+      StatefulBuilder(
+        builder: (ctx2, set) {
+          final v = cur();
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Протокол', style: TextStyle(color: p.sub, fontSize: 12)),
+              const SizedBox(height: 6),
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: [
+                  for (final k in _manualProtos.keys)
+                    ChoiceChip(
+                      label: Text(k),
+                      selected: proto == k,
+                      onSelected: (_) => set(() => proto = k),
+                      labelStyle: TextStyle(
+                        color: proto == k ? Colors.white : p.txt,
+                        fontSize: 12.5,
+                      ),
+                      selectedColor: p.acc,
+                      backgroundColor: p.chip,
+                      side: BorderSide(color: proto == k ? p.acc : p.line),
+                      showCheckmark: false,
+                    ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              for (final f in _manualProtos[proto]!)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: f.flag
+                      ? InkWell(
+                          onTap: () =>
+                              set(() => v[f.k] = v[f.k] == '1' ? '' : '1'),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 6),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    f.label,
+                                    style: TextStyle(
+                                      color: p.txt,
+                                      fontSize: 14,
+                                    ),
+                                  ),
+                                ),
+                                sw(p, v[f.k] == '1'),
+                              ],
+                            ),
+                          ),
+                        )
+                      : f.opts != null
+                      ? DropdownButtonFormField<String>(
+                          key: ValueKey('$proto/${f.k}'),
+                          initialValue: f.opts!.contains(v[f.k])
+                              ? v[f.k]
+                              : f.opts!.first,
+                          decoration: deco(f.label),
+                          dropdownColor: p.hero,
+                          style: TextStyle(color: p.txt, fontSize: 14),
+                          items: [
+                            for (final o in f.opts!)
+                              DropdownMenuItem(
+                                value: o,
+                                child: Text(
+                                  o.isEmpty ? 'нет' : o,
+                                  style: TextStyle(
+                                    color: p.txt,
+                                    fontSize: 14,
+                                    fontFamily: 'Roboto',
+                                  ),
+                                ),
+                              ),
+                          ],
+                          onChanged: (x) => set(() => v[f.k] = x ?? ''),
+                        )
+                      : TextField(
+                          controller: tc(f.k),
+                          onChanged: (x) => v[f.k] = x,
+                          keyboardType: f.k == 'port' || f.k == 'mtu'
+                              ? TextInputType.number
+                              : TextInputType.text,
+                          style: TextStyle(color: p.txt, fontSize: 14),
+                          decoration: deco(f.label),
+                        ),
+                ),
+              const SizedBox(height: 6),
+              _Btn(
+                p: p,
+                label: 'Сохранить',
+                onTap: () async {
+                  if ((v['host'] ?? '').trim().isEmpty) {
+                    toast(ctx, 'Укажите адрес сервера');
+                    return;
+                  }
+                  final r = await c.call('AddManual', [manualLink(proto, v)]);
+                  c.refresh();
+                  if (!ctx.mounted) return;
+                  if (r != null && '$r'.isNotEmpty) {
+                    toast(ctx, '$r');
+                    return;
+                  }
+                  Navigator.pop(ctx);
+                  if (context.mounted) toast(context, 'Сервер добавлен');
+                },
+              ),
+            ],
+          );
+        },
+      ),
+    ],
+  );
+}
+
+Future<int?> portDialog(BuildContext context, Pal p, int cur) async {
+  final ctl = TextEditingController(text: '$cur');
+  String? err;
+  return showDialog<int>(
+    context: context,
+    builder: (d) => StatefulBuilder(
+      builder: (d, set) => AlertDialog(
+        backgroundColor: p.card,
+        title: Text('Порт прокси', style: TextStyle(color: p.txt)),
+        content: TextField(
+          controller: ctl,
+          autofocus: true,
+          keyboardType: TextInputType.number,
+          style: TextStyle(color: p.txt),
+          decoration: InputDecoration(hintText: '10808', errorText: err),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(d),
+            child: const Text('Отмена'),
+          ),
+          TextButton(
+            onPressed: () {
+              final v = int.tryParse(ctl.text.trim());
+              if (v == null || v < 1024 || v > 65535)
+                return set(() => err = 'Порт от 1024 до 65535');
+              Navigator.pop(d, v);
+            },
+            child: const Text('Сохранить'),
+          ),
+        ],
+      ),
+    ),
   );
 }

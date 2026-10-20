@@ -38,8 +38,14 @@ func (a *App) pingNetwork() pingNet {
 		}
 		return pingNet{}
 	}
+	if n.Name != lastNICLogged {
+		lastNICLogged = n.Name
+		a.log("сеть: физический адаптер «" + n.Name + "»")
+	}
 	return pingNet{nic: n, bound: true}
 }
+
+var lastNICLogged string
 
 func (p pingNet) dialer(t time.Duration) *net.Dialer {
 	d := &net.Dialer{Timeout: t}

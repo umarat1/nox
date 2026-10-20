@@ -268,8 +268,8 @@ func WgEndpoint(text string) (map[string]any, error) {
 		}
 	}
 	mtu, _ := strconv.Atoi(iface["mtu"])
-	if mtu < 576 || mtu > 9000 {
-		mtu = 1280
+	if mtu < 576 || mtu > 1280 {
+		mtu = 1280 // VK TURN path: larger packets get fragmented/dropped
 	}
 	allowed := csv(peer["allowedips"])
 	if len(allowed) == 0 {

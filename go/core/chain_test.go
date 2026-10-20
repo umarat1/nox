@@ -28,7 +28,11 @@ func TestChain(t *testing.T) {
 	if _, err := TestConfig(m, 1234); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ParseLink("juicity://u:p@h:1#j"); err == nil || !strings.Contains(err.Error(), "juicity") {
-		t.Fatal(err)
+	for _, l := range []string{"juicity://u:p@h:1#j", "mierus://u:p@h?port=1&protocol=TCP", "snell://psk@h:1?version=4",
+		"shadowquic://u:p@h:1?sni=x", "naive+https://u:p@h:443", "trusttunnel://u:p@h:443?quic=1"} {
+		s, err := ParseLink(l)
+		if err != nil || !IsExt(s.Outbound) {
+			t.Fatal(l, err)
+		}
 	}
 }

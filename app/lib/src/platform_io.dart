@@ -1,3 +1,4 @@
+import 'captcha_win.dart';
 import 'dart:convert';
 import 'dart:io';
 
@@ -81,9 +82,10 @@ Future<bool> isTvDevice() async {
 }
 
 /// Android: VK captcha page for qWDTT in a WebView; success_token or "error:…".
-bool get canCaptcha => Platform.isAndroid && !_mock;
+bool get canCaptcha => (Platform.isAndroid || Platform.isWindows) && !_mock;
 Future<String> solveCaptcha(String url) async {
   if (!canCaptcha) return 'error:unsupported';
+  if (Platform.isWindows) return solveCaptchaWindows(url);
   try {
     return await _ch.invokeMethod<String>('solveCaptcha', {'url': url}) ??
         'error:cancelled';

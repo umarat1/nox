@@ -30,7 +30,27 @@ const (
 var vpnWords = []string{"wintun", "wireguard", "openvpn", "ovpn", "tap-win", "tap-windows", "sing-tun", "sing-box",
 	"sstp", "wan miniport", "zerotier", "tailscale", "hyper-v", "vethernet", "virtualbox", "vmware", "npcap", "loopback", "dco"}
 
+// tetherWords: phone/USB/Bluetooth tethering adapters are real uplinks even when Windows
+// reports them as virtual/WWAN.
+var tetherWords = []string{"rndis", "remote ndis", "usb", "bluetooth", "apple mobile device", "mobile broadband", "wwan", "tether", "android"}
+
+func isTether(name, desc string, typ uint32) bool {
+	if typ == 243 || typ == 244 { // IF_TYPE_WWANPP / WWANPP2
+		return true
+	}
+	all := strings.ToLower(name + " " + desc)
+	for _, w := range tetherWords {
+		if strings.Contains(all, w) {
+			return true
+		}
+	}
+	return false
+}
+
 func isVPNAdapter(name, desc string, typ uint32) bool {
+	if isTether(name, desc, typ) {
+		return false
+	}
 	switch typ {
 	case windows.IF_TYPE_PPP, windows.IF_TYPE_TUNNEL, ifTypeVirtual, ifTypeLoop:
 		return true
@@ -87,7 +107,8 @@ func findPhysNIC(hint uint32) (physNIC, bool) {
 	var best *windows.IpAdapterAddresses
 	score := func(p *windows.IpAdapterAddresses) uint32 {
 		s := p.Ipv4Metric
-		if p.IfType != windows.IF_TYPE_ETHERNET_CSMACD && p.IfType != windows.IF_TYPE_IEEE80211 {
+		if p.IfType != windows.IF_TYPE_ETHERNET_CSMACD && p.IfType != windows.IF_TYPE_IEEE80211 &&
+			!isTether(windows.UTF16PtrToString(p.FriendlyName), windows.UTF16PtrToString(p.Description), p.IfType) {
 			s += 10000
 		}
 		return s

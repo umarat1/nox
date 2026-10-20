@@ -1,3 +1,4 @@
+import 'src/captcha_win.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -46,7 +47,9 @@ class NoxApp extends StatelessWidget {
     builder: (_, _) {
       final pal = Pal.of(c.settings['theme'] as String?);
       vol3d = vol3dFromUi(c.ui);
+      graphStyle = graphFromUi(c.ui);
       return MaterialApp(
+        navigatorKey: noxNav,
         title: 'Nox',
         debugShowCheckedModeBanner: false,
         theme: materialTheme(pal),

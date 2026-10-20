@@ -6,6 +6,8 @@ import 'package:nox/main.dart';
 import 'package:nox/src/controller.dart';
 import 'package:nox/src/home.dart';
 import 'package:nox/src/mock.dart';
+import 'package:nox/src/live_graph.dart';
+import 'dart:math' as math;
 import 'package:nox/src/theme.dart';
 
 Future<void> _loadFonts() async {
@@ -35,6 +37,12 @@ Future<void> _loadFonts() async {
       ),
     );
   await icons.load();
+  final mono = FontLoader('monospace');
+  for (final f in ['DejaVuSansMono.ttf', 'DejaVuSansMono-Bold.ttf']) {
+    final b = File('/usr/share/fonts/truetype/dejavu/$f').readAsBytesSync();
+    mono.addFont(Future.value(ByteData.view(b.buffer)));
+  }
+  await mono.load();
 }
 
 Future<NoxController> _app(WidgetTester t, {required bool on}) async {
@@ -49,7 +57,7 @@ Future<NoxController> _app(WidgetTester t, {required bool on}) async {
     b['upload'] = 8 * 1024 * 1024 * 1024;
     b['download'] = 70 * 1024 * 1024 * 1024;
     b['announce'] =
-        'Новые серверы qWDTT через Лондон уже в подписке. Обновите подписку, чтобы получить их. В выходные возможны короткие перерывы на обслуживание.';
+        '**Новые серверы qWDTT** через Лондон уже в подписке.\n• Обновите подписку, чтобы получить их\n• В выходные возможны короткие перерывы\nПодробнее: https://iji.by/vps/';
   }
   final c = NoxController(api);
   await c.refresh();
@@ -88,15 +96,15 @@ void main() {
       t,
     ) async {
       await _app(t, on: on);
-      expect(find.text('Осталось дней'), findsNothing); // label-free bars
-      expect(find.byType(LinearProgressIndicator), findsWidgets);
+      expect(find.text('Осталось дней'), findsNothing);
+      expect(find.text('6 дней'), findsWidgets);
       expect(find.text('Объявление'), findsWidgets);
       expect(vol3d, on);
       if (shots) {
         await expectLater(
           find.byType(MaterialApp),
           matchesGoldenFile(
-            '../../../preview/home-1017-3d-${on ? 'on' : 'off'}.png',
+            '../../../preview/home-1018-3d-${on ? 'on' : 'off'}.png',
           ),
         );
       }
@@ -115,7 +123,7 @@ void main() {
     if (shots) {
       await expectLater(
         find.byType(MaterialApp),
-        matchesGoldenFile('../../../preview/settings-1017-3d.png'),
+        matchesGoldenFile('../../../preview/settings-1018-3d.png'),
       );
     }
     await t.tap(find.text('Объёмный 3D-дизайн'));
@@ -132,7 +140,7 @@ void main() {
     if (shots) {
       await expectLater(
         find.byType(MaterialApp),
-        matchesGoldenFile('../../../preview/menu-sub-1017-3d.png'),
+        matchesGoldenFile('../../../preview/menu-sub-1018-3d.png'),
       );
     }
     Navigator.of(t.element(find.byType(Scaffold).first)).pop();
@@ -145,8 +153,55 @@ void main() {
     if (shots) {
       await expectLater(
         find.byType(MaterialApp),
-        matchesGoldenFile('../../../preview/menu-add-1017-3d.png'),
+        matchesGoldenFile('../../../preview/menu-add-1018-3d.png'),
       );
     }
   });
+
+  testWidgets('manual add sheet', (t) async {
+    final c = await _app(t, on: true);
+    manualSheet(t.element(find.byType(Scaffold).first), c, Pal.black);
+    for (var i = 0; i < 10; i++)
+      await t.pump(const Duration(milliseconds: 100));
+    expect(find.text('Juicity'), findsWidgets);
+    if (shots) {
+      await expectLater(find.byType(MaterialApp), matchesGoldenFile('../../../preview/manual-add-1018.png'));
+    }
+  });
+
+  for (final st in ['', 'smooth', 'matrix']) {
+    testWidgets('graph style "$st"', (t) async {
+      t.view.physicalSize = const Size(412 * 2, 240 * 2);
+      t.view.devicePixelRatio = 2;
+      addTearDown(t.view.reset);
+      graphStyle = st;
+      final r = math.Random(7);
+      final s = SpeedSeries();
+      s.feed({
+        'Seq': 60,
+        'Hist': [
+          for (var i = 0; i < 60; i++)
+            [(20000 + r.nextInt(120000)) * (i % 9 == 0 ? 3 : 1), (300000 + r.nextInt(1500000)) * (i % 7 == 0 ? 2 : 1)],
+        ],
+      });
+      await t.pumpWidget(MaterialApp(
+        debugShowCheckedModeBanner: false,
+        theme: ThemeData(fontFamily: 'Roboto'),
+        home: Scaffold(
+          backgroundColor: Colors.black,
+          body: Padding(
+            padding: const EdgeInsets.all(16),
+            child: SizedBox(height: 200, child: LiveGraph(series: s, p: Pal.black, active: true, labels: true, span: 60)),
+          ),
+        ),
+      ));
+      for (var i = 0; i < 8; i++) await t.pump(const Duration(milliseconds: 200));
+      if (shots) {
+        await expectLater(find.byType(MaterialApp),
+            matchesGoldenFile('../../../preview/graph-${st.isEmpty ? 'classic' : st}.png'));
+      }
+      graphStyle = '';
+      await t.pumpWidget(const SizedBox());
+    });
+  }
 }

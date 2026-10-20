@@ -250,6 +250,10 @@ class _LivePainter extends CustomPainter {
       return out;
     }
 
+    if (graphStyle == 'smooth' || graphStyle == 'matrix') {
+      _fancy(canvas, size, top, bottom, labels, pts, y, graphStyle == 'matrix');
+      return;
+    }
     canvas.save();
     canvas.clipRect(Rect.fromLTRB(0, 0, w, h));
     final dn = pts(s.down), upP = pts(s.up);
@@ -330,6 +334,235 @@ class _LivePainter extends CustomPainter {
     }
   }
 
+  static const _mGreen = Color(0xFF00FF41);
+  static const _glyphs = '0123456789ABCDEFXZ+=*<>:';
+
+  /// Moving average (5 samples) so the curve shows the trend, not every spike.
+  static List<Offset> _smooth(List<Offset> q) {
+    if (q.length < 3) return q;
+    final out = <Offset>[];
+    for (var i = 0; i < q.length; i++) {
+      var sum = 0.0, n = 0;
+      for (
+        var k = math.max(0, i - 2);
+        k <= math.min(q.length - 1, i + 2);
+        k++
+      ) {
+        sum += q[k].dy;
+        n++;
+      }
+      out.add(Offset(q[i].dx, sum / n));
+    }
+    return out;
+  }
+
+  void _matrixRain(Canvas canvas, Size size) {
+    canvas.drawRect(
+      Offset.zero & size,
+      Paint()..color = const Color(0xFF000000),
+    );
+    const cw = 11.0;
+    final cols = (size.width / cw).ceil();
+    final t = g.widget.series.nowUs / 1e6;
+    for (var c = 0; c < cols; c++) {
+      final seed = (c * 7919) % 97;
+      final speed = 18 + seed % 23;
+      final len = 5 + seed % 9;
+      final head = ((t * speed + seed * 13) % (size.height + len * cw));
+      for (var k = 0; k < len; k++) {
+        final yy = head - k * cw;
+        if (yy < -cw || yy > size.height) continue;
+        final a = k == 0 ? .55 : (.22 * (1 - k / len));
+        final ch = _glyphs[(seed + k * 31 + (t * 4).floor()) % _glyphs.length];
+        final tp = TextPainter(
+          text: TextSpan(
+            text: ch,
+            style: TextStyle(
+              color: (k == 0 ? const Color(0xFFB8FFC8) : _mGreen).withValues(
+                alpha: a,
+              ),
+              fontSize: 10,
+              fontFamily: 'monospace',
+            ),
+          ),
+          textDirection: TextDirection.ltr,
+        )..layout();
+        tp.paint(canvas, Offset(c * cw, yy));
+      }
+    }
+  }
+
+  void _fancy(
+    Canvas canvas,
+    Size size,
+    double top,
+    double bottom,
+    bool labels,
+    List<Offset> Function(List<double>) pts,
+    double Function(double) y,
+    bool matrix,
+  ) {
+    final s = g.widget.series;
+    final w = size.width;
+    canvas.save();
+    canvas.clipRRect(
+      RRect.fromRectAndRadius(Offset.zero & size, const Radius.circular(10)),
+    );
+    if (matrix) _matrixRain(canvas, size);
+    final dCol = matrix ? _mGreen : p.acc2;
+    final uCol = matrix ? const Color(0xFF7DFFA0) : _upColor;
+    final dn = _smooth(_smooth(pts(s.down))), upP = _smooth(_smooth(pts(s.up)));
+    void layer(List<Offset> q, Color col, double fillA, double stroke) {
+      if (q.length < 2) return;
+      final path = _spline(q, top, bottom);
+      final fill = Path.from(path)
+        ..lineTo(q.last.dx, bottom)
+        ..lineTo(q.first.dx, bottom)
+        ..close();
+      canvas.drawPath(
+        fill,
+        Paint()
+          ..shader = LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              col.withValues(alpha: fillA),
+              col.withValues(alpha: fillA * .35),
+              col.withValues(alpha: 0),
+            ],
+            stops: const [0, .55, 1],
+          ).createShader(Rect.fromLTRB(0, top, w, bottom)),
+      );
+      // glow, then crisp line
+      canvas.drawPath(
+        path,
+        Paint()
+          ..color = col.withValues(alpha: .55)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = stroke * 3.2
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6),
+      );
+      canvas.drawPath(
+        path,
+        Paint()
+          ..shader = LinearGradient(
+            colors: [col.withValues(alpha: .35), col],
+          ).createShader(Rect.fromLTRB(0, top, w, bottom))
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = stroke
+          ..strokeCap = StrokeCap.round
+          ..strokeJoin = StrokeJoin.round,
+      );
+    }
+
+    layer(upP, uCol, matrix ? .10 : .16, labels ? 1.6 : 1.2);
+    layer(dn, dCol, matrix ? .22 : .42, labels ? 2.6 : 2.0);
+    // current value marker: vertical guide + glowing dot + pill
+    if (dn.isNotEmpty) {
+      final hx = w - 2, hy = y(g.curDown);
+      final guide = Paint()
+        ..color = dCol.withValues(alpha: .35)
+        ..strokeWidth = 1;
+      for (var yy = top; yy < bottom; yy += 6) {
+        canvas.drawLine(
+          Offset(hx, yy),
+          Offset(hx, math.min(yy + 3, bottom)),
+          guide,
+        );
+      }
+      canvas.drawCircle(
+        Offset(hx, hy),
+        labels ? 9 : 6,
+        Paint()
+          ..color = dCol.withValues(alpha: .35)
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5),
+      );
+      canvas.drawCircle(
+        Offset(hx, hy),
+        labels ? 3.6 : 2.6,
+        Paint()..color = matrix ? const Color(0xFFD8FFE0) : Colors.white,
+      );
+      canvas.drawCircle(
+        Offset(hx, hy),
+        labels ? 3.6 : 2.6,
+        Paint()
+          ..color = dCol
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.4,
+      );
+      if (labels) {
+        final tp = TextPainter(
+          text: TextSpan(
+            text: '${fmtBytes(g.curDown)}/с',
+            style: TextStyle(
+              color: matrix ? _mGreen : Colors.white,
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              fontFamily: matrix ? 'monospace' : 'Roboto',
+              fontFeatures: const [FontFeature.tabularFigures()],
+            ),
+          ),
+          textDirection: TextDirection.ltr,
+        )..layout();
+        final r = RRect.fromRectAndRadius(
+          Rect.fromLTWH(
+            hx - tp.width - 22,
+            (hy - 22).clamp(top, bottom - 18),
+            tp.width + 12,
+            18,
+          ),
+          const Radius.circular(9),
+        );
+        canvas.drawRRect(
+          r,
+          Paint()
+            ..color = (matrix
+                ? const Color(0xFF001A08)
+                : dCol.withValues(alpha: .85)),
+        );
+        canvas.drawRRect(
+          r,
+          Paint()
+            ..color = dCol.withValues(alpha: .8)
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 1,
+        );
+        tp.paint(canvas, Offset(r.left + 6, r.top + (18 - tp.height) / 2));
+      }
+    }
+    canvas.restore();
+    if (labels) {
+      final mono = matrix ? 'monospace' : 'Roboto';
+      _text(
+        canvas,
+        '↓ ${fmtBytes(g.curDown)}/с',
+        const Offset(0, 0),
+        matrix ? _mGreen : p.txt,
+        13.5,
+        bold: true,
+        family: mono,
+      );
+      _text(
+        canvas,
+        '↑ ${fmtBytes(g.curUp)}/с',
+        const Offset(120, 0),
+        uCol,
+        13.5,
+        bold: true,
+        family: mono,
+      );
+      _text(
+        canvas,
+        '${fmtBytes(g.mx)}/с',
+        Offset(w, 0),
+        matrix ? _mGreen.withValues(alpha: .6) : p.sub,
+        11.5,
+        right: true,
+        family: mono,
+      );
+    }
+  }
+
   /// Catmull-Rom through the points, as cubic Béziers (control points kept inside the band).
   Path _spline(List<Offset> q, double top, double bottom) {
     final path = Path();
@@ -359,6 +592,7 @@ class _LivePainter extends CustomPainter {
     double size, {
     bool bold = false,
     bool right = false,
+    String? family,
   }) {
     final tp = TextPainter(
       text: TextSpan(
@@ -367,6 +601,7 @@ class _LivePainter extends CustomPainter {
           color: col,
           fontSize: size,
           fontWeight: bold ? FontWeight.w700 : FontWeight.w500,
+          fontFamily: family,
           fontFeatures: const [FontFeature.tabularFigures()],
         ),
       ),
@@ -376,5 +611,5 @@ class _LivePainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(_LivePainter o) => o.p != p || o.g != g;
+  bool shouldRepaint(_LivePainter o) => true;
 }

@@ -74,7 +74,7 @@ type ParseResult struct {
 var schemes = map[string]bool{"vless": true, "vmess": true, "trojan": true, "ss": true, "hysteria2": true, "hy2": true,
 	"hysteria": true, "tuic": true, "anytls": true, "socks": true, "socks5": true, "wireguard": true, "wg": true, "qwdtt": true, "sstp": true,
 	"juicity": true, "snell": true, "shadowquic": true,
-	"naive+https": true, "naive+quic": true, "naive": true, "mierus": true, "mieru": true, "tt": true}
+	"naive+https": true, "naive+quic": true, "naive": true, "mierus": true, "mieru": true, "tt": true, "sq": true, "trusttunnel": true}
 
 func IsShareLink(s string) bool {
 	s = strings.TrimSpace(s)
@@ -472,9 +472,12 @@ func ParseLink(s string) (Server, error) {
 	if strings.HasPrefix(low, "ss://") {
 		return parseSS(s)
 	}
+	if sv, ok, err := parseExt(s); ok {
+		return sv, err
+	}
 	if i := strings.Index(low, "://"); i > 0 {
 		switch sc := low[:i]; sc {
-		case "juicity", "snell", "shadowquic", "naive+https", "naive+quic", "naive", "mierus", "mieru", "tt":
+		case "snell-unsupported":
 			return Server{}, fmt.Errorf("%s: протокол распознан, но ядро Nox его пока не поддерживает", sc)
 		}
 	}

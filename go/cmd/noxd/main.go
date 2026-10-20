@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"syscall"
 
 	"nox/engine"
@@ -38,6 +39,7 @@ func runCore(dir string, port int, service bool, stop <-chan struct{}) error {
 		}
 	}
 	exe, _ := os.Executable()
+	engine.CaptchaUI = runtime.GOOS == "windows" // Flutter UI shows VK's check in WebView2
 	app := engine.NewApp(dir, filepath.Dir(exe))
 	app.Service = service
 	srv := ipc.New(app)
