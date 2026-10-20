@@ -26,7 +26,7 @@ import (
 	"nox/core"
 )
 
-const Version = "1.0.15"
+const Version = "1.0.16"
 
 type Sub struct {
 	ID       string `json:"id"`
@@ -1399,4 +1399,33 @@ func dropOpenVPN(l []core.Server) []core.Server {
 // coreLabel: bundled engines shown under Settings (SSTP uses the OS client: Windows RAS, sstpc).
 func coreLabel() string {
 	return "sing-box 1.14.3 · Xray 26.3.27 · qWDTT 1.4.4 · SSTP"
+}
+
+// CreateChain saves a client-side chain of 2-3 servers (ids in order, first = entry). Returns "" or an error text.
+func (a *App) CreateChain(name string, ids []string) string {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	var hops []core.Server
+	for _, id := range ids {
+		found := false
+		for _, s := range a.p.Servers {
+			if s.ID == id {
+				hops = append(hops, s)
+				found = true
+				break
+			}
+		}
+		if !found {
+			return "Сервер не найден"
+		}
+	}
+	c, err := core.MakeChain(name, hops)
+	if err != nil {
+		return err.Error()
+	}
+	c.ID = newID()
+	a.p.Servers = append([]core.Server{c}, a.p.Servers...)
+	a.p.Selected = c.ID
+	a.save()
+	return ""
 }

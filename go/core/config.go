@@ -118,9 +118,12 @@ var RuSuffixes = []string{
 
 // BuildConfig builds a sing-box 1.14 config. proxy is the outbound/endpoint JSON (already resolved for qWDTT).
 func BuildConfig(proxy map[string]any, s Settings, clashAddr string, ruleDir string) ([]byte, error) {
+	proxy, extraOuts, err := expandChain(proxy)
+	if err != nil {
+		return nil, err
+	}
 	proxy["tag"] = "proxy"
 	isEndpoint := proxy["type"] == "wireguard"
-	var extraOuts []any
 	if proxy["type"] == BalancerType {
 		arr, _ := proxy["outbounds"].([]any)
 		var tags []string
@@ -259,6 +262,10 @@ func BuildConfig(proxy map[string]any, s Settings, clashAddr string, ruleDir str
 
 // TestConfig: minimal config exposing the server through a local mixed port (used for URL ping).
 func TestConfig(proxy map[string]any, port int) ([]byte, error) {
+	proxy, chainOuts, err := expandChain(proxy)
+	if err != nil {
+		return nil, err
+	}
 	proxy["tag"] = "proxy"
 	cfg := map[string]any{
 		"log":      map[string]any{"level": "error"},
@@ -270,7 +277,7 @@ func TestConfig(proxy map[string]any, port int) ([]byte, error) {
 		cfg["endpoints"] = []any{proxy}
 		cfg["outbounds"] = []any{map[string]any{"type": "direct", "tag": "direct"}}
 	} else {
-		cfg["outbounds"] = []any{proxy}
+		cfg["outbounds"] = append([]any{proxy}, chainOuts...)
 	}
 	return json.Marshal(cfg)
 }

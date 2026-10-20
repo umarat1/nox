@@ -2953,6 +2953,18 @@ void addSheet(BuildContext context, NoxController c, Pal p) {
                   openReceive(context, c);
                 },
               ),
+      if (!c.isTv)
+        item(
+          p,
+          'Цепочка',
+          desc:
+              'Свой маршрут из 2–3 серверов: каждый следующий идёт через предыдущий',
+          arrow: true,
+          onTap: () {
+            Navigator.pop(ctx);
+            chainSheet(context, c, p);
+          },
+        ),
       const SizedBox(height: 12),
       TextField(
         controller: tc,
@@ -3133,4 +3145,106 @@ Future<void> _qrInto(
   }
   tc.text = tc.text.trim().isEmpty ? t : '${tc.text.trim()}\n$t';
   toast(context, 'Ссылка из QR-кода вставлена');
+}
+
+bool _chainable(J s) {
+  final t = '${s['type'] ?? ''}';
+  const bad = [
+    'qWDTT',
+    'SSTP',
+    'WireGuard',
+    'Автовыбор',
+    'Цепочка',
+    'AmneziaWG',
+  ];
+  return !bad.contains(t) && !t.contains('XHTTP');
+}
+
+/// Exclave-style client chain: pick 2-3 servers in order; hop N dials through hop N-1.
+void chainSheet(BuildContext context, NoxController c, Pal p) {
+  final picked = <String>[];
+  final nc = TextEditingController();
+  final list = c.servers.where(_chainable).toList();
+  sheet(
+    context,
+    p,
+    'Цепочка',
+    (ctx) => [
+      StatefulBuilder(
+        builder: (ctx2, set) => Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Выберите 2–3 сервера по порядку: первый — вход, последний — выход в интернет. '
+              'Подходят VLESS, Trojan, VMess, Shadowsocks, SOCKS, HTTP, AnyTLS, TUIC, Hysteria2. '
+              'qWDTT, XHTTP и WireGuard в цепочку не ставятся.',
+              style: TextStyle(color: p.sub, fontSize: 13),
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: nc,
+              style: TextStyle(color: p.txt),
+              decoration: InputDecoration(
+                hintText: 'Название (необязательно)',
+                hintStyle: TextStyle(color: p.ter, fontSize: 13),
+                filled: true,
+                fillColor: p.chip,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(color: p.line),
+                ),
+              ),
+            ),
+            const SizedBox(height: 10),
+            if (list.isEmpty)
+              Text('Нет подходящих серверов', style: TextStyle(color: p.sub)),
+            for (final s in list)
+              item(
+                p,
+                '${s['name']}',
+                desc: '${s['type']}',
+                checked: picked.contains(s['id']),
+                trailing: picked.contains(s['id'])
+                    ? Text(
+                        '${picked.indexOf(s['id']) + 1}',
+                        style: TextStyle(
+                          color: p.txt,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 16,
+                        ),
+                      )
+                    : null,
+                onTap: () => set(() {
+                  final id = s['id'] as String;
+                  if (picked.contains(id)) {
+                    picked.remove(id);
+                  } else if (picked.length < 3) {
+                    picked.add(id);
+                  }
+                }),
+              ),
+            const SizedBox(height: 12),
+            _Btn(
+              p: p,
+              label: picked.length < 2
+                  ? 'Выберите ещё ${2 - picked.length}'
+                  : 'Сохранить цепочку',
+              onTap: () async {
+                if (picked.length < 2) return;
+                final r = await c.call('CreateChain', [nc.text.trim(), picked]);
+                c.refresh();
+                if (!ctx.mounted) return;
+                if (r != null && '$r'.isNotEmpty) {
+                  toast(ctx, '$r');
+                  return;
+                }
+                Navigator.pop(ctx);
+                if (context.mounted) toast(context, 'Цепочка сохранена');
+              },
+            ),
+          ],
+        ),
+      ),
+    ],
+  );
 }

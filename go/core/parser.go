@@ -72,7 +72,8 @@ type ParseResult struct {
 }
 
 var schemes = map[string]bool{"vless": true, "vmess": true, "trojan": true, "ss": true, "hysteria2": true, "hy2": true,
-	"hysteria": true, "tuic": true, "anytls": true, "socks": true, "socks5": true, "wireguard": true, "wg": true, "qwdtt": true, "sstp": true}
+	"hysteria": true, "tuic": true, "anytls": true, "socks": true, "socks5": true, "wireguard": true, "wg": true, "qwdtt": true, "sstp": true,
+	"juicity": true, "snell": true, "shadowquic": true}
 
 func IsShareLink(s string) bool {
 	s = strings.TrimSpace(s)
@@ -587,6 +588,10 @@ func ParseLink(s string) (Server, error) {
 		}
 		ob := map[string]any{"type": "wireguard", "address": addr, "private_key": pk, "mtu": mtu, "peers": []any{peer}}
 		return mk(l.name, "WireGuard", l.host, l.port, ob)
+	}
+	switch l.scheme {
+	case "juicity", "snell", "shadowquic":
+		return Server{}, fmt.Errorf("%s: протокол распознан, но ядро sing-box его пока не поддерживает", l.scheme)
 	}
 	return Server{}, fmt.Errorf("неизвестная схема %s", l.scheme)
 }
