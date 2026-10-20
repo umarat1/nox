@@ -73,7 +73,8 @@ type ParseResult struct {
 
 var schemes = map[string]bool{"vless": true, "vmess": true, "trojan": true, "ss": true, "hysteria2": true, "hy2": true,
 	"hysteria": true, "tuic": true, "anytls": true, "socks": true, "socks5": true, "wireguard": true, "wg": true, "qwdtt": true, "sstp": true,
-	"juicity": true, "snell": true, "shadowquic": true}
+	"juicity": true, "snell": true, "shadowquic": true,
+	"naive+https": true, "naive+quic": true, "naive": true, "mierus": true, "mieru": true, "tt": true}
 
 func IsShareLink(s string) bool {
 	s = strings.TrimSpace(s)
@@ -81,7 +82,23 @@ func IsShareLink(s string) bool {
 		return true
 	}
 	i := strings.Index(s, "://")
-	return i > 0 && schemes[strings.ToLower(s[:i])]
+	if i <= 0 {
+		return false
+	}
+	sc := strings.ToLower(s[:i])
+	if sc == "http" || sc == "https" {
+		return isHTTPProxyLink(s)
+	}
+	return schemes[sc]
+}
+
+// isHTTPProxyLink: http(s)://user:pass@host:port[?..][#..] with no path (not a web/subscription URL).
+func isHTTPProxyLink(s string) bool {
+	u, err := url.Parse(strings.TrimSpace(s))
+	if err != nil || u.User == nil || u.Port() == "" {
+		return false
+	}
+	return u.Path == "" || u.Path == "/"
 }
 
 func B64(s string) (string, bool) {
@@ -455,6 +472,12 @@ func ParseLink(s string) (Server, error) {
 	if strings.HasPrefix(low, "ss://") {
 		return parseSS(s)
 	}
+	if i := strings.Index(low, "://"); i > 0 {
+		switch sc := low[:i]; sc {
+		case "juicity", "snell", "shadowquic", "naive+https", "naive+quic", "naive", "mierus", "mieru", "tt":
+			return Server{}, fmt.Errorf("%s: протокол распознан, но ядро Nox его пока не поддерживает", sc)
+		}
+	}
 	l, err := splitLink(s)
 	if err != nil {
 		return Server{}, err
@@ -590,8 +613,19 @@ func ParseLink(s string) (Server, error) {
 		return mk(l.name, "WireGuard", l.host, l.port, ob)
 	}
 	switch l.scheme {
-	case "juicity", "snell", "shadowquic":
-		return Server{}, fmt.Errorf("%s: протокол распознан, но ядро sing-box его пока не поддерживает", l.scheme)
+	case "http", "https":
+		ob := map[string]any{"type": "http", "server": l.host, "server_port": l.port}
+		if l.user != "" {
+			ob["username"], ob["password"] = l.user, l.pass
+		}
+		sec := l.g("security")
+		if l.scheme == "https" && sec == "" {
+			sec = "tls"
+		}
+		if t := tlsFrom(l, sec, false); t != nil {
+			ob["tls"] = t
+		}
+		return mk(l.name, "HTTP", l.host, l.port, ob)
 	}
 	return Server{}, fmt.Errorf("неизвестная схема %s", l.scheme)
 }

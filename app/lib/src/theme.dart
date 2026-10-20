@@ -149,16 +149,24 @@ ThemeData materialTheme(Pal p) {
       surfaceTintColor: Colors.transparent,
       shape: RoundedRectangleBorder(
         borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-        side: p.amoled ? BorderSide(color: p.line) : BorderSide.none,
+        side: p.amoled || vol3d
+            ? BorderSide(color: vol3d ? p.acc.withValues(alpha: .35) : p.line)
+            : BorderSide.none,
       ),
+      elevation: vol3d ? 12 : 0,
+      shadowColor: vol3d ? p.acc.withValues(alpha: .35) : null,
     ),
     dialogTheme: DialogThemeData(
       backgroundColor: p.hero,
       surfaceTintColor: Colors.transparent,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(22),
-        side: p.amoled ? BorderSide(color: p.line) : BorderSide.none,
+        side: p.amoled || vol3d
+            ? BorderSide(color: vol3d ? p.acc.withValues(alpha: .35) : p.line)
+            : BorderSide.none,
       ),
+      elevation: vol3d ? 16 : 0,
+      shadowColor: vol3d ? p.acc.withValues(alpha: .35) : null,
     ),
     navigationBarTheme: NavigationBarThemeData(
       backgroundColor: p.bg,
@@ -167,11 +175,36 @@ ThemeData materialTheme(Pal p) {
     navigationRailTheme: NavigationRailThemeData(backgroundColor: p.bg),
     drawerTheme: DrawerThemeData(
       backgroundColor: p.bg,
+      elevation: vol3d ? 16 : 0,
+      shadowColor: vol3d ? p.acc.withValues(alpha: .3) : null,
       surfaceTintColor: Colors.transparent,
     ),
     popupMenuTheme: PopupMenuThemeData(
       color: p.hero,
       surfaceTintColor: Colors.transparent,
+      elevation: vol3d ? 12 : 2,
+      shadowColor: vol3d ? p.acc.withValues(alpha: .4) : null,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(color: vol3d ? p.acc.withValues(alpha: .3) : p.line),
+      ),
+    ),
+    dropdownMenuTheme: DropdownMenuThemeData(
+      menuStyle: MenuStyle(
+        backgroundColor: WidgetStatePropertyAll(p.hero),
+        elevation: WidgetStatePropertyAll(vol3d ? 12 : 2),
+        shadowColor: WidgetStatePropertyAll(
+          vol3d ? p.acc.withValues(alpha: .4) : null,
+        ),
+        shape: WidgetStatePropertyAll(
+          RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+            side: BorderSide(
+              color: vol3d ? p.acc.withValues(alpha: .3) : p.line,
+            ),
+          ),
+        ),
+      ),
     ),
     snackBarTheme: SnackBarThemeData(
       backgroundColor: p.amoled ? const Color(0xFF0B0B12) : null,

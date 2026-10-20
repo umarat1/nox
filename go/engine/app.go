@@ -26,7 +26,7 @@ import (
 	"nox/core"
 )
 
-const Version = "1.0.16"
+const Version = "1.0.17"
 
 type Sub struct {
 	ID       string `json:"id"`
@@ -369,6 +369,9 @@ type ImportResult struct {
 }
 
 func looksLikeSubURL(t string) bool {
+	if core.IsShareLink(t) {
+		return false // http(s)://user:pass@host:port proxy link
+	}
 	l := strings.ToLower(t)
 	if !(strings.HasPrefix(l, "http://") || strings.HasPrefix(l, "https://")) {
 		if strings.Contains(t, "://") || strings.ContainsAny(t, " \n") || !strings.Contains(t, ".") || !strings.Contains(t, "/") {

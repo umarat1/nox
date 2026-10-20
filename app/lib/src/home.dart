@@ -434,6 +434,116 @@ class _IconBtn extends StatelessWidget {
   }
 }
 
+/// Volumetric round button: soft gradient sphere, glow, press-scale; optional spin while onTap runs.
+class _OrbBtn extends StatefulWidget {
+  final Pal p;
+  final IconData icon;
+  final String tip;
+  final Future<void> Function() onTap;
+  final bool spinWhileBusy;
+  const _OrbBtn({
+    required this.p,
+    required this.icon,
+    required this.tip,
+    required this.onTap,
+    this.spinWhileBusy = false,
+  });
+  @override
+  State<_OrbBtn> createState() => _OrbBtnState();
+}
+
+class _OrbBtnState extends State<_OrbBtn> with SingleTickerProviderStateMixin {
+  late final AnimationController spin = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 900),
+  );
+  bool down = false, busy = false;
+  @override
+  void dispose() {
+    spin.dispose();
+    super.dispose();
+  }
+
+  Future<void> _tap() async {
+    if (busy) return;
+    if (widget.spinWhileBusy) {
+      setState(() => busy = true);
+      spin.repeat();
+    }
+    try {
+      await widget.onTap();
+    } finally {
+      if (mounted && widget.spinWhileBusy) {
+        spin.stop();
+        spin.reset();
+        setState(() => busy = false);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final p = widget.p;
+    final acc = p.acc;
+    final top = Color.lerp(p.chip, Colors.white, p.light ? .5 : .10)!;
+    final bot = p.amoled
+        ? const Color(0xFF000000)
+        : Color.lerp(p.chip, Colors.black, .25)!;
+    return Tooltip(
+      message: widget.tip,
+      child: GestureDetector(
+        onTapDown: (_) => setState(() => down = true),
+        onTapCancel: () => setState(() => down = false),
+        onTapUp: (_) => setState(() => down = false),
+        onTap: _tap,
+        child: AnimatedScale(
+          scale: down ? .88 : 1,
+          duration: const Duration(milliseconds: 120),
+          child: Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: vol3d
+                  ? RadialGradient(
+                      center: const Alignment(-.35, -.45),
+                      radius: 1.0,
+                      colors: [top, bot],
+                    )
+                  : null,
+              color: vol3d ? null : p.chip,
+              border: Border.all(
+                color: (busy ? acc : p.line).withValues(alpha: vol3d ? .55 : 1),
+                width: 1,
+              ),
+              boxShadow: vol3d
+                  ? [
+                      BoxShadow(
+                        color: acc.withValues(alpha: busy || down ? .45 : .22),
+                        blurRadius: busy || down ? 16 : 10,
+                      ),
+                      if (!p.amoled)
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: .35),
+                          offset: const Offset(0, 3),
+                          blurRadius: 6,
+                        ),
+                    ]
+                  : const [],
+            ),
+            child: Center(
+              child: RotationTransition(
+                turns: spin,
+                child: Icon(widget.icon, size: 20, color: busy ? acc : p.txt),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _Btn extends StatelessWidget {
   final Pal p;
   final String label;
@@ -1119,12 +1229,6 @@ class _SubBlock extends StatelessWidget {
     final tFrac = total > 0 ? (1 - used / total).clamp(0.0, 1.0) : 1.0;
     // days ring: 30-day scale (typical period)
     final dFrac = left == null ? 1.0 : (left / 30).clamp(0.0, 1.0);
-    final dt = expire > 0
-        ? DateTime.fromMillisecondsSinceEpoch(expire * 1000)
-        : null;
-    final dateTxt = dt == null
-        ? 'без срока'
-        : 'до ${dt.day.toString().padLeft(2, '0')}.${dt.month.toString().padLeft(2, '0')}.${dt.year}';
     return Container(
       margin: const EdgeInsets.only(top: 8),
       padding: const EdgeInsets.fromLTRB(12, 10, 6, 8),
@@ -1148,10 +1252,11 @@ class _SubBlock extends StatelessWidget {
                   ),
                 ),
               ),
-              _IconBtn(
+              _OrbBtn(
                 p: p,
-                icon: Icons.refresh,
+                icon: Icons.refresh_rounded,
                 tip: 'Обновить',
+                spinWhileBusy: true,
                 onTap: () async {
                   final r = await c.call('RefreshSub', [b['id']]);
                   await c.refresh();
@@ -1162,11 +1267,12 @@ class _SubBlock extends StatelessWidget {
                     );
                 },
               ),
-              _IconBtn(
+              const SizedBox(width: 6),
+              _OrbBtn(
                 p: p,
-                icon: Icons.more_vert,
-                tip: 'Ещё',
-                onTap: () => subSheet(context, c, p, b),
+                icon: Icons.more_horiz_rounded,
+                tip: 'Действия с подпиской',
+                onTap: () async => subSheet(context, c, p, b),
               ),
             ],
           ),
@@ -1178,9 +1284,8 @@ class _SubBlock extends StatelessWidget {
                   p: p,
                   frac: dFrac,
                   icon: Icons.event_rounded,
-                  label: 'Осталось дней',
                   value: expireTxt,
-                  sub: dateTxt,
+                  sub: '',
                 ),
               ),
               const SizedBox(width: 8),
@@ -1189,11 +1294,8 @@ class _SubBlock extends StatelessWidget {
                   p: p,
                   frac: tFrac,
                   icon: Icons.data_usage_rounded,
-                  label: 'Осталось трафика',
                   value: trafficTxt,
-                  sub: total > 0
-                      ? 'из ${fmtBytes(total)}'
-                      : 'израсходовано ${fmtBytes(used)}',
+                  sub: total > 0 ? '/ ${fmtBytes(total)}' : '',
                 ),
               ),
               const SizedBox(width: 6),
@@ -1223,83 +1325,67 @@ class _Meter extends StatelessWidget {
   final Pal p;
   final double frac;
   final IconData icon;
-  final String label, value, sub;
+  final String value, sub;
   const _Meter({
     required this.p,
     required this.frac,
     required this.icon,
-    required this.label,
     required this.value,
     required this.sub,
   });
   @override
   Widget build(BuildContext context) {
     final col = levelColor(p, frac);
-    return Container(
-      padding: const EdgeInsets.all(8),
-      decoration: BoxDecoration(
-        color: p.amoled ? const Color(0xFF000000) : p.chip,
-        gradient: vol3d && !p.amoled ? raisedGradient(p, p.chip) : null,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: vol3d ? col.withValues(alpha: .35) : p.line),
-        boxShadow: vol3d
-            ? [BoxShadow(color: col.withValues(alpha: .18), blurRadius: 14)]
-            : const [],
-      ),
-      child: Row(
-        children: [
-          SizedBox(
-            width: 40,
-            height: 40,
-            child: Stack(
-              alignment: Alignment.center,
-              children: [
-                CircularProgressIndicator(
-                  value: frac,
-                  strokeWidth: 4,
-                  strokeCap: StrokeCap.round,
-                  backgroundColor: p.line,
-                  color: col,
-                ),
-                Icon(icon, size: 17, color: col),
-              ],
+    // label-free: icon · bar · number
+    return Row(
+      children: [
+        Icon(icon, size: 16, color: col),
+        const SizedBox(width: 6),
+        Expanded(
+          child: Container(
+            height: 8,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(8),
+              boxShadow: vol3d
+                  ? [
+                      BoxShadow(
+                        color: col.withValues(alpha: .25),
+                        blurRadius: 8,
+                      ),
+                    ]
+                  : const [],
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: LinearProgressIndicator(
+                value: frac.clamp(0.0, 1.0),
+                minHeight: 8,
+                backgroundColor: p.line,
+                color: col,
+              ),
             ),
           ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(color: p.sub, fontSize: 10.5),
+        ),
+        const SizedBox(width: 6),
+        Flexible(
+          flex: 0,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 96),
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(
+                sub.isEmpty ? value : '$value $sub',
+                maxLines: 1,
+                style: TextStyle(
+                  color: frac < .15 ? col : p.txt,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 12,
                 ),
-                FittedBox(
-                  fit: BoxFit.scaleDown,
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    value,
-                    maxLines: 1,
-                    style: TextStyle(
-                      color: frac < .15 ? col : p.txt,
-                      fontWeight: FontWeight.w800,
-                      fontSize: 15,
-                    ),
-                  ),
-                ),
-                Text(
-                  sub,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(color: p.ter, fontSize: 10),
-                ),
-              ],
+              ),
             ),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }
@@ -1575,7 +1661,13 @@ class _FilterBarState extends State<_FilterBar> {
               padding: const EdgeInsets.only(top: 4),
               child: Text(
                 'Пинг ${s['pingDone']}/${s['pingAll']}…',
-                style: TextStyle(color: p.sub, fontSize: 11),
+                style: TextStyle(
+                  color: p.amoled
+                      ? const Color(0xFFE6E8F0)
+                      : p.txt.withValues(alpha: .85),
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
             ),
         ],
@@ -1907,32 +1999,59 @@ Future<void> sheet(
 ) => showModalBottomSheet(
   context: context,
   isScrollControlled: true,
-  backgroundColor: p.hero,
+  backgroundColor: Colors.transparent,
   constraints: const BoxConstraints(maxWidth: 560),
-  shape: const RoundedRectangleBorder(
-    borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
-  ),
-  builder: (ctx) => SafeArea(
-    child: ConstrainedBox(
-      constraints: BoxConstraints(
-        maxHeight: MediaQuery.of(ctx).size.height * .88,
-      ),
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(16, 18, 16, 22),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              title,
-              style: TextStyle(
-                color: p.txt,
-                fontSize: 17,
-                fontWeight: FontWeight.w700,
+  builder: (ctx) => Container(
+    decoration: BoxDecoration(
+      color: p.hero,
+      gradient: vol3d && !p.amoled
+          ? LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                Color.lerp(p.hero, Colors.white, p.light ? .3 : .05)!,
+                p.hero,
+              ],
+            )
+          : null,
+      borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+      border: vol3d
+          ? Border(
+              top: BorderSide(color: p.acc.withValues(alpha: .45), width: 1.2),
+            )
+          : (p.amoled ? Border(top: BorderSide(color: p.line)) : null),
+      boxShadow: vol3d
+          ? [
+              BoxShadow(
+                color: p.acc.withValues(alpha: .25),
+                blurRadius: 24,
+                offset: const Offset(0, -4),
               ),
-            ),
-            const SizedBox(height: 8),
-            ...items(ctx),
-          ],
+            ]
+          : const [],
+    ),
+    child: SafeArea(
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.of(ctx).size.height * .88,
+        ),
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(16, 18, 16, 22),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: TextStyle(
+                  color: p.txt,
+                  fontSize: 17,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 8),
+              ...items(ctx),
+            ],
+          ),
         ),
       ),
     ),
@@ -2003,15 +2122,34 @@ class _SheetItemState extends State<_SheetItem> {
       onTap: widget.onTap,
       focusColor: Colors.transparent,
       onFocusChange: (v) => setState(() => _f = v),
+      borderRadius: vol3d ? BorderRadius.circular(14) : null,
       child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 11, horizontal: 4),
-        decoration: BoxDecoration(
-          color: _f ? p.acc.withValues(alpha: .18) : null,
-          border: _f
-              ? Border.all(color: p.acc, width: 2)
-              : Border(bottom: BorderSide(color: p.line)),
-          borderRadius: _f ? BorderRadius.circular(10) : null,
-        ),
+        margin: vol3d ? const EdgeInsets.symmetric(vertical: 3) : null,
+        padding: vol3d
+            ? const EdgeInsets.symmetric(vertical: 12, horizontal: 12)
+            : const EdgeInsets.symmetric(vertical: 11, horizontal: 4),
+        decoration: vol3d
+            ? BoxDecoration(
+                gradient: raisedGradient(
+                  p,
+                  p.amoled ? const Color(0xFF000000) : p.card,
+                ),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(
+                  color: _f
+                      ? p.acc
+                      : p.line.withValues(alpha: p.amoled ? 1 : .7),
+                  width: _f ? 2 : 1,
+                ),
+                boxShadow: raisedShadow(p, e: .5),
+              )
+            : BoxDecoration(
+                color: _f ? p.acc.withValues(alpha: .18) : null,
+                border: _f
+                    ? Border.all(color: p.acc, width: 2)
+                    : Border(bottom: BorderSide(color: p.line)),
+                borderRadius: _f ? BorderRadius.circular(10) : null,
+              ),
         child: widget.child,
       ),
     );
@@ -2023,7 +2161,11 @@ Widget sw(Pal p, bool on) => Container(
   height: 22,
   decoration: BoxDecoration(
     color: on ? p.acc : p.line,
+    gradient: vol3d && on ? accentGradient(p) : null,
     borderRadius: BorderRadius.circular(12),
+    boxShadow: vol3d && on
+        ? [BoxShadow(color: p.acc.withValues(alpha: .45), blurRadius: 10)]
+        : const [],
   ),
   child: AnimatedAlign(
     duration: const Duration(milliseconds: 150),
@@ -2032,9 +2174,24 @@ Widget sw(Pal p, bool on) => Container(
       margin: const EdgeInsets.all(3),
       width: 16,
       height: 16,
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         color: Colors.white,
+        gradient: vol3d
+            ? const RadialGradient(
+                center: Alignment(-.3, -.4),
+                colors: [Colors.white, Color(0xFFCDD2E0)],
+              )
+            : null,
         shape: BoxShape.circle,
+        boxShadow: vol3d
+            ? const [
+                BoxShadow(
+                  color: Color(0x66000000),
+                  blurRadius: 3,
+                  offset: Offset(0, 1),
+                ),
+              ]
+            : const [],
       ),
     ),
   ),

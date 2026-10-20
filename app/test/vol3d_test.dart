@@ -88,15 +88,15 @@ void main() {
       t,
     ) async {
       await _app(t, on: on);
-      expect(find.text('Осталось дней'), findsWidgets);
-      expect(find.text('Осталось трафика'), findsWidgets);
+      expect(find.text('Осталось дней'), findsNothing); // label-free bars
+      expect(find.byType(LinearProgressIndicator), findsWidgets);
       expect(find.text('Объявление'), findsWidgets);
       expect(vol3d, on);
       if (shots) {
         await expectLater(
           find.byType(MaterialApp),
           matchesGoldenFile(
-            '../../../preview/home-amoled-3d-${on ? 'on' : 'off'}.png',
+            '../../../preview/home-1017-3d-${on ? 'on' : 'off'}.png',
           ),
         );
       }
@@ -115,12 +115,38 @@ void main() {
     if (shots) {
       await expectLater(
         find.byType(MaterialApp),
-        matchesGoldenFile('../../../preview/settings-3d.png'),
+        matchesGoldenFile('../../../preview/settings-1017-3d.png'),
       );
     }
     await t.tap(find.text('Объёмный 3D-дизайн'));
     for (var i = 0; i < 10; i++)
       await t.pump(const Duration(milliseconds: 100));
     expect(c.ui['vol3d'], '0');
+  });
+
+  testWidgets('menus 3D: subscription ⋮ sheet and add sheet', (t) async {
+    final c = await _app(t, on: true);
+    await t.tap(find.byTooltip('Действия с подпиской').first);
+    for (var i = 0; i < 10; i++)
+      await t.pump(const Duration(milliseconds: 100));
+    if (shots) {
+      await expectLater(
+        find.byType(MaterialApp),
+        matchesGoldenFile('../../../preview/menu-sub-1017-3d.png'),
+      );
+    }
+    Navigator.of(t.element(find.byType(Scaffold).first)).pop();
+    for (var i = 0; i < 10; i++)
+      await t.pump(const Duration(milliseconds: 100));
+    addSheet(t.element(find.byType(Scaffold).first), c, Pal.black);
+    for (var i = 0; i < 10; i++)
+      await t.pump(const Duration(milliseconds: 100));
+    expect(find.text('Цепочка'), findsWidgets);
+    if (shots) {
+      await expectLater(
+        find.byType(MaterialApp),
+        matchesGoldenFile('../../../preview/menu-add-1017-3d.png'),
+      );
+    }
   });
 }
