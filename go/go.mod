@@ -138,3 +138,4 @@ require (
 	golang.org/x/tools v0.47.0 // indirect
 	google.golang.org/protobuf v1.36.1 // indirect
 )
+replace github.com/metacubex/tailscale => ../third_party/go/metacubex-tailscale

@@ -271,3 +271,4 @@ require (
 )
 
 replace nox => ../
+replace github.com/metacubex/tailscale => ../../third_party/go/metacubex-tailscale
