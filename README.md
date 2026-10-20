@@ -70,7 +70,7 @@ cd app && flutter test && flutter build web --dart-define=NOX_MOCK=true   # UI p
 go run ./cmd/noxd run -data /tmp/noxd   # dev daemon; then: flutter test test/service_it_test.dart
 ```
 Windows (manual): `flutter build windows`, stage `dist\app` + `dist\core` as in the workflow, then
-`ISCC /DAppVersion=1.0.12 /DDist=..\dist installer\nox.iss`.
+`ISCC /DAppVersion=1.0.13 /DDist=..\dist installer\nox.iss`.
 
 ## Updates (`version.json`)
 

@@ -52,6 +52,7 @@ class NoxApp extends StatelessWidget {
         locale: const Locale('ru'),
         shortcuts: {...WidgetsApp.defaultShortcuts},
         builder: (ctx, child) {
+          SystemChrome.setSystemUIOverlayStyle(systemBars(pal));
           final mq = MediaQuery.of(ctx);
           final fs = c.fontScale;
           final us = c.uiScale;

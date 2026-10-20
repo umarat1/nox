@@ -212,7 +212,9 @@ func QwdttFatal(line string) string {
 		return "qWDTT: срок действия пароля истёк"
 	case strings.Contains(l, "denied:deactivated") || strings.Contains(l, "деактивирован"):
 		return "qWDTT: пароль деактивирован"
-	case strings.Contains(l, "flood control"):
+	case strings.Contains(l, "fatal_captcha"):
+		return "qWDTT: VK требует проверку «я не робот», а автоматически пройти её не удалось. Попробуйте позже или другой сервер/хэш звонка"
+	case strings.Contains(l, "flood control") || strings.Contains(l, "error_code:29") || strings.Contains(l, "error_code=29"):
 		return "qWDTT: VK временно ограничил запросы (flood control), попробуйте позже"
 	}
 	return ""

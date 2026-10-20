@@ -156,7 +156,7 @@ class MainActivity : FlutterActivity() {
 
     private fun startScan() {
         val o = ScanOptions().setDesiredBarcodeFormats(ScanOptions.QR_CODE)
-            .setPrompt("Наведите камеру на QR-код на экране ТВ")
+            .setPrompt("Наведите камеру на QR-код")
             .setBeepEnabled(false).setOrientationLocked(false)
         try {
             @Suppress("DEPRECATION")

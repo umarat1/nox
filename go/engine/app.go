@@ -26,7 +26,7 @@ import (
 	"nox/core"
 )
 
-const Version = "1.0.12"
+const Version = "1.0.13"
 
 type Sub struct {
 	ID       string `json:"id"`
@@ -81,8 +81,8 @@ type App struct {
 	xr      *xrayProc // Xray-core for an XHTTP server
 	captcha *CaptchaReq
 	qwStdin io.WriteCloser
-	qwRetry int   // consecutive automatic qWDTT restarts
-	qwToken int64 // pending restart; Disconnect clears it
+	qwRetry int       // consecutive automatic qWDTT restarts
+	qwToken int64     // pending restart; Disconnect clears it
 	tun     *exec.Cmd // sstpc (Linux)
 	sstpUp  bool      // Windows RAS SSTP entry dialed / Android bridge up
 	sstpBr  *sstpBridge
@@ -1230,7 +1230,9 @@ func (a *App) startQwdtt(ctx context.Context, q core.Qwdtt) (map[string]any, err
 	var fatal string
 	var fmu sync.Mutex
 	var tail []string
+	scanDone := make(chan struct{})
 	go func() {
+		defer close(scanDone)
 		sc := bufio.NewScanner(pr)
 		sc.Buffer(make([]byte, 64<<10), 1<<20)
 		for sc.Scan() {
@@ -1256,9 +1258,28 @@ func (a *App) startQwdtt(ctx context.Context, q core.Qwdtt) (map[string]any, err
 		}
 	}()
 	exited := make(chan struct{})
-	go func() { cmd.Wait(); pw.Close(); close(exited) }()
+	go func() {
+		cmd.Wait()
+		pw.Close()
+		<-scanDone // all output parsed, so a fatal reason is never lost to the exit race
+		a.mu.Lock()
+		if a.qw == cmd {
+			a.captcha = nil // a pending VK check is meaningless once qwdtt is gone
+		}
+		a.mu.Unlock()
+		close(exited)
+	}()
 	deadline := time.Now().Add(120 * time.Second)
 	for {
+		a.mu.Lock()
+		waitingUser := a.captcha != nil && a.qw == cmd
+		a.mu.Unlock()
+		if waitingUser {
+			// the user is solving VK's check: don't time out under them
+			if d := time.Now().Add(60 * time.Second); d.After(deadline) {
+				deadline = d
+			}
+		}
 		fmu.Lock()
 		f := fatal
 		t := strings.Join(tail, " | ")

@@ -1,4 +1,5 @@
 import 'split_apps.dart';
+
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -14,6 +15,7 @@ import 'theme.dart';
 import 'pair.dart';
 import 'update_ui.dart';
 import 'tour.dart';
+import 'qr_import.dart';
 
 class Home extends StatelessWidget {
   final NoxController c;
@@ -142,8 +144,7 @@ class _Body extends StatelessWidget {
       if (c.vpnDenied)
         _Banner(
           p: p,
-          text:
-              'Нужно разрешение на VPN: нажмите кнопку питания и подтвердите системный запрос.',
+          text: 'Нужно разрешение на VPN: нажмите кнопку питания и подтвердите системный запрос.',
           color: p.red,
           onTap: () {
             c.vpnDenied = false;
@@ -153,8 +154,7 @@ class _Body extends StatelessWidget {
       if (c.captcha != null && canCaptcha && !c.captchaOpen)
         _Banner(
           p: p,
-          text:
-              'qWDTT: VK просит пройти проверку «я не робот». Нажмите, чтобы открыть.',
+          text: 'qWDTT: VK просит пройти проверку «я не робот». Нажмите, чтобы открыть.',
           color: p.amb,
           onTap: c.openCaptcha,
         ),
@@ -445,20 +445,36 @@ class _Btn extends StatelessWidget {
   @override
   Widget build(BuildContext context) => SizedBox(
     width: double.infinity,
-    child: Material(
-      color: secondary ? p.chip : p.acc,
-      borderRadius: BorderRadius.circular(14),
-      child: InkWell(
+    child: DecoratedBox(
+      decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(14),
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 12),
-          child: Text(
-            label,
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              color: secondary ? p.txt : Colors.white,
-              fontWeight: FontWeight.w700,
+        gradient: secondary ? raisedGradient(p, p.chip) : accentGradient(p),
+        border: secondary ? Border.all(color: p.line) : null,
+        boxShadow: secondary
+            ? raisedShadow(p, e: .6)
+            : [
+                BoxShadow(
+                  color: p.acc.withValues(alpha: .35),
+                  blurRadius: 16,
+                  offset: const Offset(0, 5),
+                ),
+              ],
+      ),
+      child: Material(
+        type: MaterialType.transparency,
+        borderRadius: BorderRadius.circular(14),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(14),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 12),
+            child: Text(
+              label,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: secondary ? p.txt : Colors.white,
+                fontWeight: FontWeight.w700,
+              ),
             ),
           ),
         ),
@@ -470,8 +486,10 @@ class _Btn extends StatelessWidget {
 BoxDecoration _box(Pal p, {Color? color, double r = 18, Color? border}) =>
     BoxDecoration(
       color: color ?? p.card,
+      gradient: raisedGradient(p, color ?? p.card),
       borderRadius: BorderRadius.circular(r),
       border: Border.all(color: border ?? p.line),
+      boxShadow: raisedShadow(p),
     );
 
 class _TopBar extends StatelessWidget {
@@ -703,16 +721,70 @@ class _Hero extends StatelessWidget {
                           : wait
                           ? p.amb
                           : p.chip,
-                      border: f ? Border.all(color: p.acc2, width: 3) : null,
+                      // volumetric knob: lit from the top-left, deeper at the bottom-right
+                      gradient: RadialGradient(
+                        center: const Alignment(-.35, -.45),
+                        radius: 1.05,
+                        colors: on
+                            ? [
+                                Color.lerp(p.acc2, Colors.white, .28)!,
+                                p.acc,
+                                Color.lerp(p.acc, Colors.black, .35)!,
+                              ]
+                            : wait
+                            ? [
+                                Color.lerp(p.amb, Colors.white, .3)!,
+                                p.amb,
+                                Color.lerp(p.amb, Colors.black, .3)!,
+                              ]
+                            : [
+                                Color.alphaBlend(
+                                  Colors.white.withValues(
+                                    alpha: p.light ? .9 : .10,
+                                  ),
+                                  p.chip,
+                                ),
+                                Color.alphaBlend(
+                                  Colors.white.withValues(
+                                    alpha: p.light ? .2 : .03,
+                                  ),
+                                  p.chip,
+                                ),
+                                p.light
+                                    ? Color.lerp(p.chip, Colors.black, .06)!
+                                    : p.chip,
+                              ],
+                        stops: const [0, .55, 1],
+                      ),
+                      border: f
+                          ? Border.all(color: p.acc2, width: 3)
+                          : Border.all(
+                              color: on
+                                  ? Colors.white.withValues(alpha: .18)
+                                  : p.line,
+                            ),
                       boxShadow: [
+                        // halo ring + glow (stronger when connected)
                         BoxShadow(
-                          color: p.acc.withValues(alpha: on ? .25 : .08),
+                          color: p.acc.withValues(alpha: on ? .28 : .08),
                           spreadRadius: on ? 8 : 6,
                         ),
-                        if (on)
-                          BoxShadow(
-                            color: p.acc.withValues(alpha: .5),
-                            blurRadius: 30,
+                        BoxShadow(
+                          color: (wait && !on ? p.amb : p.acc).withValues(
+                            alpha: on
+                                ? .6
+                                : wait
+                                ? .35
+                                : .12,
+                          ),
+                          blurRadius: on ? 40 : 22,
+                          spreadRadius: on ? 2 : 0,
+                        ),
+                        if (!p.amoled)
+                          const BoxShadow(
+                            color: Color(0x55000000),
+                            blurRadius: 14,
+                            offset: Offset(0, 6),
                           ),
                       ],
                     ),
@@ -2038,9 +2110,8 @@ void settingsSheet(BuildContext context, NoxController c, Pal p) {
           arrow: true,
           onTap: () {
             Navigator.pop(ctx);
-            Navigator.of(
-              context,
-            ).push(MaterialPageRoute(builder: (_) => SplitAppsPage(c: c)));
+            Navigator.of(context)
+                .push(MaterialPageRoute(builder: (_) => SplitAppsPage(c: c)));
           },
         ),
       Padding(
@@ -2107,8 +2178,7 @@ void settingsSheet(BuildContext context, NoxController c, Pal p) {
       item(
         p,
         'Плавные анимации (60fps+)',
-        desc:
-            'График на частоте экрана; выключите для экономии на слабых устройствах',
+        desc: 'График на частоте экрана; выключите для экономии на слабых устройствах',
         trailing: sw(p, c.animSmooth),
         onTap: () {
           c.setPref('anim60', c.animSmooth ? '0' : '1');
@@ -2176,8 +2246,7 @@ void pingSheet(BuildContext context, NoxController c, Pal p) {
       item(
         p,
         'TCP',
-        desc:
-            'Время TCP-подключения к серверу напрямую, мимо VPN (и когда VPN включён). Быстрый TCP ≠ рабочий туннель.',
+        desc: 'Время TCP-подключения к серверу напрямую, мимо VPN (и когда VPN включён). Быстрый TCP ≠ рабочий туннель.',
         checked: m == 'tcp',
         onTap: () {
           c.saveSettings({'pingMode': 'tcp'});
@@ -2601,8 +2670,7 @@ void addSheet(BuildContext context, NoxController c, Pal p) {
         maxLines: 5,
         style: TextStyle(color: p.txt),
         decoration: InputDecoration(
-          hintText:
-              'Ссылка на подписку, vless://, trojan://, ss://, hy2://, tuic://, qwdtt://, sstp://user:pass@host:443#Имя',
+          hintText: 'Ссылка на подписку, vless://, trojan://, ss://, hy2://, tuic://, qwdtt://, sstp://user:pass@host:443#Имя',
           hintStyle: TextStyle(color: p.ter, fontSize: 13),
           filled: true,
           fillColor: p.chip,
@@ -2623,6 +2691,41 @@ void addSheet(BuildContext context, NoxController c, Pal p) {
         },
       ),
       const SizedBox(height: 10),
+      // QR import: camera on Android phones; image file / clipboard picture on desktop
+      if (!c.isTv)
+        Row(
+          children: [
+            if (isAndroid)
+              Expanded(
+                child: _Btn(
+                  p: p,
+                  secondary: true,
+                  label: 'Сканировать QR-код',
+                  onTap: () => _qrInto(context, tc, scanQr),
+                ),
+              )
+            else ...[
+              Expanded(
+                child: _Btn(
+                  p: p,
+                  secondary: true,
+                  label: 'QR из файла',
+                  onTap: () => _qrInto(context, tc, qrFromFile),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _Btn(
+                  p: p,
+                  secondary: true,
+                  label: 'QR из буфера',
+                  onTap: () => _qrInto(context, tc, qrFromClipboard),
+                ),
+              ),
+            ],
+          ],
+        ),
+      if (!c.isTv) const SizedBox(height: 10),
       _Btn(
         p: p,
         label: 'Добавить',
@@ -2716,4 +2819,28 @@ void domainsSheet(BuildContext context, NoxController c, Pal p) {
       ),
     ],
   );
+}
+
+/// Reads a QR (camera / file / clipboard) and appends its text to the link field.
+Future<void> _qrInto(
+  BuildContext context,
+  TextEditingController tc,
+  Future<String?> Function() src,
+) async {
+  final r = await src();
+  if (r == null || !context.mounted) return;
+  if (r.startsWith('error:')) {
+    toast(context, qrError(r));
+    return;
+  }
+  final t = r.trim();
+  if (t.toLowerCase().startsWith('nox://pair')) {
+    toast(
+      context,
+      'Это QR для передачи профилей — используйте «Принять с телефона»',
+    );
+    return;
+  }
+  tc.text = tc.text.trim().isEmpty ? t : '${tc.text.trim()}\n$t';
+  toast(context, 'Ссылка из QR-кода вставлена');
 }
