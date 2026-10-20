@@ -1,3 +1,6 @@
+@TestOn('linux')
+library;
+
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -165,7 +168,10 @@ void main() {
       await t.pump(const Duration(milliseconds: 100));
     expect(find.text('Juicity'), findsWidgets);
     if (shots) {
-      await expectLater(find.byType(MaterialApp), matchesGoldenFile('../../../preview/manual-add-1018.png'));
+      await expectLater(
+        find.byType(MaterialApp),
+        matchesGoldenFile('../../../preview/manual-add-1018.png'),
+      );
     }
   });
 
@@ -181,24 +187,43 @@ void main() {
         'Seq': 60,
         'Hist': [
           for (var i = 0; i < 60; i++)
-            [(20000 + r.nextInt(120000)) * (i % 9 == 0 ? 3 : 1), (300000 + r.nextInt(1500000)) * (i % 7 == 0 ? 2 : 1)],
+            [
+              (20000 + r.nextInt(120000)) * (i % 9 == 0 ? 3 : 1),
+              (300000 + r.nextInt(1500000)) * (i % 7 == 0 ? 2 : 1),
+            ],
         ],
       });
-      await t.pumpWidget(MaterialApp(
-        debugShowCheckedModeBanner: false,
-        theme: ThemeData(fontFamily: 'Roboto'),
-        home: Scaffold(
-          backgroundColor: Colors.black,
-          body: Padding(
-            padding: const EdgeInsets.all(16),
-            child: SizedBox(height: 200, child: LiveGraph(series: s, p: Pal.black, active: true, labels: true, span: 60)),
+      await t.pumpWidget(
+        MaterialApp(
+          debugShowCheckedModeBanner: false,
+          theme: ThemeData(fontFamily: 'Roboto'),
+          home: Scaffold(
+            backgroundColor: Colors.black,
+            body: Padding(
+              padding: const EdgeInsets.all(16),
+              child: SizedBox(
+                height: 200,
+                child: LiveGraph(
+                  series: s,
+                  p: Pal.black,
+                  active: true,
+                  labels: true,
+                  span: 60,
+                ),
+              ),
+            ),
           ),
         ),
-      ));
-      for (var i = 0; i < 8; i++) await t.pump(const Duration(milliseconds: 200));
+      );
+      for (var i = 0; i < 8; i++)
+        await t.pump(const Duration(milliseconds: 200));
       if (shots) {
-        await expectLater(find.byType(MaterialApp),
-            matchesGoldenFile('../../../preview/graph-${st.isEmpty ? 'classic' : st}.png'));
+        await expectLater(
+          find.byType(MaterialApp),
+          matchesGoldenFile(
+            '../../../preview/graph-${st.isEmpty ? 'classic' : st}.png',
+          ),
+        );
       }
       graphStyle = '';
       await t.pumpWidget(const SizedBox());

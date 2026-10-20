@@ -27,7 +27,9 @@ class _Tolerant extends LocalFileComparator {
 
 void main() {
   goldenFileComparator = _Tolerant(
-    Uri.parse('${Directory.current.path}/test/shots/update_shots_test.dart'),
+    (goldenFileComparator as LocalFileComparator).basedir.resolve(
+      'update_shots_test.dart',
+    ),
   );
   setUpAll(() async {
     await loadFonts();
