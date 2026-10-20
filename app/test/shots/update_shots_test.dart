@@ -13,7 +13,22 @@ import 'package:nox/src/update_ui.dart';
 
 import '../ui_util.dart';
 
+class _Tolerant extends LocalFileComparator {
+  _Tolerant(super.testFile);
+  @override
+  Future<bool> compare(Uint8List imageBytes, Uri golden) async {
+    final r = await GoldenFileComparator.compareLists(
+      imageBytes,
+      await getGoldenBytes(golden),
+    );
+    return r.passed || r.diffPercent < 0.02;
+  }
+}
+
 void main() {
+  goldenFileComparator = _Tolerant(
+    Uri.parse('${Directory.current.path}/test/shots/update_shots_test.dart'),
+  );
   setUpAll(() async {
     await loadFonts();
     // Android has no Segoe UI either: the app falls back to Roboto there

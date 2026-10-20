@@ -1590,17 +1590,21 @@ class _AnnounceState extends State<_Announce> {
                         children: [
                           Row(
                             children: [
-                              ShaderMask(
-                                shaderCallback: (b) => LinearGradient(
-                                  colors: [p.txt, p.acc2],
-                                ).createShader(b),
-                                child: const Text(
-                                  'Объявление',
-                                  style: TextStyle(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.w800,
-                                    fontSize: 13.5,
-                                    letterSpacing: .2,
+                              Flexible(
+                                child: ShaderMask(
+                                  shaderCallback: (b) => LinearGradient(
+                                    colors: [p.txt, p.acc2],
+                                  ).createShader(b),
+                                  child: const Text(
+                                    'Объявление',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.w800,
+                                      fontSize: 13.5,
+                                      letterSpacing: .2,
+                                    ),
                                   ),
                                 ),
                               ),
