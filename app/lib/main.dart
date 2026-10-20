@@ -45,6 +45,7 @@ class NoxApp extends StatelessWidget {
     listenable: c,
     builder: (_, _) {
       final pal = Pal.of(c.settings['theme'] as String?);
+      vol3d = vol3dFromUi(c.ui);
       return MaterialApp(
         title: 'Nox',
         debugShowCheckedModeBanner: false,

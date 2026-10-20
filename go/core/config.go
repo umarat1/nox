@@ -3,6 +3,7 @@ package core
 import (
 	"encoding/json"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,7 +13,7 @@ func fileExists(p string) bool { _, err := os.Stat(p); return err == nil }
 
 type Settings struct {
 	Mode      string `json:"mode"` // "tun" | "proxy"
-	DNS       string `json:"dns"`  // cloudflare|google|yandex|adguard|custom
+	DNS       string `json:"dns"`  // auto|cloudflare|google|quad9|adguard|yandex|dnsai|comss|xbox|controld|mullvad|nextdns|custom
 	CustomDNS string `json:"customDns"`
 	DirectRU  bool   `json:"directRu"`
 	BlockAds  bool   `json:"blockAds"`
@@ -44,7 +45,7 @@ type Settings struct {
 }
 
 func DefaultSettings() Settings {
-	return Settings{Mode: "tun", DNS: "cloudflare", DirectRU: true, RuApps: true, IPv6: false, ProxyPort: 2080, PingMode: "url", MTU: 9000, Sniff: true, LogLevel: "warn"}
+	return Settings{Mode: "tun", DNS: "auto", DirectRU: true, RuApps: true, IPv6: false, ProxyPort: 2080, PingMode: "url", MTU: 9000, Sniff: true, LogLevel: "warn"}
 }
 
 func dnsServer(s Settings) map[string]any {
@@ -57,6 +58,21 @@ func dnsServer(s Settings) map[string]any {
 		return map[string]any{"type": "https", "server": "94.140.14.14"}
 	case "quad9":
 		return map[string]any{"type": "https", "server": "9.9.9.9"}
+	case "dnsai", "comss", "xbox", "controld", "mullvad", "nextdns":
+		// DoH by hostname (certificate checked against it); hostname resolved by the local resolver.
+		h, path := map[string][2]string{
+			"dnsai":    {"dns.dns-ai.ru", "/dns-query"},
+			"comss":    {"dns.comss.one", "/dns-query"},
+			"xbox":     {"xbox-dns.ru", "/dns-query"},
+			"controld": {"freedns.controld.com", "/p0"},
+			"mullvad":  {"dns.mullvad.net", "/dns-query"},
+			"nextdns":  {"dns.nextdns.io", "/dns-query"},
+		}[s.DNS][0], ""
+		path = map[string]string{"controld": "/p0"}[s.DNS]
+		if path == "" {
+			path = "/dns-query"
+		}
+		return map[string]any{"type": "https", "server": h, "path": path, "domain_resolver": "local"}
 	case "custom":
 		c := strings.TrimSpace(s.CustomDNS)
 		switch {
@@ -70,7 +86,7 @@ func dnsServer(s Settings) map[string]any {
 			return map[string]any{"type": "https", "server": h, "path": path, "domain_resolver": "local"}
 		case strings.HasPrefix(c, "tls://"):
 			return map[string]any{"type": "tls", "server": strings.TrimPrefix(c, "tls://"), "domain_resolver": "local"}
-		case c != "":
+		case c != "" && net.ParseIP(strings.TrimPrefix(c, "udp://")) != nil:
 			return map[string]any{"type": "udp", "server": strings.TrimPrefix(c, "udp://")}
 		}
 	}

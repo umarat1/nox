@@ -27,6 +27,7 @@ class Home extends StatelessWidget {
       listenable: c,
       builder: (context, _) {
         final p = Pal.of(c.settings['theme'] as String?);
+        vol3d = vol3dFromUi(c.ui);
         return Theme(
           data: materialTheme(p),
           child: Scaffold(
@@ -144,7 +145,8 @@ class _Body extends StatelessWidget {
       if (c.vpnDenied)
         _Banner(
           p: p,
-          text: 'Нужно разрешение на VPN: нажмите кнопку питания и подтвердите системный запрос.',
+          text:
+              'Нужно разрешение на VPN: нажмите кнопку питания и подтвердите системный запрос.',
           color: p.red,
           onTap: () {
             c.vpnDenied = false;
@@ -154,7 +156,8 @@ class _Body extends StatelessWidget {
       if (c.captcha != null && canCaptcha && !c.captchaOpen)
         _Banner(
           p: p,
-          text: 'qWDTT: VK просит пройти проверку «я не робот». Нажмите, чтобы открыть.',
+          text:
+              'qWDTT: VK просит пройти проверку «я не робот». Нажмите, чтобы открыть.',
           color: p.amb,
           onTap: c.openCaptcha,
         ),
@@ -452,6 +455,8 @@ class _Btn extends StatelessWidget {
         border: secondary ? Border.all(color: p.line) : null,
         boxShadow: secondary
             ? raisedShadow(p, e: .6)
+            : !vol3d
+            ? const []
             : [
                 BoxShadow(
                   color: p.acc.withValues(alpha: .35),
@@ -722,40 +727,46 @@ class _Hero extends StatelessWidget {
                           ? p.amb
                           : p.chip,
                       // volumetric knob: lit from the top-left, deeper at the bottom-right
-                      gradient: RadialGradient(
-                        center: const Alignment(-.35, -.45),
-                        radius: 1.05,
-                        colors: on
-                            ? [
-                                Color.lerp(p.acc2, Colors.white, .28)!,
-                                p.acc,
-                                Color.lerp(p.acc, Colors.black, .35)!,
-                              ]
-                            : wait
-                            ? [
-                                Color.lerp(p.amb, Colors.white, .3)!,
-                                p.amb,
-                                Color.lerp(p.amb, Colors.black, .3)!,
-                              ]
-                            : [
-                                Color.alphaBlend(
-                                  Colors.white.withValues(
-                                    alpha: p.light ? .9 : .10,
-                                  ),
-                                  p.chip,
-                                ),
-                                Color.alphaBlend(
-                                  Colors.white.withValues(
-                                    alpha: p.light ? .2 : .03,
-                                  ),
-                                  p.chip,
-                                ),
-                                p.light
-                                    ? Color.lerp(p.chip, Colors.black, .06)!
-                                    : p.chip,
-                              ],
-                        stops: const [0, .55, 1],
-                      ),
+                      gradient: !vol3d
+                          ? null
+                          : RadialGradient(
+                              center: const Alignment(-.35, -.45),
+                              radius: 1.05,
+                              colors: on
+                                  ? [
+                                      Color.lerp(p.acc2, Colors.white, .28)!,
+                                      p.acc,
+                                      Color.lerp(p.acc, Colors.black, .35)!,
+                                    ]
+                                  : wait
+                                  ? [
+                                      Color.lerp(p.amb, Colors.white, .3)!,
+                                      p.amb,
+                                      Color.lerp(p.amb, Colors.black, .3)!,
+                                    ]
+                                  : [
+                                      Color.alphaBlend(
+                                        Colors.white.withValues(
+                                          alpha: p.light ? .9 : .10,
+                                        ),
+                                        p.chip,
+                                      ),
+                                      Color.alphaBlend(
+                                        Colors.white.withValues(
+                                          alpha: p.light ? .2 : .03,
+                                        ),
+                                        p.chip,
+                                      ),
+                                      p.light
+                                          ? Color.lerp(
+                                              p.chip,
+                                              Colors.black,
+                                              .06,
+                                            )!
+                                          : p.chip,
+                                    ],
+                              stops: const [0, .55, 1],
+                            ),
                       border: f
                           ? Border.all(color: p.acc2, width: 3)
                           : Border.all(
@@ -763,30 +774,32 @@ class _Hero extends StatelessWidget {
                                   ? Colors.white.withValues(alpha: .18)
                                   : p.line,
                             ),
-                      boxShadow: [
-                        // halo ring + glow (stronger when connected)
-                        BoxShadow(
-                          color: p.acc.withValues(alpha: on ? .28 : .08),
-                          spreadRadius: on ? 8 : 6,
-                        ),
-                        BoxShadow(
-                          color: (wait && !on ? p.amb : p.acc).withValues(
-                            alpha: on
-                                ? .6
-                                : wait
-                                ? .35
-                                : .12,
-                          ),
-                          blurRadius: on ? 40 : 22,
-                          spreadRadius: on ? 2 : 0,
-                        ),
-                        if (!p.amoled)
-                          const BoxShadow(
-                            color: Color(0x55000000),
-                            blurRadius: 14,
-                            offset: Offset(0, 6),
-                          ),
-                      ],
+                      boxShadow: !vol3d
+                          ? const []
+                          : [
+                              // halo ring + glow (stronger when connected)
+                              BoxShadow(
+                                color: p.acc.withValues(alpha: on ? .28 : .08),
+                                spreadRadius: on ? 8 : 6,
+                              ),
+                              BoxShadow(
+                                color: (wait && !on ? p.amb : p.acc).withValues(
+                                  alpha: on
+                                      ? .6
+                                      : wait
+                                      ? .35
+                                      : .12,
+                                ),
+                                blurRadius: on ? 40 : 22,
+                                spreadRadius: on ? 2 : 0,
+                              ),
+                              if (!p.amoled)
+                                const BoxShadow(
+                                  color: Color(0x55000000),
+                                  blurRadius: 14,
+                                  offset: Offset(0, 6),
+                                ),
+                            ],
                     ),
                     child: Icon(
                       Icons.power_settings_new,
@@ -1098,93 +1111,43 @@ class _SubBlock extends StatelessWidget {
         ? 'Бессрочно'
         : left <= 0
         ? 'Истекла'
-        : '$days ${plural(days!, 'д', 'д', 'д')}';
-    final trafficTxt = total > 0
-        ? '${fmtBytes(used)} / ${fmtBytes(total)}'
-        : 'без лимита';
-    final bar = total > 0 ? math.min(1.0, used / total) : 1.0;
+        : '$days ${plural(days!, 'день', 'дня', 'дней')}';
+    final trafficLeft = total > 0 ? math.max(0, total - used) : null;
+    final trafficTxt = trafficLeft == null
+        ? 'Без лимита'
+        : fmtBytes(trafficLeft);
+    final tFrac = total > 0 ? (1 - used / total).clamp(0.0, 1.0) : 1.0;
+    // days ring: 30-day scale (typical period)
+    final dFrac = left == null ? 1.0 : (left / 30).clamp(0.0, 1.0);
+    final dt = expire > 0
+        ? DateTime.fromMillisecondsSinceEpoch(expire * 1000)
+        : null;
+    final dateTxt = dt == null
+        ? 'без срока'
+        : 'до ${dt.day.toString().padLeft(2, '0')}.${dt.month.toString().padLeft(2, '0')}.${dt.year}';
     return Container(
       margin: const EdgeInsets.only(top: 8),
-      padding: const EdgeInsets.fromLTRB(10, 6, 6, 6),
+      padding: const EdgeInsets.fromLTRB(12, 10, 6, 8),
       decoration: _box(p),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
+              Icon(Icons.workspace_premium_rounded, size: 18, color: p.acc2),
+              const SizedBox(width: 6),
               Expanded(
-                child: ClipRect(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      LayoutBuilder(
-                        builder: (_, box) => Row(
-                          children: [
-                            // Expiry has priority: never ellipsized; only at extreme
-                            // scales (wider than the whole row) it scales down to fit.
-                            ConstrainedBox(
-                              constraints: BoxConstraints(
-                                maxWidth: math.max(0, box.maxWidth - 12),
-                              ),
-                              child: FittedBox(
-                                fit: BoxFit.scaleDown,
-                                alignment: Alignment.centerLeft,
-                                child: Text(
-                                  expireTxt,
-                                  maxLines: 1,
-                                  softWrap: false,
-                                  style: TextStyle(
-                                    color: left != null && left <= 0
-                                        ? p.red
-                                        : (left != null && left <= 3
-                                              ? p.amb
-                                              : p.txt),
-                                    fontWeight: FontWeight.w700,
-                                    fontSize: 12,
-                                  ),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 6),
-                            Flexible(
-                              child: Text(
-                                '$n серв.',
-                                maxLines: 1,
-                                softWrap: false,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(color: p.sub, fontSize: 12),
-                              ),
-                            ),
-                            const SizedBox(width: 6),
-                            Expanded(
-                              child: Text(
-                                trafficTxt,
-                                maxLines: 1,
-                                softWrap: false,
-                                overflow: TextOverflow.ellipsis,
-                                textAlign: TextAlign.end,
-                                style: TextStyle(color: p.ter, fontSize: 10),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(3),
-                        child: LinearProgressIndicator(
-                          value: bar,
-                          minHeight: 3,
-                          backgroundColor: p.chip,
-                          color: p.acc,
-                        ),
-                      ),
-                    ],
+                child: Text(
+                  'Подписка · $n серв.',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: p.txt,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 13,
                   ),
                 ),
               ),
-              const SizedBox(width: 8),
               _IconBtn(
                 p: p,
                 icon: Icons.refresh,
@@ -1207,17 +1170,36 @@ class _SubBlock extends StatelessWidget {
               ),
             ],
           ),
-          if (ann.isNotEmpty)
-            Container(
-              width: double.infinity,
-              margin: const EdgeInsets.only(top: 4),
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-              decoration: BoxDecoration(
-                color: p.acc.withValues(alpha: .12),
-                borderRadius: BorderRadius.circular(8),
+          const SizedBox(height: 6),
+          Row(
+            children: [
+              Expanded(
+                child: _Meter(
+                  p: p,
+                  frac: dFrac,
+                  icon: Icons.event_rounded,
+                  label: 'Осталось дней',
+                  value: expireTxt,
+                  sub: dateTxt,
+                ),
               ),
-              child: Text(ann, style: TextStyle(color: p.txt, fontSize: 11.5)),
-            ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _Meter(
+                  p: p,
+                  frac: tFrac,
+                  icon: Icons.data_usage_rounded,
+                  label: 'Осталось трафика',
+                  value: trafficTxt,
+                  sub: total > 0
+                      ? 'из ${fmtBytes(total)}'
+                      : 'израсходовано ${fmtBytes(used)}',
+                ),
+              ),
+              const SizedBox(width: 6),
+            ],
+          ),
+          if (ann.isNotEmpty) _Announce(c: c, p: p, text: ann),
           if ((b['webPage'] ?? '') != '' || (b['support'] ?? '') != '')
             Padding(
               padding: const EdgeInsets.only(top: 2),
@@ -1231,6 +1213,207 @@ class _SubBlock extends StatelessWidget {
               ),
             ),
         ],
+      ),
+    );
+  }
+}
+
+/// Ring meter for days/traffic left; colour shifts green → amber → red as it runs low.
+class _Meter extends StatelessWidget {
+  final Pal p;
+  final double frac;
+  final IconData icon;
+  final String label, value, sub;
+  const _Meter({
+    required this.p,
+    required this.frac,
+    required this.icon,
+    required this.label,
+    required this.value,
+    required this.sub,
+  });
+  @override
+  Widget build(BuildContext context) {
+    final col = levelColor(p, frac);
+    return Container(
+      padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        color: p.amoled ? const Color(0xFF000000) : p.chip,
+        gradient: vol3d && !p.amoled ? raisedGradient(p, p.chip) : null,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: vol3d ? col.withValues(alpha: .35) : p.line),
+        boxShadow: vol3d
+            ? [BoxShadow(color: col.withValues(alpha: .18), blurRadius: 14)]
+            : const [],
+      ),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 40,
+            height: 40,
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                CircularProgressIndicator(
+                  value: frac,
+                  strokeWidth: 4,
+                  strokeCap: StrokeCap.round,
+                  backgroundColor: p.line,
+                  color: col,
+                ),
+                Icon(icon, size: 17, color: col),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(color: p.sub, fontSize: 10.5),
+                ),
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    value,
+                    maxLines: 1,
+                    style: TextStyle(
+                      color: frac < .15 ? col : p.txt,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 15,
+                    ),
+                  ),
+                ),
+                Text(
+                  sub,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(color: p.ter, fontSize: 10),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Provider announcement: icon + title, collapsible text, dismiss (remembered per text).
+class _Announce extends StatefulWidget {
+  final NoxController c;
+  final Pal p;
+  final String text;
+  const _Announce({required this.c, required this.p, required this.text});
+  @override
+  State<_Announce> createState() => _AnnounceState();
+}
+
+class _AnnounceState extends State<_Announce> {
+  bool open = false;
+  @override
+  Widget build(BuildContext context) {
+    final p = widget.p;
+    final key = '${widget.text.hashCode}';
+    if (widget.c.ui['annHide'] == key) return const SizedBox.shrink();
+    final long = widget.text.length > 90 || widget.text.contains('\n');
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(top: 8, right: 6),
+      decoration: BoxDecoration(
+        color: p.amoled
+            ? const Color(0xFF000000)
+            : p.acc.withValues(alpha: .10),
+        gradient: vol3d
+            ? LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  p.acc.withValues(alpha: p.amoled ? .22 : .26),
+                  p.acc2.withValues(alpha: p.amoled ? .04 : .08),
+                ],
+              )
+            : null,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: p.acc.withValues(alpha: vol3d ? .45 : .3)),
+        boxShadow: vol3d
+            ? [BoxShadow(color: p.acc.withValues(alpha: .22), blurRadius: 16)]
+            : const [],
+      ),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: long ? () => setState(() => open = !open) : null,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(10, 8, 4, 8),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 30,
+                height: 30,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: p.acc.withValues(alpha: .2),
+                  gradient: vol3d ? accentGradient(p) : null,
+                ),
+                child: Icon(
+                  Icons.campaign_rounded,
+                  size: 17,
+                  color: vol3d ? Colors.white : p.acc2,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Объявление',
+                      style: TextStyle(
+                        color: p.acc2,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 11.5,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    AnimatedSize(
+                      duration: const Duration(milliseconds: 200),
+                      alignment: Alignment.topCenter,
+                      child: Text(
+                        widget.text,
+                        maxLines: open ? null : 2,
+                        overflow: open
+                            ? TextOverflow.visible
+                            : TextOverflow.ellipsis,
+                        style: TextStyle(color: p.txt, fontSize: 12.5),
+                      ),
+                    ),
+                    if (long)
+                      Text(
+                        open ? 'Свернуть' : 'Читать полностью',
+                        style: TextStyle(
+                          color: p.sub,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              IconButton(
+                tooltip: 'Скрыть',
+                visualDensity: VisualDensity.compact,
+                icon: Icon(Icons.close_rounded, size: 18, color: p.sub),
+                onPressed: () => widget.c.setPref('annHide', key),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -1868,11 +2051,101 @@ const _views = [
   ('slider', 'Слайдеры'),
 ];
 const _dns = [
+  ('auto', 'Авто (Cloudflare по DoH)'),
   ('cloudflare', 'Cloudflare (1.1.1.1)'),
   ('google', 'Google (8.8.8.8)'),
+  ('quad9', 'Quad9 (9.9.9.9)'),
+  ('adguard', 'AdGuard (94.140.14.14, без рекламы)'),
   ('yandex', 'Яндекс (77.88.8.8)'),
-  ('adguard', 'AdGuard (без рекламы)'),
+  ('dnsai', 'DNS-AI (dns-ai.ru, нейросети)'),
+  ('comss', 'Comss.one DNS'),
+  ('xbox', 'xbox-dns.ru'),
+  ('controld', 'Control D (без фильтров)'),
+  ('mullvad', 'Mullvad DNS'),
+  ('nextdns', 'NextDNS'),
+  ('custom', 'Свой…'),
 ];
+
+/// Custom DNS: IPv4/IPv6 address (optionally udp://), tls://host or https://host/path.
+/// Returns null when valid, else a Russian error.
+String? validateDns(String v) {
+  final s = v.trim();
+  if (s.isEmpty) return 'Введите адрес DNS';
+  if (s.startsWith('https://') || s.startsWith('tls://')) {
+    final h =
+        Uri.tryParse(
+          s.startsWith('tls://') ? 'https://${s.substring(6)}' : s,
+        )?.host ??
+        '';
+    return h.isEmpty || h.contains(' ') ? 'Неверный адрес' : null;
+  }
+  final ip = s.startsWith('udp://') ? s.substring(6) : s;
+  return InternetAddressCheck.isIp(ip) ? null : 'Неверный IP-адрес';
+}
+
+class InternetAddressCheck {
+  static bool isIp(String s) {
+    final v4 = RegExp(
+      r'^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$',
+    ).firstMatch(s);
+    if (v4 != null) {
+      return [1, 2, 3, 4].every((i) => int.parse(v4.group(i)!) <= 255) &&
+          s != '0.0.0.0';
+    }
+    return s.contains(':') &&
+        RegExp(r'^[0-9a-fA-F:]+$').hasMatch(s) &&
+        Uri.tryParse('http://[$s]/') != null;
+  }
+}
+
+String dnsDesc(Map s) {
+  final k = s['dns'] ?? 'auto';
+  if (k == 'custom') return 'Свой: ${s['customDns'] ?? ''}';
+  return _dns.firstWhere((e) => e.$1 == k, orElse: () => _dns[0]).$2;
+}
+
+Future<void> customDnsDialog(
+  BuildContext context,
+  NoxController c,
+  Pal p,
+) async {
+  final ctl = TextEditingController(text: '${c.settings['customDns'] ?? ''}');
+  String? err;
+  final v = await showDialog<String>(
+    context: context,
+    builder: (d) => StatefulBuilder(
+      builder: (d, set) => AlertDialog(
+        backgroundColor: p.card,
+        title: Text('Свой DNS', style: TextStyle(color: p.txt)),
+        content: TextField(
+          key: const Key('customDns'),
+          controller: ctl,
+          autofocus: true,
+          style: TextStyle(color: p.txt),
+          decoration: InputDecoration(
+            hintText: '1.1.1.1 или https://dns.example/dns-query',
+            errorText: err,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(d),
+            child: const Text('Отмена'),
+          ),
+          TextButton(
+            onPressed: () {
+              final e = validateDns(ctl.text);
+              if (e != null) return set(() => err = e);
+              Navigator.pop(d, ctl.text.trim());
+            },
+            child: const Text('Сохранить'),
+          ),
+        ],
+      ),
+    ),
+  );
+  if (v != null) await c.saveSettings({'dns': 'custom', 'customDns': v});
+}
 
 void updateSheet(BuildContext context, NoxController c, Pal p) async {
   // Re-check like 0.7.x Mail.open so a fresh publish is not missed.
@@ -2073,13 +2346,18 @@ void settingsSheet(BuildContext context, NoxController c, Pal p) {
       ),
       item(
         p,
+        'Объёмный 3D-дизайн',
+        desc: 'Тени, градиенты и свечение',
+        trailing: sw(p, vol3dFromUi(c.ui)),
+        onTap: () {
+          Navigator.pop(ctx);
+          c.setPref('vol3d', vol3dFromUi(c.ui) ? '0' : '1');
+        },
+      ),
+      item(
+        p,
         'DNS',
-        desc: _dns
-            .firstWhere(
-              (e) => e.$1 == (s['dns'] ?? 'cloudflare'),
-              orElse: () => _dns[0],
-            )
-            .$2,
+        desc: dnsDesc(s),
         arrow: true,
         onTap: () {
           Navigator.pop(ctx);
@@ -2092,10 +2370,18 @@ void settingsSheet(BuildContext context, NoxController c, Pal p) {
                 item(
                   p,
                   n,
-                  checked: (s['dns'] ?? 'cloudflare') == k,
-                  onTap: () {
-                    c.saveSettings({'dns': k});
+                  checked: (s['dns'] ?? 'auto') == k,
+                  onTap: () async {
                     Navigator.pop(c2);
+                    if (k == 'custom') {
+                      await customDnsDialog(context, c, p);
+                    } else {
+                      await c.saveSettings({'dns': k});
+                    }
+                    if (c.connected) {
+                      await c.call('Disconnect');
+                      await c.call('Connect');
+                    }
                   },
                 ),
             ],
@@ -2110,8 +2396,9 @@ void settingsSheet(BuildContext context, NoxController c, Pal p) {
           arrow: true,
           onTap: () {
             Navigator.pop(ctx);
-            Navigator.of(context)
-                .push(MaterialPageRoute(builder: (_) => SplitAppsPage(c: c)));
+            Navigator.of(
+              context,
+            ).push(MaterialPageRoute(builder: (_) => SplitAppsPage(c: c)));
           },
         ),
       Padding(
@@ -2178,7 +2465,8 @@ void settingsSheet(BuildContext context, NoxController c, Pal p) {
       item(
         p,
         'Плавные анимации (60fps+)',
-        desc: 'График на частоте экрана; выключите для экономии на слабых устройствах',
+        desc:
+            'График на частоте экрана; выключите для экономии на слабых устройствах',
         trailing: sw(p, c.animSmooth),
         onTap: () {
           c.setPref('anim60', c.animSmooth ? '0' : '1');
@@ -2246,7 +2534,8 @@ void pingSheet(BuildContext context, NoxController c, Pal p) {
       item(
         p,
         'TCP',
-        desc: 'Время TCP-подключения к серверу напрямую, мимо VPN (и когда VPN включён). Быстрый TCP ≠ рабочий туннель.',
+        desc:
+            'Время TCP-подключения к серверу напрямую, мимо VPN (и когда VPN включён). Быстрый TCP ≠ рабочий туннель.',
         checked: m == 'tcp',
         onTap: () {
           c.saveSettings({'pingMode': 'tcp'});
@@ -2670,7 +2959,8 @@ void addSheet(BuildContext context, NoxController c, Pal p) {
         maxLines: 5,
         style: TextStyle(color: p.txt),
         decoration: InputDecoration(
-          hintText: 'Ссылка на подписку, vless://, trojan://, ss://, hy2://, tuic://, qwdtt://, sstp://user:pass@host:443#Имя',
+          hintText:
+              'Ссылка на подписку, vless://, trojan://, ss://, hy2://, tuic://, qwdtt://, sstp://user:pass@host:443#Имя',
           hintStyle: TextStyle(color: p.ter, fontSize: 13),
           filled: true,
           fillColor: p.chip,

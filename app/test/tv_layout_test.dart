@@ -13,6 +13,13 @@ import 'ui_util.dart';
 bool _wide(WidgetTester t) {
   Finder f(String type) =>
       find.byWidgetPredicate((w) => w.runtimeType.toString() == type).first;
+  // one column: on a short landscape phone the filter bar can sit below the fold (not built)
+  if (find
+      .byWidgetPredicate((w) => w.runtimeType.toString() == '_FilterBar')
+      .evaluate()
+      .isEmpty) {
+    return false;
+  }
   // two panes: the filter bar / server list is to the right of the connect card
   return t.getRect(f('_FilterBar')).left >= t.getRect(f('_Hero')).right;
 }

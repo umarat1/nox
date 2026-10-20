@@ -429,6 +429,10 @@ Future<void> initPairLinks() async {
 Future<void> updNotify(String state, int pct, String text) async {
   if (!Platform.isAndroid || _mock) return;
   try {
-    await _ch.invokeMethod('updNotify', {'state': state, 'pct': pct, 'text': text});
+    await _ch.invokeMethod('updNotify', {
+      'state': state,
+      'pct': pct,
+      'text': text,
+    });
   } catch (_) {}
 }

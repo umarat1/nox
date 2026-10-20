@@ -192,11 +192,22 @@ SystemUiOverlayStyle systemBars(Pal p) => SystemUiOverlayStyle(
       : Brightness.light,
 );
 
+/// Volumetric 3D look on/off (settings «Объёмный 3D-дизайн», ui pref `vol3d`, default on).
+/// When off everything is flat: no shadows, no gradients; palette (incl. pure-black AMOLED) unchanged.
+bool vol3d = true;
+bool vol3dFromUi(Map<String, String> ui) => ui['vol3d'] != '0';
+
+/// Green → amber → red as [left] (0..1 of remaining) runs low.
+Color levelColor(Pal p, double left) => left > .5
+    ? Color.lerp(p.amb, p.grn, ((left - .5) / .5).clamp(0, 1))!
+    : Color.lerp(p.red, p.amb, (left / .5).clamp(0, 1))!;
+
 // ---- Volumetric look: a soft top-left light, raised surfaces and accent glow. ----
 
 /// Top-lit sheen over a surface: a faint highlight that fades out, so cards read as raised.
 /// On AMOLED the base stays #000000 at the bottom-right; only the lit edge is lifted.
 Gradient raisedGradient(Pal p, Color base) {
+  if (!vol3d) return LinearGradient(colors: [base, base]);
   final hi = p.light
       ? Color.alphaBlend(const Color(0x66FFFFFF), base)
       : Color.alphaBlend(
@@ -213,7 +224,9 @@ Gradient raisedGradient(Pal p, Color base) {
 }
 
 /// Soft depth shadows. Black shadows vanish on AMOLED, so there a faint accent halo is used.
-List<BoxShadow> raisedShadow(Pal p, {double e = 1}) => p.light
+List<BoxShadow> raisedShadow(Pal p, {double e = 1}) => !vol3d
+    ? const []
+    : p.light
     ? [
         BoxShadow(
           color: const Color(0x14141A33),
@@ -248,12 +261,14 @@ List<BoxShadow> raisedShadow(Pal p, {double e = 1}) => p.light
       ];
 
 /// Accent button fill: a lit top over a deeper bottom.
-Gradient accentGradient(Pal p) => LinearGradient(
-  begin: Alignment.topCenter,
-  end: Alignment.bottomCenter,
-  colors: [
-    Color.lerp(p.acc2, Colors.white, .12)!,
-    p.acc,
-    Color.lerp(p.acc, Colors.black, .18)!,
-  ],
-);
+Gradient accentGradient(Pal p) => !vol3d
+    ? LinearGradient(colors: [p.acc, p.acc])
+    : LinearGradient(
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+        colors: [
+          Color.lerp(p.acc2, Colors.white, .12)!,
+          p.acc,
+          Color.lerp(p.acc, Colors.black, .18)!,
+        ],
+      );
