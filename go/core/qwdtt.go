@@ -201,6 +201,12 @@ func (q Qwdtt) PingArgs(goDNS string) []string {
 	return a
 }
 
+// QwdttTransient reports whether a QwdttFatal message is a temporary VK condition
+// (flood control / captcha): qwdtt keeps retrying, and an exit after it must auto-restart.
+func QwdttTransient(msg string) bool {
+	return strings.Contains(msg, "flood control") || strings.Contains(msg, "«я не робот»")
+}
+
 func QwdttFatal(line string) string {
 	l := strings.ToLower(line)
 	switch {

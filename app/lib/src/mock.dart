@@ -100,7 +100,7 @@ class MockApi implements NoxApi {
     switch (m) {
       case 'GetState':
         return {
-          'version': '1.0.13',
+          'version': '1.0.14',
           'core': 'sing-box 1.14.3 · Xray 26.3.27 · qWDTT 1.4.4 · SSTP',
           'status': status,
           'error': '',
@@ -204,7 +204,7 @@ class MockApi implements NoxApi {
         upd = {
           'active': true,
           'stage': 'download',
-          'version': '1.0.13',
+          'version': '1.0.14',
           'done': 0,
           'total': 141016353,
           'speed': 0.0,

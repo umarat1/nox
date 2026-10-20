@@ -26,7 +26,7 @@ import (
 	"nox/core"
 )
 
-const Version = "1.0.13"
+const Version = "1.0.14"
 
 type Sub struct {
 	ID       string `json:"id"`
@@ -1284,7 +1284,9 @@ func (a *App) startQwdtt(ctx context.Context, q core.Qwdtt) (map[string]any, err
 		f := fatal
 		t := strings.Join(tail, " | ")
 		fmu.Unlock()
-		if f != "" {
+		// Transient VK lines (flood control / error 29 / captcha) are logged by qwdtt per worker
+		// while it retries with other workers/hashes; only hard errors (password) abort here.
+		if f != "" && !core.QwdttTransient(f) {
 			return nil, errors.New(f)
 		}
 		select {
@@ -1292,6 +1294,9 @@ func (a *App) startQwdtt(ctx context.Context, q core.Qwdtt) (map[string]any, err
 			fmu.Lock()
 			r := qwdttExitReason(cmd, fatal, tail)
 			fmu.Unlock()
+			if f != "" {
+				return nil, errors.New(f)
+			}
 			return nil, errors.New("qWDTT: клиент завершился: " + r)
 		case <-ctx.Done():
 			return nil, errors.New("отменено")
@@ -1315,7 +1320,7 @@ func (a *App) startQwdtt(ctx context.Context, q core.Qwdtt) (map[string]any, err
 				fmu.Lock()
 				reason := qwdttExitReason(cmd, fatal, tail)
 				fmu.Unlock()
-				a.qwdttExited(cmd, reason, fatal != "", time.Since(started))
+				a.qwdttExited(cmd, reason, fatal != "" && !core.QwdttTransient(fatal), time.Since(started))
 			}()
 			return ep, nil
 		}
