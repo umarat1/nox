@@ -26,7 +26,7 @@ import (
 	"nox/core"
 )
 
-const Version = "1.0.19"
+const Version = "1.0.20"
 
 type Sub struct {
 	ID       string `json:"id"`
@@ -704,16 +704,12 @@ func (a *App) ping(list []core.Server, mode string) map[string]int {
 			go func() { defer wg.Done(); set(s.ID, a.qwdttPing(s)) }()
 			continue
 		}
-		if mode == "tcp" {
+		if mode == "tcp" && !isUDPType(s.Type) { // UDP/QUIC protocols have no TCP port to ping: measured via URL test below
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
 				sem <- struct{}{}
 				defer func() { <-sem }()
-				if isUDPType(s.Type) {
-					set(s.ID, -2)
-					return
-				}
 				set(s.ID, pn.tcpPing(s.Host, s.Port))
 			}()
 			continue
@@ -744,7 +740,7 @@ func (a *App) ping(list []core.Server, mode string) map[string]int {
 
 func isUDPType(t string) bool {
 	t = strings.ToLower(t)
-	return strings.HasPrefix(t, "hysteria") || t == "tuic" || t == "wireguard"
+	return strings.HasPrefix(t, "hysteria") || t == "tuic" || t == "wireguard" || t == "juicity" || t == "shadowquic"
 }
 
 func (a *App) urlTest(list []core.Server, set func(string, int), pn pingNet) {
@@ -859,7 +855,9 @@ func (a *App) urlTest(list []core.Server, set func(string, int), pn pingNet) {
 		}
 		return
 	}
-	checkURLs := []string{"https://www.gstatic.com/generate_204", "https://cp.cloudflare.com/generate_204"}
+	// 1.0.20: plain-HTTP 204 endpoints (no inner TLS handshake), first request warms up the proxy
+	// connection/session, the reported ping is the minimum of the following ones (≈ real RTT).
+	checkURLs := []string{"http://cp.cloudflare.com/generate_204", "http://www.gstatic.com/generate_204"}
 	a.mu.Lock()
 	if u := strings.TrimSpace(a.p.Settings.PingURL); strings.HasPrefix(u, "http") {
 		checkURLs = []string{u, checkURLs[0]}
@@ -874,17 +872,28 @@ func (a *App) urlTest(list []core.Server, set func(string, int), pn pingNet) {
 			defer wg.Done()
 			sem <- struct{}{}
 			defer func() { <-sem }()
-			// 2.5 s budget, one retry on the second check point
-			for _, u := range checkURLs {
-				r, err := cl.Get("http://" + ctrl + "/proxies/" + tag + "/delay?timeout=2500&url=" + url.QueryEscape(u))
+			delay := func(u string, ms int) int {
+				r, err := cl.Get("http://" + ctrl + "/proxies/" + tag + "/delay?timeout=" + strconv.Itoa(ms) + "&url=" + url.QueryEscape(u))
 				if err != nil {
-					continue
+					return 0
 				}
 				var d struct{ Delay int }
 				json.NewDecoder(r.Body).Decode(&d)
 				r.Body.Close()
-				if d.Delay > 0 {
-					set(id, d.Delay)
+				return d.Delay
+			}
+			for _, u := range checkURLs {
+				if delay(u, 3000) <= 0 { // warm-up: handshake + session setup
+					continue
+				}
+				best := 0
+				for k := 0; k < 3; k++ {
+					if d := delay(u, 1500); d > 0 && (best == 0 || d < best) {
+						best = d
+					}
+				}
+				if best > 0 {
+					set(id, best)
 					return
 				}
 			}

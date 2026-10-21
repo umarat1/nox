@@ -184,8 +184,58 @@ class _Body extends StatelessWidget {
     ];
     final listHead = <Widget>[_FilterBar(c: c, p: p, shown: list.length)];
     final servers = _serverSlivers(list, view);
+    if (wide && !c.isTv) {
+      // 1.0.20 desktop: top row = connection card (left) + speed graph stretching the rest of
+      // the width; below, full-width scroll with banners, subscriptions, filters and a grid of
+      // server cards.
+      const pad = 20.0, gap = 16.0;
+      final heroW = (w * .36).clamp(380.0, 520.0);
+      final hero = head.firstWhere((x) => x is _Hero);
+      final rest = [
+        for (final x in head)
+          if (x is! _Hero && x is! _GraphSlot) x,
+      ];
+      return Padding(
+        padding: const EdgeInsets.all(pad),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _TopBar(c: c, p: p),
+            IntrinsicHeight(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  SizedBox(width: heroW, child: hero),
+                  const SizedBox(width: gap),
+                  Expanded(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(minHeight: 210),
+                      child: _GraphCard(c: c, p: p),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            Expanded(
+              child: FocusTraversalGroup(
+                child: CustomScrollView(
+                  slivers: [
+                    SliverPadding(
+                      padding: const EdgeInsets.symmetric(horizontal: 2),
+                      sliver: SliverList.list(children: [...rest, ...listHead]),
+                    ),
+                    ..._serverSlivers(list, 'grid'),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
     if (wide) {
-      // Two columns sharing top and bottom edges, equal outer padding (pad) on every side:
+      // TV: two columns sharing top and bottom edges, equal outer padding (pad) on every side:
       // left = connect card, live graph (flexes to fill), subscriptions; right = one panel
       // with filters on top and the server list scrolling inside it.
       const pad = 20.0, gap = 16.0;
