@@ -146,6 +146,19 @@ class ServiceApi implements NoxApi {
 
   Future<void> _load() async {
     final f = File(ipcPath());
+    if (Platform.isMacOS && !await _alive(f)) {
+      // macOS: no system service — run the bundled core (Nox.app/Contents/Resources/core/noxd)
+      final exe = File(Platform.resolvedExecutable).parent.parent;
+      final noxd = '${exe.path}/Resources/core/noxd';
+      if (await File(noxd).exists()) {
+        if (await f.exists()) await f.delete();
+        await Process.start(noxd, ['run'], mode: ProcessStartMode.detached);
+        for (var i = 0; i < 50 && !await f.exists(); i++) {
+          await Future.delayed(const Duration(milliseconds: 100));
+        }
+        await Future.delayed(const Duration(milliseconds: 200));
+      }
+    }
     if (!await f.exists()) {
       throw NoxError(
         'Служба Nox не запущена. Переустановите Nox или запустите службу «Nox VPN».',
@@ -154,6 +167,19 @@ class ServiceApi implements NoxApi {
     final j = jsonDecode(await f.readAsString()) as Map<String, dynamic>;
     _port = j['port'] as int;
     _token = j['token'] as String;
+  }
+
+  static Future<bool> _alive(File f) async {
+    try {
+      if (!await f.exists()) return false;
+      final j = jsonDecode(await f.readAsString()) as Map<String, dynamic>;
+      final sock = await Socket.connect('127.0.0.1', j['port'] as int,
+          timeout: const Duration(milliseconds: 500));
+      sock.destroy();
+      return true;
+    } catch (_) {
+      return false;
+    }
   }
 
   @override

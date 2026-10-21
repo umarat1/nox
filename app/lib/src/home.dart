@@ -223,7 +223,16 @@ class _Body extends StatelessWidget {
                   slivers: [
                     SliverPadding(
                       padding: const EdgeInsets.symmetric(horizontal: 2),
-                      sliver: SliverList.list(children: [...rest, ...listHead]),
+                      sliver: SliverList.list(children: rest),
+                    ),
+                    PinnedHeaderSliver( // 1.0.20: category tabs stay pinned while the list scrolls
+                      child: ColoredBox(
+                        color: p.bg,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: listHead,
+                        ),
+                      ),
                     ),
                     ..._serverSlivers(list, 'grid'),
                   ],
@@ -317,7 +326,6 @@ class _Body extends StatelessWidget {
     final scrollHead = <Widget>[
       for (final wdg in head)
         if (wdg is! _TopBar && wdg is! _Hero) wdg,
-      ...listHead,
     ];
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -335,6 +343,18 @@ class _Body extends StatelessWidget {
               SliverPadding(
                 padding: const EdgeInsets.fromLTRB(12, 0, 12, 0),
                 sliver: SliverList.list(children: scrollHead),
+              ),
+              PinnedHeaderSliver( // 1.0.20: category tabs stay pinned while the list scrolls
+                child: ColoredBox(
+                  color: p.bg,
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 0, 12, 0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: listHead,
+                    ),
+                  ),
+                ),
               ),
               ...servers,
             ],
@@ -2832,6 +2852,17 @@ void settingsSheet(BuildContext context, NoxController c, Pal p) {
           'Прокси доступен другим устройствам в вашей сети',
         ),
       ],
+      if (isAndroid && !c.isTv)
+        item(
+          p,
+          'Раздача VPN',
+          desc: 'На ПК через точку доступа или USB-модем',
+          arrow: true,
+          onTap: () {
+            Navigator.pop(ctx);
+            shareVpnDialog(context, c, p);
+          },
+        ),
       item(
         p,
         'Тема',
@@ -3391,6 +3422,17 @@ void subSheet(BuildContext context, NoxController c, Pal p, J b) {
       ),
       item(
         p,
+        'Показать QR',
+        desc: 'Отсканировать подписку другим устройством',
+        onTap: () async {
+          Navigator.pop(ctx);
+          final t = await c.call('SubLink', [b['id']]);
+          if (context.mounted && t is String && t.isNotEmpty)
+            showLinkQr(context, (b['name'] ?? 'Подписка') as String, t);
+        },
+      ),
+      item(
+        p,
         'Удалить',
         color: p.red,
         onTap: () async {
@@ -3460,6 +3502,17 @@ void serverSheet(BuildContext context, NoxController c, Pal p, J s) {
           if (context.mounted) toast(context, 'Скопировано');
         },
       ),
+      item(
+        p,
+        'Показать QR',
+        desc: 'Отсканировать сервер другим устройством',
+        onTap: () async {
+          Navigator.pop(ctx);
+          final t = await c.call('ServerLink', [s['id']]);
+          if (context.mounted && t is String && t.isNotEmpty)
+            showLinkQr(context, (s['name'] ?? 'Сервер') as String, t);
+        },
+      ),
       if (s['type'] == 'qWDTT')
         item(
           p,
@@ -3500,8 +3553,8 @@ void addSheet(BuildContext context, NoxController c, Pal p) {
         send
             ? item(
                 p,
-                'Передать на ТВ',
-                desc: 'Подписки и серверы на ТВ в этой же Wi‑Fi сети',
+                'Передать на другое устройство',
+                desc: 'ТВ, магнитола и т.п. в этой же Wi‑Fi сети: сканируйте их QR или введите код',
                 arrow: true,
                 onTap: () {
                   Navigator.pop(ctx);
@@ -3511,13 +3564,24 @@ void addSheet(BuildContext context, NoxController c, Pal p) {
             : item(
                 p,
                 'Принять с телефона',
-                desc: 'QR-код и код для передачи профилей с другого устройства',
+                desc: 'Для устройств без камеры (ТВ, магнитола): покажет QR и код, телефон передаст подписки по Wi‑Fi',
                 arrow: true,
                 onTap: () {
                   Navigator.pop(ctx);
                   openReceive(context, c);
                 },
               ),
+      if (!isAndroid && !c.isTv)
+        item(
+          p,
+          'Подключиться к телефону',
+          desc: 'Интернет через VPN телефона (Nox → «Раздача VPN»)',
+          arrow: true,
+          onTap: () {
+            Navigator.pop(ctx);
+            connectPhoneDialog(context, c, p);
+          },
+        ),
       if (!c.isTv)
         item(
           p,
@@ -4300,4 +4364,165 @@ Future<int?> portDialog(BuildContext context, Pal p, int cur) async {
       ),
     ),
   );
+}
+
+// ---- 1.0.20 «Раздача VPN» (Android: hotspot / USB tethering) and «Подключиться к телефону» (PC) ----
+
+Future<void> shareVpnDialog(BuildContext context, NoxController c, Pal p) async {
+  J info = {};
+  Future<void> load() async {
+    final r = await c.call('ShareInfo');
+    if (r is Map) info = r.cast<String, dynamic>();
+  }
+
+  await load();
+  if (!context.mounted) return;
+  final uc = TextEditingController(text: '${info['user'] ?? ''}');
+  final pc = TextEditingController(text: '${info['pass'] ?? ''}');
+  await showDialog<void>(
+    context: context,
+    builder: (ctx) => StatefulBuilder(
+      builder: (ctx, set) {
+        final on = info['on'] == true;
+        final port = info['port'] ?? 10808;
+        final ips = ((info['ips'] as List?) ?? []).cast<Map>();
+        final st = TextStyle(color: p.txt, fontSize: 15);
+        final sub = TextStyle(color: p.sub, fontSize: 13);
+        return AlertDialog(
+          backgroundColor: p.card,
+          title: Text('Раздача VPN', style: TextStyle(color: p.txt)),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Включите на телефоне точку доступа или USB-модем, подключите ПК, '
+                  'затем на ПК в Nox: «+» → «Подключиться к телефону» (или укажите прокси вручную).',
+                  style: sub,
+                ),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  value: on,
+                  title: Text('Раздавать через прокси', style: st),
+                  subtitle: Text('HTTP и SOCKS5 на всех сетях телефона', style: sub),
+                  onChanged: (v) async {
+                    await c.saveSettings({
+                      'allowLan': v,
+                      'shareUser': uc.text.trim(),
+                      'sharePass': pc.text,
+                    });
+                    if (c.connected) {
+                      await c.call('Disconnect');
+                      await c.call('Connect');
+                    }
+                    await load();
+                    set(() {});
+                  },
+                ),
+                TextField(
+                  controller: uc,
+                  style: st,
+                  decoration: const InputDecoration(labelText: 'Логин (необязательно)'),
+                ),
+                TextField(
+                  controller: pc,
+                  style: st,
+                  decoration: const InputDecoration(labelText: 'Пароль (необязательно)'),
+                ),
+                const SizedBox(height: 12),
+                if (on && ips.isEmpty)
+                  Text('Нет локальных сетей: включите точку доступа или USB-модем', style: sub),
+                if (on)
+                  for (final e in ips)
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: SelectableText('${e['ip']}:$port', style: st),
+                      subtitle: Text('${e['kind']} (${e['name']})', style: sub),
+                      trailing: IconButton(
+                        icon: Icon(Icons.copy_rounded, color: p.sub),
+                        onPressed: () => Clipboard.setData(
+                          ClipboardData(text: '${e['ip']}:$port'),
+                        ),
+                      ),
+                    ),
+                if (on && info['connected'] != true)
+                  Text('Подключите VPN — прокси работает только при подключении', style: TextStyle(color: p.amb, fontSize: 13)),
+                const SizedBox(height: 8),
+                Text(
+                  'Android не позволяет направить в VPN весь трафик точки доступа без root, '
+                  'поэтому ПК использует прокси телефона.',
+                  style: sub,
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () async {
+                await c.saveSettings({'shareUser': uc.text.trim(), 'sharePass': pc.text});
+                if (on && c.connected) {
+                  await c.call('Disconnect');
+                  await c.call('Connect');
+                }
+                if (ctx.mounted) Navigator.pop(ctx);
+              },
+              child: const Text('Готово'),
+            ),
+          ],
+        );
+      },
+    ),
+  );
+}
+
+Future<void> connectPhoneDialog(BuildContext context, NoxController c, Pal p) async {
+  final ac = TextEditingController();
+  final uc = TextEditingController();
+  final pc = TextEditingController();
+  final st = TextStyle(color: p.txt, fontSize: 15);
+  final link = await showDialog<String>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      backgroundColor: p.card,
+      title: Text('Подключиться к телефону', style: TextStyle(color: p.txt)),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            'На телефоне: Nox → Настройки → «Раздача VPN». Подключите ПК к его точке доступа '
+            'или по USB (USB-модем) и введите адрес, показанный на телефоне.',
+            style: TextStyle(color: p.sub, fontSize: 13),
+          ),
+          TextField(controller: ac, style: st, decoration: const InputDecoration(labelText: 'Адрес, например 192.168.43.1:10808')),
+          TextField(controller: uc, style: st, decoration: const InputDecoration(labelText: 'Логин (если задан)')),
+          TextField(controller: pc, style: st, decoration: const InputDecoration(labelText: 'Пароль (если задан)')),
+        ],
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Отмена')),
+        TextButton(
+          onPressed: () {
+            final a = ac.text.trim();
+            if (!RegExp(r'^[0-9.]+:[0-9]{2,5}$').hasMatch(a)) return;
+            final auth = uc.text.trim().isEmpty
+                ? ''
+                : '${Uri.encodeComponent(uc.text.trim())}:${Uri.encodeComponent(pc.text)}@';
+            Navigator.pop(ctx, 'socks://$auth$a#${Uri.encodeComponent('📱 Телефон')}');
+          },
+          child: const Text('Подключить'),
+        ),
+      ],
+    ),
+  );
+  if (link == null) return;
+  final r = await c.call('AddManual', [link]);
+  if (r is String && r.isNotEmpty) {
+    if (context.mounted) toast(context, r);
+    return;
+  }
+  await c.refresh();
+  if (c.connected) await c.call('Disconnect');
+  await c.call('Connect');
+  c.refresh();
 }

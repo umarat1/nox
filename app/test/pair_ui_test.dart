@@ -122,9 +122,9 @@ void main() {
     await _app(t, const Size(411, 860));
     await t.tap(find.byTooltip('Добавить подписку'));
     await _frames(t);
-    expect(find.text('Передать на ТВ'), findsOneWidget);
+    expect(find.text('Передать на другое устройство'), findsOneWidget);
     expect(find.text('Принять с телефона'), findsOneWidget);
-    await t.tap(find.text('Передать на ТВ'));
+    await t.tap(find.text('Передать на другое устройство'));
     for (var i = 0; i < 4; i++) {
       await t.pump(const Duration(milliseconds: 200));
     }

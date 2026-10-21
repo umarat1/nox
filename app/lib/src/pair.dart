@@ -361,7 +361,7 @@ class _PairReceivePageState extends State<PairReceivePage> {
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
-        Text('1. На телефоне: Nox → «+» → «Передать на ТВ»', style: st),
+        Text('1. На телефоне: Nox → «+» → «Передать на другое устройство»', style: st),
         const SizedBox(height: 6),
         Text('2. Отсканируйте QR-код или введите вручную:', style: st),
         const SizedBox(height: 14),
@@ -622,7 +622,7 @@ class _PairSendPageState extends State<PairSendPage> {
     final p = _pal(c);
     return _Frame(
       c: c,
-      title: 'Передать на ТВ',
+      title: 'Передать на другое устройство',
       child: Align(
         alignment: Alignment.topCenter,
         child: ConstrainedBox(
@@ -955,4 +955,63 @@ class _PairGlueState extends State<PairGlue> {
     });
     return widget.child;
   }
+}
+
+/// «Показать QR»: full-screen QR of a subscription / server link for scanning on another
+/// device (phone camera → «Добавить» → «Сканировать QR-код»). Landscape-friendly (head units).
+void showLinkQr(BuildContext context, String title, String link) {
+  showDialog<void>(
+    context: context,
+    builder: (ctx) => Dialog.fullscreen(
+      backgroundColor: Colors.white,
+      child: SafeArea(
+        child: LayoutBuilder(
+          builder: (context, box) {
+            final wide = box.maxWidth > box.maxHeight;
+            final size = (wide ? box.maxHeight - 48 : box.maxWidth - 48)
+                .clamp(160.0, 520.0)
+                .toDouble();
+            const st = TextStyle(color: Colors.black87, fontSize: 16);
+            final txt = Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment:
+                  wide ? CrossAxisAlignment.start : CrossAxisAlignment.center,
+              children: [
+                Text(title,
+                    style: const TextStyle(
+                        color: Colors.black,
+                        fontSize: 22,
+                        fontWeight: FontWeight.w700)),
+                const SizedBox(height: 10),
+                const Text(
+                    'На другом устройстве: Nox → «+» → «Сканировать QR-код».\n'
+                    'Не показывайте этот код посторонним — это ваш доступ.',
+                    style: st),
+                const SizedBox(height: 16),
+                FilledButton(
+                    onPressed: () => Navigator.pop(ctx),
+                    child: const Text('Закрыть')),
+              ],
+            );
+            final qr = QrView(data: link, size: size);
+            return Center(
+              child: wide
+                  ? Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                      qr,
+                      const SizedBox(width: 32),
+                      Flexible(child: txt),
+                    ])
+                  : SingleChildScrollView(
+                      child: Column(mainAxisSize: MainAxisSize.min, children: [
+                        qr,
+                        const SizedBox(height: 20),
+                        txt,
+                      ]),
+                    ),
+            );
+          },
+        ),
+      ),
+    ),
+  );
 }

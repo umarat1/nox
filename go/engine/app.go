@@ -16,6 +16,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -744,8 +745,6 @@ func isUDPType(t string) bool {
 }
 
 func (a *App) urlTest(list []core.Server, set func(string, int), pn pingNet) {
-	port := freePort()
-	ctrl := fmt.Sprintf("127.0.0.1:%d", port)
 	var outs, eps []any
 	tags := map[string]string{}
 	// XHTTP servers: one Xray instance, one loopback SOCKS port each, tested through sing-box
@@ -784,6 +783,11 @@ func (a *App) urlTest(list []core.Server, set func(string, int), pn pingNet) {
 			extPort[i] = e.port
 		}
 	}
+	// 1.0.20: no clash_api (unreliable inside the Android in-process core). Each server gets its own
+	// loopback SOCKS inbound routed to its outbound; we measure HTTP 204 through it with a kept-alive
+	// connection: first request warms up (handshake/session), ping = min of the next ones.
+	var ins, rules []any
+	sport := map[string]int{}
 	for i, s := range list {
 		var ob map[string]any
 		if core.IsExt(s.Outbound) {
@@ -811,20 +815,21 @@ func (a *App) urlTest(list []core.Server, set func(string, int), pn pingNet) {
 		} else {
 			outs = append(outs, ob)
 		}
+		sp := freePort()
+		sport[tag] = sp
+		ins = append(ins, map[string]any{"type": "socks", "tag": "in-" + tag, "listen": "127.0.0.1", "listen_port": sp})
+		rules = append(rules, map[string]any{"inbound": []string{"in-" + tag}, "outbound": tag})
 	}
 	outs = append(outs, map[string]any{"type": "direct", "tag": "direct"})
-	route := map[string]any{"final": "direct", "default_domain_resolver": "local", "auto_detect_interface": true}
+	route := map[string]any{"final": "direct", "default_domain_resolver": "local", "auto_detect_interface": true, "rules": rules}
 	dns := map[string]any{"servers": []any{map[string]any{"type": "local", "tag": "local"}}}
 	if pn.bound && pn.nic.Name != "" {
-		// VPN is up: a second sing-box would auto-detect the VPN adapter as "default", so pin
-		// the test instance to the physical NIC explicitly; DNS goes to a public resolver over it.
-		route = map[string]any{"final": "direct", "default_domain_resolver": "pub", "default_interface": pn.nic.Name}
+		route = map[string]any{"final": "direct", "default_domain_resolver": "pub", "default_interface": pn.nic.Name, "rules": rules}
 		dns = map[string]any{"servers": []any{map[string]any{"type": "udp", "tag": "pub", "server": "77.88.8.8"},
 			map[string]any{"type": "local", "tag": "local"}}}
 	}
-	cfg := map[string]any{"log": map[string]any{"level": "error"}, "outbounds": outs, "endpoints": eps,
-		"dns": dns, "route": route,
-		"experimental": map[string]any{"clash_api": map[string]any{"external_controller": ctrl}}}
+	cfg := map[string]any{"log": map[string]any{"level": "error"}, "inbounds": ins, "outbounds": outs, "endpoints": eps,
+		"dns": dns, "route": route}
 	b, _ := json.Marshal(cfg)
 	path := filepath.Join(a.dataDir, "urltest.json")
 	os.WriteFile(path, b, 0o600)
@@ -838,12 +843,16 @@ func (a *App) urlTest(list []core.Server, set func(string, int), pn pingNet) {
 		return
 	}
 	defer func() { cmd.Stop(); os.Remove(path) }()
-	cl := &http.Client{Timeout: 4 * time.Second, Transport: &http.Transport{Proxy: nil}}
 	up := false
-	for i := 0; i < 100; i++ {
-		if r, err := cl.Get("http://" + ctrl + "/version"); err == nil {
-			r.Body.Close()
-			up = true
+	for i := 0; i < 100 && len(sport) > 0; i++ {
+		for _, sp := range sport {
+			if c, err := net.DialTimeout("tcp", "127.0.0.1:"+strconv.Itoa(sp), 200*time.Millisecond); err == nil {
+				c.Close()
+				up = true
+			}
+			break
+		}
+		if up {
 			break
 		}
 		time.Sleep(50 * time.Millisecond)
@@ -855,8 +864,6 @@ func (a *App) urlTest(list []core.Server, set func(string, int), pn pingNet) {
 		}
 		return
 	}
-	// 1.0.20: plain-HTTP 204 endpoints (no inner TLS handshake), first request warms up the proxy
-	// connection/session, the reported ping is the minimum of the following ones (≈ real RTT).
 	checkURLs := []string{"http://cp.cloudflare.com/generate_204", "http://www.gstatic.com/generate_204"}
 	a.mu.Lock()
 	if u := strings.TrimSpace(a.p.Settings.PingURL); strings.HasPrefix(u, "http") {
@@ -864,7 +871,7 @@ func (a *App) urlTest(list []core.Server, set func(string, int), pn pingNet) {
 	}
 	a.mu.Unlock()
 	var wg sync.WaitGroup
-	sem := make(chan struct{}, 16)
+	sem := make(chan struct{}, 24)
 	for tag, id := range tags {
 		tag, id := tag, id
 		wg.Add(1)
@@ -872,30 +879,40 @@ func (a *App) urlTest(list []core.Server, set func(string, int), pn pingNet) {
 			defer wg.Done()
 			sem <- struct{}{}
 			defer func() { <-sem }()
-			delay := func(u string, ms int) int {
-				r, err := cl.Get("http://" + ctrl + "/proxies/" + tag + "/delay?timeout=" + strconv.Itoa(ms) + "&url=" + url.QueryEscape(u))
+			pu, _ := url.Parse("socks5h://127.0.0.1:" + strconv.Itoa(sport[tag]))
+			tr := &http.Transport{Proxy: http.ProxyURL(pu), MaxIdleConnsPerHost: 1, IdleConnTimeout: 10 * time.Second}
+			defer tr.CloseIdleConnections()
+			get := func(u string, t time.Duration) int {
+				cl := &http.Client{Timeout: t, Transport: tr}
+				t0 := time.Now()
+				r, err := cl.Get(u)
 				if err != nil {
 					return 0
 				}
-				var d struct{ Delay int }
-				json.NewDecoder(r.Body).Decode(&d)
+				io.Copy(io.Discard, r.Body)
 				r.Body.Close()
-				return d.Delay
+				if r.StatusCode >= 400 {
+					return 0
+				}
+				ms := int(time.Since(t0).Milliseconds())
+				if ms < 1 {
+					ms = 1
+				}
+				return ms
 			}
 			for _, u := range checkURLs {
-				if delay(u, 3000) <= 0 { // warm-up: handshake + session setup
+				first := get(u, 5*time.Second) // warm-up: proxy handshake + QUIC/session setup
+				if first <= 0 {
 					continue
 				}
-				best := 0
+				best := first
 				for k := 0; k < 3; k++ {
-					if d := delay(u, 1500); d > 0 && (best == 0 || d < best) {
+					if d := get(u, 2*time.Second); d > 0 && d < best {
 						best = d
 					}
 				}
-				if best > 0 {
-					set(id, best)
-					return
-				}
+				set(id, best)
+				return
 			}
 			set(id, -1)
 		}()
@@ -1125,6 +1142,9 @@ func (a *App) connect(ctx context.Context, srv core.Server, s core.Settings) err
 		return err
 	}
 	a.clashAddr = fmt.Sprintf("127.0.0.1:%d", freePort())
+	if runtime.GOOS == "darwin" {
+		s.Mode = "proxy" // macOS build: no TUN (needs root); HTTP+SOCKS on 127.0.0.1:port
+	}
 	cfg, err := core.BuildConfig(proxy, s, a.clashAddr, ruleDir(a.binDir))
 	if err != nil {
 		return err

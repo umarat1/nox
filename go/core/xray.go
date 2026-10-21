@@ -50,6 +50,10 @@ func xrayFromLink(l *link) (Server, error) {
 		xh["extra"] = ex
 	}
 	st := map[string]any{"network": "xhttp", "security": sec, "xhttpSettings": xh}
+	raw := !strings.EqualFold(l.g("type"), "xhttp")
+	if raw { // VLESS Reality over raw TCP (sing-box's REALITY client fails against Xray 26 servers)
+		st = map[string]any{"network": "raw", "security": sec}
+	}
 	sni := l.g("sni", "peer", "servername")
 	if sni == "" && net.ParseIP(l.host) == nil {
 		sni = l.host
@@ -97,6 +101,9 @@ func xrayFromLink(l *link) (Server, error) {
 			map[string]any{"address": l.host, "port": l.port, "users": []any{u}}}}}
 		if sec == "reality" {
 			label = "VLESS Reality XHTTP"
+			if raw {
+				label = "VLESS Reality"
+			}
 		}
 	case "trojan":
 		ob = map[string]any{"protocol": "trojan", "settings": map[string]any{"servers": []any{

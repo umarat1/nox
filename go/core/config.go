@@ -42,6 +42,9 @@ type Settings struct {
 	RuAppsOff []string `json:"ruAppsOff,omitempty"`
 	// Custom routing: domain suffixes always direct / always through the VPN (wins over RU rules).
 	DirectDomains []string `json:"directDomains,omitempty"`
+	// 1.0.20 «Раздача VPN»: login/password for the LAN proxy (AllowLAN); empty = no auth
+	ShareUser string `json:"shareUser,omitempty"`
+	SharePass string `json:"sharePass,omitempty"`
 	ProxyDomains  []string `json:"proxyDomains,omitempty"`
 }
 
@@ -160,6 +163,9 @@ func BuildConfig(proxy map[string]any, s Settings, clashAddr string, ruleDir str
 	mixed := map[string]any{"type": "mixed", "tag": "mixed-in", "listen": listen, "listen_port": port}
 	if s.Mode == "proxy" {
 		// system proxy is set by the app (cleared reliably on disconnect)
+	}
+	if s.AllowLAN && s.ShareUser != "" {
+		mixed["users"] = []any{map[string]any{"username": s.ShareUser, "password": s.SharePass}}
 	}
 	inbounds = append(inbounds, mixed)
 	if s.Mode != "proxy" {

@@ -5,10 +5,16 @@ package engine
 import (
 	"io"
 	"path/filepath"
+	"runtime"
 )
 
 // tests on Linux use symlinked sing-box.exe
-func binPath(dir, n string) string            { return filepath.Join(dir, n+".exe") }
+func binPath(dir, n string) string {
+	if runtime.GOOS == "darwin" {
+		return filepath.Join(dir, n) // macOS bundle: Nox.app/Contents/Resources/core/<n>
+	}
+	return filepath.Join(dir, n+".exe")
+}
 func osName() string                          { return "linux" }
 func ruleDir(binDir string) string            { return binDir }
 func applyUpdate(a *App, u *UpdateInfo) error { return nil }

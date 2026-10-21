@@ -488,6 +488,11 @@ func ParseLink(s string) (Server, error) {
 	if (l.scheme == "vless" || l.scheme == "trojan") && strings.EqualFold(l.g("type"), "xhttp") {
 		return xrayFromLink(l) // sing-box has no XHTTP: Xray-core runs it
 	}
+	if l.scheme == "vless" && strings.EqualFold(l.g("security"), "reality") && XrayReality {
+		if t := strings.ToLower(l.g("type")); t == "" || t == "tcp" || t == "raw" {
+			return xrayFromLink(l) // sing-box 1.14 REALITY handshake fails against Xray 26 servers
+		}
+	}
 	switch l.scheme {
 	case "vless":
 		ob := map[string]any{"type": "vless", "server": l.host, "server_port": l.port, "uuid": l.user}

@@ -19,6 +19,8 @@ qwdtt://config?name=QW&peer=5.6.7.8&hashes=https://vk.com/call/join/abc,def&pass
 xhttp-bad://nothing`
 
 func TestPlainAndBase64(t *testing.T) {
+	defer func(o bool) { XrayReality = o }(XrayReality)
+	XrayReality = false
 	vm, _ := json.Marshal(map[string]any{"v": "2", "ps": "VM", "add": "vm.example.com", "port": "443", "id": "uuid", "aid": "0", "net": "grpc", "path": "svc", "tls": "tls"})
 	all := links + "\nvmess://" + base64.StdEncoding.EncodeToString(vm)
 	for _, body := range []string{all, base64.StdEncoding.EncodeToString([]byte(all))} {
