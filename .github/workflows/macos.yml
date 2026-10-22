@@ -57,7 +57,7 @@ jobs:
           # klzgrad removed release assets; universal naive (arm64+x86_64) taken from Nox 1.0.20 build
           cp $GITHUB_WORKSPACE/third_party/macos/naive $GITHUB_WORKSPACE/dist/core/naive
           cp $GITHUB_WORKSPACE/third_party/windows/*.srs $GITHUB_WORKSPACE/third_party/windows/LICENSES.txt $GITHUB_WORKSPACE/dist/core/
-          shasum -a 256 *.tgz *.zip *.tar.xz
+          shasum -a 256 *.tgz *.zip
           ls -la $GITHUB_WORKSPACE/dist/core
 
       - uses: subosito/flutter-action@v2
