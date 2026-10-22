@@ -91,13 +91,12 @@ jobs:
           Expand-Archive $zip "$env:RUNNER_TEMP\xray"
           Copy-Item "$env:RUNNER_TEMP\xray\xray.exe" dist/core/
 
-      - name: Fetch NaiveProxy client (Naive servers; pinned, checksum verified)
+      - name: NaiveProxy client (bundled; upstream release assets were removed)
         run: |
-          $zip = "$env:RUNNER_TEMP\naive.zip"
-          Invoke-WebRequest "https://github.com/klzgrad/naiveproxy/releases/download/v154.0.8037.49-4/naiveproxy-v154.0.8037.49-4-win-x64.zip" -OutFile $zip
-          if ((Get-FileHash $zip -Algorithm SHA256).Hash -ne "120B99474848D2F737515C1043249B0998E235FDA750F61893D774B317BF1870") { throw "naive checksum mismatch" }
-          Expand-Archive $zip "$env:RUNNER_TEMP\naive"
-          Copy-Item "$env:RUNNER_TEMP\naive\*\naive.exe" dist/core/
+          # third_party/windows/naive.exe = naive v154.0.8037.49-4 win-x64, taken from Nox 1.0.20 installer
+          # (that build verified the upstream zip SHA-256 120B9947...BF1870). naive.exe SHA-256 71b1bc59...35b7
+          if ((Get-FileHash third_party/windows/naive.exe -Algorithm SHA256).Hash -ne "71B1BC593A1470F3FBAF216469EDDE58B06A97449558AA3BC70CB265591635B7") { throw "naive checksum mismatch" }
+          Copy-Item third_party/windows/naive.exe dist/core/
 
       - name: Stage dist
         run: |
