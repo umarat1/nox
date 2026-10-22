@@ -900,16 +900,28 @@ func (a *App) urlTest(list []core.Server, set func(string, int), pn pingNet) {
 				}
 				return ms
 			}
+			// 1.0.21 (Happ-like): the warm-up request pays for the proxy/TLS/Reality handshake and is
+			// never shown; ping = best of the follow-up requests on the same kept-alive connection.
+			// Slow links get 10 s per request and one retry before «таймаут».
 			for _, u := range checkURLs {
-				first := get(u, 5*time.Second) // warm-up: proxy handshake + QUIC/session setup
+				first := 0
+				for try := 0; try < 2 && first <= 0; try++ {
+					first = get(u, 10*time.Second)
+				}
 				if first <= 0 {
 					continue
 				}
-				best := first
+				best := 0
 				for k := 0; k < 3; k++ {
-					if d := get(u, 2*time.Second); d > 0 && d < best {
+					if d := get(u, 10*time.Second); d > 0 && (best == 0 || d < best) {
 						best = d
 					}
+					if best > 0 && k >= 1 {
+						break
+					}
+				}
+				if best == 0 {
+					best = first // follow-ups all failed: fall back to the cold time rather than «таймаут»
 				}
 				set(id, best)
 				return
@@ -1010,11 +1022,11 @@ func (a *App) tunnelPing(id string) (int, bool) {
 		port = 2080
 	}
 	pu, _ := url.Parse(fmt.Sprintf("http://127.0.0.1:%d", port))
-	cl := &http.Client{Timeout: 8 * time.Second, Transport: &http.Transport{Proxy: http.ProxyURL(pu)}}
+	cl := &http.Client{Timeout: 10 * time.Second, Transport: &http.Transport{Proxy: http.ProxyURL(pu)}}
 	defer cl.CloseIdleConnections()
 	best := -1
 	for _, u := range urls {
-		for i := 0; i < 2; i++ { // the 2nd request reuses the connection: closer to real RTT
+		for i := 0; i < 3; i++ { // 1st = handshake (not shown unless alone), next ones reuse the connection
 			t := time.Now()
 			r, err := cl.Get(u)
 			if err != nil {
