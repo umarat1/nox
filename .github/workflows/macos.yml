@@ -54,11 +54,8 @@ jobs:
           curl -fsSL -o x-64.zip "https://github.com/XTLS/Xray-core/releases/download/v$XRAY_VERSION/Xray-macos-64.zip"
           mkdir xa x6 && unzip -q x-arm.zip -d xa && unzip -q x-64.zip -d x6
           lipo -create xa/xray x6/xray -output $GITHUB_WORKSPACE/dist/core/xray
-          for a in arm64 x64; do
-            curl -fsSL -o n-$a.tar.xz "https://github.com/klzgrad/naiveproxy/releases/download/$NAIVE_VERSION/naiveproxy-$NAIVE_VERSION-mac-$a-$a.tar.xz"
-            mkdir n-$a && tar xJf n-$a.tar.xz -C n-$a --strip-components=1
-          done
-          lipo -create n-arm64/naive n-x64/naive -output $GITHUB_WORKSPACE/dist/core/naive
+          # klzgrad removed release assets; universal naive (arm64+x86_64) taken from Nox 1.0.20 build
+          cp $GITHUB_WORKSPACE/third_party/macos/naive $GITHUB_WORKSPACE/dist/core/naive
           cp $GITHUB_WORKSPACE/third_party/windows/*.srs $GITHUB_WORKSPACE/third_party/windows/LICENSES.txt $GITHUB_WORKSPACE/dist/core/
           shasum -a 256 *.tgz *.zip *.tar.xz
           ls -la $GITHUB_WORKSPACE/dist/core
