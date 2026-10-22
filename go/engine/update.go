@@ -19,11 +19,14 @@ import (
 	"time"
 )
 
-var UpdateURL = "https://iji.by/dl/version.json"
+// UpdateURL: Сессия catalog endpoint first (1.0.23+); the old iji.by version.json stays as fallback.
+var UpdateURL = "https://iji.by/sessia/api/apps/nox/update.json"
+
+var UpdateFallbackURLs = []string{"https://iji.by/dl/version.json"}
 
 // VersionCode is the pubspec build number (180 for 1.0.18). Split APKs use abi*1000+VersionCode;
 // update checks compare VersionCode to the server's top-level versionCode (0.7.x style).
-const VersionCode = 220
+const VersionCode = 230
 
 type UpdateInfo struct {
 	Version string `json:"versionName"`
@@ -80,16 +83,13 @@ func (a *App) CheckUpdate() *UpdateInfo {
 func (a *App) checkUpdate() (*UpdateInfo, bool) {
 	cl := a.httpClient()
 	cl.Timeout = 15 * time.Second
-	resp, err := cl.Get(UpdateURL + "?t=" + strconv.FormatInt(time.Now().Unix(), 10))
-	if err != nil {
-		return nil, false
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != 200 {
-		return nil, false
-	}
 	var m map[string]json.RawMessage
-	if json.NewDecoder(resp.Body).Decode(&m) != nil {
+	for _, src := range append([]string{UpdateURL}, UpdateFallbackURLs...) {
+		if m = fetchUpdateJSON(cl, src); m != nil {
+			break
+		}
+	}
+	if m == nil {
 		return nil, false
 	}
 	a.mu.Lock()
@@ -327,4 +327,20 @@ func (a *App) CheckUpdateMsg() string {
 	a.save()
 	a.mu.Unlock()
 	return "Доступна версия " + u.Version
+}
+
+func fetchUpdateJSON(cl *http.Client, src string) map[string]json.RawMessage {
+	resp, err := cl.Get(src + "?t=" + strconv.FormatInt(time.Now().Unix(), 10))
+	if err != nil {
+		return nil
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		return nil
+	}
+	var m map[string]json.RawMessage
+	if json.NewDecoder(resp.Body).Decode(&m) != nil || len(m) == 0 {
+		return nil
+	}
+	return m
 }

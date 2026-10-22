@@ -79,6 +79,9 @@ func TestUpdateCheckAndHide(t *testing.T) {
 	old := UpdateURL
 	UpdateURL = srv.URL
 	defer func() { UpdateURL = old }()
+	oldFB := UpdateFallbackURLs
+	UpdateFallbackURLs = nil
+	defer func() { UpdateFallbackURLs = oldFB }()
 	a := newTestApp(t)
 	ok = false
 	if _, good := a.checkUpdate(); good || a.p.UpdOK != 0 {

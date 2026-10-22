@@ -1,4 +1,4 @@
-# Nox 1.0.20: macOS build (Flutter UI + bundled noxd core in proxy mode). Unsigned DMG, universal.
+# Nox 1.0.23: macOS build (Flutter UI + bundled noxd core in proxy mode). Unsigned DMG, universal.
 # Output: workflow artifact "nox-macos". Nothing is published.
 name: macos
 
