@@ -1,15 +1,12 @@
 // Renders the update dialog with real fonts to PNGs (flutter test --update-goldens test/shots).
 import 'dart:io';
 
-import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nox/main.dart';
 import 'package:nox/src/controller.dart';
 import 'package:nox/src/mock.dart';
 import 'package:nox/src/pair.dart';
-import 'package:nox/src/theme.dart';
-import 'package:nox/src/update_ui.dart';
 
 import '../ui_util.dart';
 

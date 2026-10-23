@@ -20,13 +20,16 @@ import (
 )
 
 // UpdateURL: Сессия catalog endpoint first (1.0.23+); the old iji.by version.json stays as fallback.
-var UpdateURL = "https://iji.by/sessia/api/apps/nox/update.json"
+var UpdateURL = "https://sessia.top/api/apps/nox/update.json"
 
-var UpdateFallbackURLs = []string{"https://iji.by/dl/version.json"}
+var UpdateFallbackURLs = []string{
+	"https://iji.by/sessia/api/apps/nox/update.json",
+	"https://iji.by/dl/version.json",
+}
 
-// VersionCode is the pubspec build number (180 for 1.0.18). Split APKs use abi*1000+VersionCode;
+// VersionCode is the pubspec build number (260 for 1.0.26). Split APKs use abi*1000+VersionCode;
 // update checks compare VersionCode to the server's top-level versionCode (0.7.x style).
-const VersionCode = 230
+const VersionCode = 260
 
 type UpdateInfo struct {
 	Version string `json:"versionName"`
@@ -173,6 +176,9 @@ func pickAndroidURL(u *UpdateInfo, m map[string]json.RawMessage) {
 
 func updateNewer(u *UpdateInfo) bool {
 	if u == nil || u.URL == "" {
+		return false
+	}
+	if u.Version != "" && !verLess(Version, u.Version) {
 		return false
 	}
 	if u.Code > 0 && (runtime.GOOS == "android" || osName() == "android") {

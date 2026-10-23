@@ -216,7 +216,7 @@ class _Body extends StatelessWidget {
             : null,
       ),
     ];
-    final servers = _serverSlivers(list, view);
+    final servers = _serverSlivers(context, list, view);
     if (wide && !c.isTv) {
       // 1.0.20 desktop: top row = connection card (left) + speed graph stretching the rest of
       // the width; below, full-width scroll with banners, subscriptions, filters and a grid of
@@ -267,7 +267,7 @@ class _Body extends StatelessWidget {
                         ),
                       ),
                     ),
-                    ..._serverSlivers(list, 'grid'),
+                    ..._serverSlivers(context, list, 'grid'),
                   ],
                 ),
               ),
@@ -284,7 +284,7 @@ class _Body extends StatelessWidget {
       final leftW = (w * .34).clamp(390.0, 540.0);
       final graph = _GraphCard(c: c, p: p);
       final banners = head.length - 2 - c.subs.length; // between hero and graph
-      final need = 140 + 230 + 60.0 * banners + 150.0 * c.subs.length;
+      final need = 140 + 230 + 60.0 * banners + 170.0 * c.subs.length;
       final avail = h - pad * 2 - 56;
       Widget left;
       if (avail >= need) {
@@ -431,7 +431,7 @@ class _Body extends StatelessWidget {
     );
   }
 
-  List<Widget> _serverSlivers(List<J> list, String view) {
+  List<Widget> _serverSlivers(BuildContext context, List<J> list, String view) {
     final h = wide
         ? const EdgeInsets.fromLTRB(14, 0, 14, 14)
         : const EdgeInsets.fromLTRB(12, 0, 12, 40);
@@ -450,15 +450,17 @@ class _Body extends StatelessWidget {
       ];
     }
     if (view == 'grid') {
+      final ts = MediaQuery.textScalerOf(context);
+      final cardH = math.max(128.0, ts.scale(78) + 50);
       return [
         SliverPadding(
           padding: h,
           sliver: SliverGrid.builder(
-            gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+            gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
               maxCrossAxisExtent: 260,
               mainAxisSpacing: 7,
               crossAxisSpacing: 7,
-              mainAxisExtent: 128,
+              mainAxisExtent: cardH,
             ),
             itemCount: list.length,
             itemBuilder: (_, i) =>
@@ -1714,18 +1716,10 @@ class _SubBlock extends StatelessWidget {
               ],
             ),
             if (ann.isNotEmpty) _Announce(c: c, p: p, text: ann),
-            if ((b['webPage'] ?? '') != '' || (b['support'] ?? '') != '')
-              Padding(
-                padding: const EdgeInsets.only(top: 2),
-                child: Wrap(
-                  children: [
-                    if ((b['webPage'] ?? '') != '')
-                      _Link(p: p, text: 'Подробнее', url: b['webPage']),
-                    if ((b['support'] ?? '') != '')
-                      _Link(p: p, text: 'Поддержка', url: b['support']),
-                  ],
-                ),
-              ),
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: _SubLinksBar(p: p, mobile: mobile),
+            ),
           ],
         ],
       ),
@@ -2142,29 +2136,235 @@ class _AnnounceState extends State<_Announce> {
   }
 }
 
-class _Link extends StatelessWidget {
+Future<void> _openSubUrl(BuildContext context, String url) async {
+  if (await openUrl(url)) return;
+  Clipboard.setData(ClipboardData(text: url));
+  if (context.mounted) toast(context, 'Ссылка скопирована: $url');
+}
+
+class _SubLinksBar extends StatelessWidget {
+  final Pal p;
+  final bool mobile;
+  const _SubLinksBar({required this.p, this.mobile = false});
+
+  static const _items = <(String, String, IconData?, bool)>[
+    ('Поддержка', 'https://t.me/sessiatop', Icons.send_rounded, true),
+    ('sessia.top', 'https://sessia.top', null, false),
+    ('etv24.ru', 'https://etv24.ru', null, false),
+    ('iji.by', 'https://iji.by', null, false),
+  ];
+  static const _donateUrl =
+      'https://t.tb.ru/c2c-qr-choose-bank?requisiteNumber=+79111112787&bankCode=100000000004';
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final compactRow = mobile || constraints.maxWidth < 560;
+        if (compactRow) {
+          return Row(
+            children: [
+              for (var i = 0; i < _items.length; i++) ...[
+                if (i > 0) const SizedBox(width: 6),
+                Expanded(
+                  child: _SubLinkBtn(
+                    p: p,
+                    text: _items[i].$1,
+                    url: _items[i].$2,
+                    icon: _items[i].$3,
+                    primary: _items[i].$4,
+                    compact: true,
+                  ),
+                ),
+              ],
+              const SizedBox(width: 6),
+              _CoinDonateBtn(p: p, url: _donateUrl, size: 30),
+            ],
+          );
+        }
+        return Row(
+          children: [
+            for (var i = 0; i < _items.length; i++) ...[
+              if (i > 0) const SizedBox(width: 8),
+              _SubLinkBtn(
+                p: p,
+                text: _items[i].$1,
+                url: _items[i].$2,
+                icon: _items[i].$3,
+                primary: _items[i].$4,
+                compact: false,
+              ),
+            ],
+            const SizedBox(width: 10),
+            _CoinDonateBtn(p: p, url: _donateUrl, size: 32),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _SubLinkBtn extends StatelessWidget {
   final Pal p;
   final String text, url;
-  const _Link({required this.p, required this.text, required this.url});
+  final IconData? icon;
+  final bool primary;
+  final bool compact;
+  const _SubLinkBtn({
+    required this.p,
+    required this.text,
+    required this.url,
+    this.icon,
+    this.primary = false,
+    this.compact = false,
+  });
+
   @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.only(right: 12),
-    child: InkWell(
-      onTap: () async {
-        if (await openUrl(url)) return;
-        Clipboard.setData(ClipboardData(text: url));
-        if (context.mounted) toast(context, 'Ссылка скопирована: $url');
-      },
-      child: Text(
-        text,
-        style: TextStyle(
-          color: p.acc2,
-          fontSize: 12,
-          fontWeight: FontWeight.w600,
+  Widget build(BuildContext context) {
+    final bg = primary
+        ? p.acc.withValues(alpha: p.light ? .13 : .20)
+        : (p.amoled
+              ? const Color(0xFF0B0B14)
+              : (p.light ? p.card : p.chip.withValues(alpha: .85)));
+    final borderCol = primary
+        ? p.acc.withValues(alpha: p.light ? .35 : .48)
+        : (p.amoled
+              ? const Color(0xFF232334)
+              : p.acc.withValues(alpha: p.light ? .18 : .24));
+    final txtCol = primary ? p.acc2 : p.txt.withValues(alpha: .92);
+    final r = BorderRadius.circular(10);
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () => _openSubUrl(context, url),
+        borderRadius: r,
+        child: Container(
+          height: compact ? 30 : 32,
+          padding: EdgeInsets.symmetric(horizontal: compact ? 6 : 14),
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: bg,
+            borderRadius: r,
+            border: Border.all(color: borderCol, width: 1),
+          ),
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (icon != null) ...[
+                  Icon(icon, size: 12.5, color: p.acc2),
+                  const SizedBox(width: 4),
+                ],
+                Text(
+                  text,
+                  maxLines: 1,
+                  softWrap: false,
+                  style: TextStyle(
+                    color: txtCol,
+                    fontSize: compact ? 11.5 : 12.5,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: .1,
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
-    ),
-  );
+    );
+  }
+}
+
+class _CoinDonateBtn extends StatelessWidget {
+  final Pal p;
+  final String url;
+  final double size;
+  const _CoinDonateBtn({
+    required this.p,
+    required this.url,
+    this.size = 30,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: 'Пожертвование',
+      child: Material(
+        color: Colors.transparent,
+        shape: const CircleBorder(),
+        child: InkWell(
+          onTap: () => _openSubUrl(context, url),
+          customBorder: const CircleBorder(),
+          child: Container(
+            width: size,
+            height: size,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: const LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  Color(0xFFFFF6B7),
+                  Color(0xFFFFC72C),
+                  Color(0xFFD97706),
+                ],
+              ),
+              border: Border.all(color: const Color(0xFFFFE57F), width: 1.5),
+              boxShadow: [
+                BoxShadow(
+                  color: const Color(0xFFFFB703).withValues(alpha: .35),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: Container(
+              margin: const EdgeInsets.all(2.2),
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: const RadialGradient(
+                  center: Alignment(-0.3, -0.35),
+                  radius: 0.9,
+                  colors: [
+                    Color(0xFFFFF3B0),
+                    Color(0xFFFFB703),
+                    Color(0xFFCA6702),
+                  ],
+                ),
+                border: Border.all(
+                  color: const Color(0xFF9A3412).withValues(alpha: .45),
+                  width: 1,
+                ),
+              ),
+              alignment: Alignment.center,
+              child: const FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Padding(
+                  padding: EdgeInsets.all(2),
+                  child: Text(
+                    '₽',
+                    style: TextStyle(
+                      color: Color(0xFF5C2800),
+                      fontSize: 14,
+                      fontWeight: FontWeight.w900,
+                      height: 1.0,
+                      shadows: [
+                        Shadow(
+                          color: Color(0x99FFF8D6),
+                          offset: Offset(0, 0.8),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 /// One row: horizontally scrolling text tabs (small flags, accent text + underline when

@@ -9,7 +9,7 @@ export ANDROID_HOME="${ANDROID_HOME:-/workspace/tools/sdk}"
 export JAVA_HOME="${JAVA_HOME:-/workspace/tools/jdk-17.0.20.1+1}"
 export PATH="/workspace/tools/flutter/bin:/usr/local/go/bin:$HOME/go/bin:$JAVA_HOME/bin:$PATH"
 
-if [[ ! -f "$ROOT/app/android/app/libs/noxcore.aar" || "${REBUILD_AAR:-0}" == 1 ]]; then
+if [[ ! -f "$ROOT/app/android/app/libs/noxcore.aar" || "${REBUILD_AAR:-1}" == 1 ]]; then
   ANDROID_NDK_HOME="${ANDROID_NDK_HOME:-$ANDROID_HOME/ndk/28.2.13676358}" "$ROOT/go/mobile/build-aar.sh"
 fi
 
