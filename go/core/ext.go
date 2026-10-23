@@ -92,7 +92,7 @@ func parseExt(s string) (Server, bool, error) {
 		if pw, ok := u.User.Password(); ok && psk == "" {
 			psk = pw
 		}
-		cfg := map[string]any{"type": "snell", "psk": psk}
+		cfg := map[string]any{"type": "snell", "psk": psk, "udp": true}
 		if v, _ := strconv.Atoi(firstNonEmpty(q.Get("version"), "3")); v > 0 {
 			cfg["version"] = v
 		}

@@ -34,12 +34,12 @@ func startCore(a *App, cfg string, tun bool, out io.WriteCloser) (coreProc, erro
 	if err != nil {
 		return nil, err
 	}
-	return execProc{c}, nil
+	return newExecProc(c), nil
 }
 func startTestCore(a *App, cfg string, out io.Writer) (coreProc, error) {
 	c, err := startExecCore(a, cfg, out)
 	if err != nil {
 		return nil, err
 	}
-	return execProc{c}, nil
+	return newExecProc(c), nil
 }

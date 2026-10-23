@@ -5,6 +5,7 @@ import (
 	"os/exec"
 	"strings"
 	"sync"
+	"time"
 )
 
 // coreProc is a running sing-box: a child process on desktop, the in-process libbox
@@ -14,10 +15,35 @@ type coreProc interface {
 	Stop()
 }
 
-type execProc struct{ c *exec.Cmd }
+type execProc struct {
+	c    *exec.Cmd
+	done chan struct{}
+	err  error
+}
 
-func (p execProc) Wait() error { return p.c.Wait() }
-func (p execProc) Stop()       { gracefulStop(p.c) }
+func newExecProc(c *exec.Cmd) *execProc {
+	p := &execProc{c: c, done: make(chan struct{})}
+	go func() {
+		p.err = c.Wait()
+		close(p.done)
+	}()
+	return p
+}
+
+func (p *execProc) Wait() error {
+	<-p.done
+	return p.err
+}
+
+func (p *execProc) Stop() {
+	if p.c != nil && p.c.Process != nil {
+		p.c.Process.Kill()
+	}
+	select {
+	case <-p.done:
+	case <-time.After(3 * time.Second):
+	}
+}
 
 // startExecCore runs `sing-box run` as a child process (desktop).
 func startExecCore(a *App, cfg string, out io.Writer) (*exec.Cmd, error) {

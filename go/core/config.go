@@ -209,7 +209,7 @@ func BuildConfig(proxy map[string]any, s Settings, clashAddr string, ruleDir str
 		map[string]any{"protocol": "dns", "action": "hijack-dns"},
 		map[string]any{"ip_is_private": true, "outbound": "direct"},
 	)
-	procs := []string{"sing-box.exe", "qwdtt.exe", "xray.exe", "sing-box", "qwdtt", "xray"}
+	procs := []string{"sing-box.exe", "qwdtt.exe", "xray.exe", "noxd.exe", "naive.exe", "sing-box", "qwdtt", "xray", "noxd", "naive"}
 	rules = append(rules, map[string]any{"process_name": procs, "outbound": "direct"})
 	if s.BlockAds {
 		rules = append(rules, map[string]any{"rule_set": "ads", "action": "reject"})

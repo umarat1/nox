@@ -19,7 +19,7 @@ func startCore(a *App, cfg string, tun bool, out io.WriteCloser) (coreProc, erro
 	if err != nil {
 		return nil, err
 	}
-	return execProc{c}, nil
+	return newExecProc(c), nil
 }
 
 func startTestCore(a *App, cfg string, out io.Writer) (coreProc, error) {
@@ -27,7 +27,7 @@ func startTestCore(a *App, cfg string, out io.Writer) (coreProc, error) {
 	if err != nil {
 		return nil, err
 	}
-	return execProc{c}, nil
+	return newExecProc(c), nil
 }
 
 func applyUpdate(a *App, u *UpdateInfo) error {
@@ -38,7 +38,12 @@ func applyUpdate(a *App, u *UpdateInfo) error {
 	return installUpdate(a, path)
 }
 
+var installHook func(string) error
+
 func installUpdate(a *App, path string) error {
+	if installHook != nil {
+		return installHook(path)
+	}
 	// signed installer verified in download(); it stops/replaces the service itself
 	a.stopAll()
 	// the installer closes Nox.exe; the restarted service brings the UI back (cmd/noxd relaunch)

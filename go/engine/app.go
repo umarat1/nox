@@ -27,7 +27,7 @@ import (
 	"nox/core"
 )
 
-const Version = "1.0.23"
+const Version = "1.0.24"
 
 type Sub struct {
 	ID       string `json:"id"`
@@ -705,7 +705,7 @@ func (a *App) ping(list []core.Server, mode string) map[string]int {
 			go func() { defer wg.Done(); set(s.ID, a.qwdttPing(s)) }()
 			continue
 		}
-		if mode == "tcp" && !isUDPType(s.Type) { // UDP/QUIC protocols have no TCP port to ping: measured via URL test below
+		if mode == "tcp" && !isUDPServer(s) { // UDP/QUIC protocols have no TCP port to ping: measured via URL test below
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
@@ -741,7 +741,52 @@ func (a *App) ping(list []core.Server, mode string) map[string]int {
 
 func isUDPType(t string) bool {
 	t = strings.ToLower(t)
-	return strings.HasPrefix(t, "hysteria") || t == "tuic" || t == "wireguard" || t == "juicity" || t == "shadowquic"
+	return strings.HasPrefix(t, "hysteria") || t == "tuic" || t == "wireguard" || t == "juicity" || t == "shadowquic" ||
+		strings.Contains(t, "quic") || strings.Contains(t, "h3") || strings.Contains(t, "kcp")
+}
+
+func isUDPServer(s core.Server) bool {
+	if isUDPType(s.Type) {
+		return true
+	}
+	var m struct {
+		TLS *struct {
+			ALPN []string `json:"alpn"`
+		} `json:"tls"`
+		Xray *struct {
+			StreamSettings *struct {
+				Network     string `json:"network"`
+				TLSSettings *struct {
+					ALPN []string `json:"alpn"`
+				} `json:"tlsSettings"`
+			} `json:"streamSettings"`
+		} `json:"xray"`
+	}
+	if json.Unmarshal(s.Outbound, &m) == nil {
+		if m.TLS != nil && hasH3ALPN(m.TLS.ALPN) {
+			return true
+		}
+		if m.Xray != nil && m.Xray.StreamSettings != nil {
+			netw := strings.ToLower(m.Xray.StreamSettings.Network)
+			if netw == "quic" || netw == "kcp" || netw == "hysteria" {
+				return true
+			}
+			if m.Xray.StreamSettings.TLSSettings != nil && hasH3ALPN(m.Xray.StreamSettings.TLSSettings.ALPN) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func hasH3ALPN(alpn []string) bool {
+	for _, a := range alpn {
+		a = strings.ToLower(strings.TrimSpace(a))
+		if a == "h3" || strings.HasPrefix(a, "h3-") || a == "quic" {
+			return true
+		}
+	}
+	return false
 }
 
 func (a *App) urlTest(list []core.Server, set func(string, int), pn pingNet) {
