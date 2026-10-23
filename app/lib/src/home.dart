@@ -141,7 +141,7 @@ class _Body extends StatelessWidget {
       return const Center(child: CircularProgressIndicator());
     final view = c.pref('view', 'list');
     final list = c.visible();
-    final mobile = !wide;
+    final mobile = !c.isTv;
     final hdrCol = mobile && c.flag('hdrCol', false);
     final subCol = mobile && c.flag('subCol', false);
     final srvCol = mobile && c.flag('srvCol', false);
@@ -218,7 +218,7 @@ class _Body extends StatelessWidget {
     ];
     final servers = _serverSlivers(context, list, view);
     if (wide && !c.isTv) {
-      // 1.0.20 desktop: top row = connection card (left) + speed graph stretching the rest of
+      // 1.0.20+ desktop: top row = connection card (left) + speed graph stretching the rest of
       // the width; below, full-width scroll with banners, subscriptions, filters and a grid of
       // server cards.
       const pad = 20.0, gap = 16.0;
@@ -228,27 +228,71 @@ class _Body extends StatelessWidget {
         for (final x in head)
           if (x is! _Hero && x is! _GraphSlot) x,
       ];
+      final topRow = IntrinsicHeight(
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            SizedBox(width: heroW, child: hero),
+            const SizedBox(width: gap),
+            Expanded(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(minHeight: 210),
+                child: _GraphCard(c: c, p: p),
+              ),
+            ),
+          ],
+        ),
+      );
+      if (srvCol) {
+        return Padding(
+          padding: const EdgeInsets.all(pad),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _CollapsedHeaderPill(
+                p: p,
+                onTap: () {
+                  c.setPrefLive('srvCol', '0');
+                  c.setPrefLive('hdrCol', '0');
+                },
+              ),
+              Expanded(
+                child: Center(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        topRow,
+                        const SizedBox(height: 12),
+                        ...rest,
+                        ...listHead,
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      }
       return Padding(
         padding: const EdgeInsets.all(pad),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            _TopBar(c: c, p: p),
-            IntrinsicHeight(
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  SizedBox(width: heroW, child: hero),
-                  const SizedBox(width: gap),
-                  Expanded(
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(minHeight: 210),
-                      child: _GraphCard(c: c, p: p),
-                    ),
-                  ),
-                ],
-              ),
+            _TopBar(
+              c: c,
+              p: p,
+              mobile: true,
+              showFullScreen: canFullScreen,
+              collapsed: hdrCol,
+              onToggleCollapse: () =>
+                  c.setPrefLive('hdrCol', hdrCol ? '0' : '1'),
             ),
+            topRow,
             const SizedBox(height: 12),
             Expanded(
               child: FocusTraversalGroup(
@@ -861,12 +905,14 @@ class _TopBar extends StatelessWidget {
   final NoxController c;
   final Pal p;
   final bool mobile;
+  final bool showFullScreen;
   final bool collapsed;
   final VoidCallback? onToggleCollapse;
   const _TopBar({
     required this.c,
     required this.p,
     this.mobile = false,
+    this.showFullScreen = false,
     this.collapsed = false,
     this.onToggleCollapse,
   });
@@ -969,7 +1015,7 @@ class _TopBar extends StatelessWidget {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                if (!mobile && canFullScreen) ...[
+                if ((!mobile || showFullScreen) && canFullScreen) ...[
                   ValueListenableBuilder<bool>(
                     valueListenable: fullScreen,
                     builder: (_, fs, _) => _GhostBtn(
@@ -978,10 +1024,11 @@ class _TopBar extends StatelessWidget {
                       tip: fs
                           ? 'Выйти из полноэкранного режима (F11)'
                           : 'Во весь экран (F11)',
+                      mobile: mobile,
                       onTap: () => toggleFullScreen(),
                     ),
                   ),
-                  const SizedBox(width: 2),
+                  SizedBox(width: mobile ? 6 : 2),
                 ],
                 _MailBtn(c: c, p: p, mobile: mobile),
                 SizedBox(width: mobile ? 6 : 2),
@@ -2288,6 +2335,30 @@ class _CoinDonateBtn extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final baseBg = p.amoled
+        ? const Color(0xFF0B0B14)
+        : (p.light ? p.card : p.chip);
+    final rimGrad = p.light
+        ? [
+            p.acc2.withValues(alpha: .30),
+            p.acc.withValues(alpha: .16),
+          ]
+        : [
+            p.acc2.withValues(alpha: .42),
+            p.acc.withValues(alpha: .24),
+            baseBg,
+          ];
+    final faceGrad = p.light
+        ? [
+            Colors.white,
+            p.acc.withValues(alpha: .14),
+          ]
+        : [
+            p.acc2.withValues(alpha: .28),
+            p.acc.withValues(alpha: .16),
+            baseBg,
+          ];
+    final symColor = p.light ? p.acc : p.acc2;
     return Tooltip(
       message: 'Пожертвование',
       child: Material(
@@ -2301,58 +2372,53 @@ class _CoinDonateBtn extends StatelessWidget {
             height: size,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              gradient: const LinearGradient(
+              gradient: LinearGradient(
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
-                colors: [
-                  Color(0xFFFFF6B7),
-                  Color(0xFFFFC72C),
-                  Color(0xFFD97706),
-                ],
+                colors: rimGrad,
               ),
-              border: Border.all(color: const Color(0xFFFFE57F), width: 1.5),
+              border: Border.all(
+                color: p.acc2.withValues(alpha: p.light ? .50 : .62),
+                width: 1.3,
+              ),
               boxShadow: [
                 BoxShadow(
-                  color: const Color(0xFFFFB703).withValues(alpha: .35),
+                  color: p.acc.withValues(alpha: p.light ? .16 : .26),
                   blurRadius: 8,
                   offset: const Offset(0, 2),
                 ),
               ],
             ),
             child: Container(
-              margin: const EdgeInsets.all(2.2),
+              margin: const EdgeInsets.all(2.4),
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                gradient: const RadialGradient(
-                  center: Alignment(-0.3, -0.35),
-                  radius: 0.9,
-                  colors: [
-                    Color(0xFFFFF3B0),
-                    Color(0xFFFFB703),
-                    Color(0xFFCA6702),
-                  ],
+                gradient: RadialGradient(
+                  center: const Alignment(-0.25, -0.3),
+                  radius: 0.95,
+                  colors: faceGrad,
                 ),
                 border: Border.all(
-                  color: const Color(0xFF9A3412).withValues(alpha: .45),
+                  color: p.acc2.withValues(alpha: p.light ? .35 : .44),
                   width: 1,
                 ),
               ),
               alignment: Alignment.center,
-              child: const FittedBox(
+              child: FittedBox(
                 fit: BoxFit.scaleDown,
                 child: Padding(
-                  padding: EdgeInsets.all(2),
+                  padding: const EdgeInsets.all(2),
                   child: Text(
                     '₽',
                     style: TextStyle(
-                      color: Color(0xFF5C2800),
-                      fontSize: 14,
-                      fontWeight: FontWeight.w900,
+                      color: symColor,
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.w800,
                       height: 1.0,
                       shadows: [
                         Shadow(
-                          color: Color(0x99FFF8D6),
-                          offset: Offset(0, 0.8),
+                          color: p.acc.withValues(alpha: p.light ? .15 : .45),
+                          blurRadius: 4,
                         ),
                       ],
                     ),

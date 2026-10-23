@@ -57,12 +57,8 @@ void main() {
         await _app(t, size, fs: fs);
         expect(find.text('Все'), findsOneWidget);
         expect(find.byTooltip('Пинг'), findsOneWidget);
-        if (name.startsWith('phone')) {
-          expect(find.byTooltip('Обновить'), findsOneWidget);
-          expect(find.byTooltip('Обновить подписки'), findsNothing);
-        } else {
-          expect(find.byTooltip('Обновить подписки'), findsOneWidget);
-        }
+        expect(find.byTooltip('Обновить'), findsOneWidget);
+        expect(find.byTooltip('Обновить подписки'), findsNothing);
         // «N из M · пинг» moved off the main screen
         expect(find.textContaining(' из '), findsNothing);
         // tabs and the three buttons share one row
