@@ -57,7 +57,12 @@ void main() {
         await _app(t, size, fs: fs);
         expect(find.text('Все'), findsOneWidget);
         expect(find.byTooltip('Пинг'), findsOneWidget);
-        expect(find.byTooltip('Обновить подписки'), findsOneWidget);
+        if (name.startsWith('phone')) {
+          expect(find.byTooltip('Обновить'), findsOneWidget);
+          expect(find.byTooltip('Обновить подписки'), findsNothing);
+        } else {
+          expect(find.byTooltip('Обновить подписки'), findsOneWidget);
+        }
         // «N из M · пинг» moved off the main screen
         expect(find.textContaining(' из '), findsNothing);
         // tabs and the three buttons share one row
@@ -135,5 +140,30 @@ void main() {
     await t.sendKeyEvent(LogicalKeyboardKey.enter);
     await t.pump(const Duration(milliseconds: 600));
     expect(c.category, second.$1);
+  });
+
+  testWidgets('mobile header and sections collapse and center on phone', (t) async {
+    await _app(t, const Size(411, 860));
+    // Header collapse toggle works independently
+    expect(find.byTooltip('Свернуть шапку'), findsOneWidget);
+    await t.tap(find.byTooltip('Свернуть шапку'));
+    await t.pump();
+    expect(find.byTooltip('Развернуть шапку'), findsOneWidget);
+    await t.tap(find.byTooltip('Развернуть шапку'));
+    await t.pump();
+    expect(find.byTooltip('Свернуть шапку'), findsOneWidget);
+
+    // Collapsing subscription and server sections hides full header and centers VPN card
+    await t.tap(find.byTooltip('Свернуть подписку'));
+    await t.pump();
+    expect(find.byTooltip('Развернуть подписку'), findsOneWidget);
+
+    await t.tap(find.byTooltip('Свернуть серверы'));
+    await t.pump();
+    expect(find.byTooltip('Свернуть шапку'), findsNothing);
+    expect(find.byTooltip('Развернуть серверы'), findsOneWidget);
+    final powerY = t.getCenter(find.byIcon(Icons.power_settings_new)).dy;
+    expect(powerY, greaterThan(220));
+    expect(powerY, lessThan(550));
   });
 }

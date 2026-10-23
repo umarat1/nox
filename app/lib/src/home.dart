@@ -141,8 +141,19 @@ class _Body extends StatelessWidget {
       return const Center(child: CircularProgressIndicator());
     final view = c.pref('view', 'list');
     final list = c.visible();
+    final mobile = !wide;
+    final hdrCol = mobile && c.flag('hdrCol', false);
+    final subCol = mobile && c.flag('subCol', false);
+    final srvCol = mobile && c.flag('srvCol', false);
     final head = <Widget>[
-      if (!wide) _TopBar(c: c, p: p),
+      if (!wide && !srvCol)
+        _TopBar(
+          c: c,
+          p: p,
+          mobile: true,
+          collapsed: hdrCol,
+          onToggleCollapse: () => c.setPrefLive('hdrCol', hdrCol ? '0' : '1'),
+        ),
       _Hero(c: c, p: p, wide: wide),
       if (wide) const _GraphSlot(),
       if (c.vpnDenied)
@@ -180,9 +191,31 @@ class _Body extends StatelessWidget {
         ),
       if (c.s['update'] != null) _UpdateBanner(c: c, p: p),
       for (final (i, b) in c.subs.indexed)
-        _SubBlock(key: i == 0 ? TourKeys.sub : null, c: c, p: p, b: b),
+        _SubBlock(
+          key: i == 0 ? TourKeys.sub : null,
+          c: c,
+          p: p,
+          b: b,
+          first: i == 0,
+          mobile: mobile,
+          collapsed: subCol,
+          onToggleCollapse: mobile
+              ? () => c.setPrefLive('subCol', subCol ? '0' : '1')
+              : null,
+        ),
     ];
-    final listHead = <Widget>[_FilterBar(c: c, p: p, shown: list.length)];
+    final listHead = <Widget>[
+      _FilterBar(
+        c: c,
+        p: p,
+        shown: list.length,
+        mobile: mobile,
+        collapsed: srvCol,
+        onToggleCollapse: mobile
+            ? () => c.setPrefLive('srvCol', srvCol ? '0' : '1')
+            : null,
+      ),
+    ];
     final servers = _serverSlivers(list, view);
     if (wide && !c.isTv) {
       // 1.0.20 desktop: top row = connection card (left) + speed graph stretching the rest of
@@ -319,6 +352,40 @@ class _Body extends StatelessWidget {
       );
     }
     // Phone: pin logo/actions + connection card; banners, subs, chips and list scroll under them.
+    if (srvCol) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+            child: _CollapsedHeaderPill(
+              p: p,
+              onTap: () {
+                c.setPrefLive('srvCol', '0');
+                c.setPrefLive('hdrCol', '0');
+              },
+            ),
+          ),
+          Expanded(
+            child: Center(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    for (final wdg in head)
+                      if (wdg is! _TopBar) wdg,
+                    ...listHead,
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      );
+    }
     final pinned = <Widget>[
       for (final wdg in head)
         if (wdg is _TopBar || wdg is _Hero) wdg,
@@ -514,12 +581,15 @@ class _OrbBtn extends StatefulWidget {
   final String tip;
   final Future<void> Function() onTap;
   final bool spinWhileBusy;
+  final bool mobile;
   const _OrbBtn({
+    super.key,
     required this.p,
     required this.icon,
     required this.tip,
     required this.onTap,
     this.spinWhileBusy = false,
+    this.mobile = false,
   });
   @override
   State<_OrbBtn> createState() => _OrbBtnState();
@@ -558,6 +628,43 @@ class _OrbBtnState extends State<_OrbBtn> with SingleTickerProviderStateMixin {
   Widget build(BuildContext context) {
     final p = widget.p;
     final acc = p.acc;
+    if (widget.mobile) {
+      return Tooltip(
+        message: widget.tip,
+        child: GestureDetector(
+          onTapDown: (_) => setState(() => down = true),
+          onTapCancel: () => setState(() => down = false),
+          onTapUp: (_) => setState(() => down = false),
+          onTap: _tap,
+          child: AnimatedScale(
+            scale: down ? .90 : 1,
+            duration: const Duration(milliseconds: 120),
+            child: Container(
+              width: 32,
+              height: 32,
+              decoration: BoxDecoration(
+                color: acc.withValues(
+                  alpha: busy || down ? .22 : (p.light ? .10 : .15),
+                ),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                  color: acc.withValues(
+                    alpha: busy ? .60 : (p.light ? .22 : .32),
+                  ),
+                  width: 1,
+                ),
+              ),
+              child: Center(
+                child: RotationTransition(
+                  turns: spin,
+                  child: Icon(widget.icon, size: 18, color: p.acc2),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
     final top = Color.lerp(p.chip, Colors.white, p.light ? .5 : .10)!;
     final bot = p.amoled
         ? const Color(0xFF000000)
@@ -680,14 +787,97 @@ BoxDecoration _box(Pal p, {Color? color, double r = 18, Color? border}) =>
       boxShadow: raisedShadow(p),
     );
 
+class _CollapsedHeaderPill extends StatelessWidget {
+  final Pal p;
+  final VoidCallback onTap;
+  const _CollapsedHeaderPill({required this.p, required this.onTap});
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Tooltip(
+        message: 'Развернуть шапку',
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: onTap,
+            borderRadius: BorderRadius.circular(14),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+              decoration: BoxDecoration(
+                color: p.amoled
+                    ? const Color(0xFF0A0A12)
+                    : p.card.withValues(alpha: .92),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(
+                  color: p.amoled ? const Color(0xFF222230) : p.line,
+                  width: 1,
+                ),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text.rich(
+                    TextSpan(
+                      children: [
+                        TextSpan(
+                          text: 'n',
+                          style: TextStyle(color: p.txt),
+                        ),
+                        TextSpan(
+                          text: 'o',
+                          style: TextStyle(color: p.acc2),
+                        ),
+                        TextSpan(
+                          text: 'x',
+                          style: TextStyle(color: p.txt),
+                        ),
+                      ],
+                    ),
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: .4,
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  Icon(
+                    Icons.keyboard_arrow_down_rounded,
+                    size: 16,
+                    color: p.sub,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _TopBar extends StatelessWidget {
   final NoxController c;
   final Pal p;
-  const _TopBar({required this.c, required this.p});
+  final bool mobile;
+  final bool collapsed;
+  final VoidCallback? onToggleCollapse;
+  const _TopBar({
+    required this.c,
+    required this.p,
+    this.mobile = false,
+    this.collapsed = false,
+    this.onToggleCollapse,
+  });
   @override
   Widget build(BuildContext context) {
+    if (mobile && collapsed && onToggleCollapse != null) {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 8),
+        child: _CollapsedHeaderPill(p: p, onTap: onToggleCollapse!),
+      );
+    }
     final th = (c.settings['theme'] ?? 'dark') as String;
-    final logo = Text.rich(
+    final logoText = Text.rich(
       TextSpan(
         children: [
           TextSpan(
@@ -704,90 +894,130 @@ class _TopBar extends StatelessWidget {
           ),
         ],
       ),
-      style: const TextStyle(
-        fontSize: 22,
+      style: TextStyle(
+        fontSize: mobile ? 20 : 22,
         fontWeight: FontWeight.w800,
         letterSpacing: .5,
       ),
     );
+    final Widget logo = mobile
+        ? GestureDetector(
+            onTap: onToggleCollapse,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
+              decoration: BoxDecoration(
+                color: p.acc.withValues(alpha: p.light ? .09 : .15),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(
+                  color: p.acc.withValues(alpha: p.light ? .22 : .32),
+                  width: 1,
+                ),
+              ),
+              child: logoText,
+            ),
+          )
+        : logoText;
     // Equal Expanded sides keep the logo exactly centred whatever the button counts.
+    final row = Row(
+      children: [
+        Expanded(
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _GhostBtn(
+                  key: TourKeys.add,
+                  p: p,
+                  icon: Icons.add_rounded,
+                  tip: 'Добавить подписку',
+                  mobile: mobile,
+                  accent: mobile,
+                  onTap: () => addSheet(context, c, p),
+                ),
+                SizedBox(width: mobile ? 6 : 2),
+                _GhostBtn(
+                  key: TourKeys.theme,
+                  p: p,
+                  icon: th == 'light'
+                      ? Icons.light_mode_outlined
+                      : Icons.dark_mode_outlined,
+                  tip: 'Тема',
+                  mobile: mobile,
+                  onTap: () {
+                    final i = themeNames.indexWhere((e) => e.$1 == th);
+                    final n = themeNames[(i + 1) % 3].$1;
+                    c.saveSettings({'theme': n});
+                    toast(context, 'Тема: ${themeName(n)}');
+                  },
+                ),
+              ],
+            ),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          child: logo,
+        ),
+        Expanded(
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerRight,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (!mobile && canFullScreen) ...[
+                  ValueListenableBuilder<bool>(
+                    valueListenable: fullScreen,
+                    builder: (_, fs, _) => _GhostBtn(
+                      p: p,
+                      icon: fs ? Icons.fullscreen_exit : Icons.fullscreen,
+                      tip: fs
+                          ? 'Выйти из полноэкранного режима (F11)'
+                          : 'Во весь экран (F11)',
+                      onTap: () => toggleFullScreen(),
+                    ),
+                  ),
+                  const SizedBox(width: 2),
+                ],
+                _MailBtn(c: c, p: p, mobile: mobile),
+                SizedBox(width: mobile ? 6 : 2),
+                _GhostBtn(
+                  key: TourKeys.settings,
+                  p: p,
+                  icon: Icons.settings_outlined,
+                  tip: 'Настройки',
+                  mobile: mobile,
+                  onTap: () => settingsSheet(context, c, p),
+                ),
+                if (mobile && onToggleCollapse != null) ...[
+                  const SizedBox(width: 6),
+                  _GhostBtn(
+                    p: p,
+                    icon: Icons.keyboard_arrow_up_rounded,
+                    tip: 'Свернуть шапку',
+                    mobile: true,
+                    onTap: onToggleCollapse!,
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+    if (mobile) {
+      return Container(
+        margin: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+        decoration: _box(p, r: 20),
+        child: row,
+      );
+    }
     return Padding(
       padding: const EdgeInsets.fromLTRB(0, 2, 0, 8),
-      child: Row(
-        children: [
-          Expanded(
-            child: FittedBox(
-              fit: BoxFit.scaleDown,
-              alignment: Alignment.centerLeft,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  _GhostBtn(
-                    key: TourKeys.add,
-                    p: p,
-                    icon: Icons.add,
-                    tip: 'Добавить подписку',
-                    onTap: () => addSheet(context, c, p),
-                  ),
-                  const SizedBox(width: 2),
-                  _GhostBtn(
-                    key: TourKeys.theme,
-                    p: p,
-                    icon: th == 'light'
-                        ? Icons.light_mode_outlined
-                        : Icons.dark_mode_outlined,
-                    tip: 'Тема',
-                    onTap: () {
-                      final i = themeNames.indexWhere((e) => e.$1 == th);
-                      final n = themeNames[(i + 1) % 3].$1;
-                      c.saveSettings({'theme': n});
-                      toast(context, 'Тема: ${themeName(n)}');
-                    },
-                  ),
-                ],
-              ),
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8),
-            child: logo,
-          ),
-          Expanded(
-            child: FittedBox(
-              fit: BoxFit.scaleDown,
-              alignment: Alignment.centerRight,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (canFullScreen) ...[
-                    ValueListenableBuilder<bool>(
-                      valueListenable: fullScreen,
-                      builder: (_, fs, _) => _GhostBtn(
-                        p: p,
-                        icon: fs ? Icons.fullscreen_exit : Icons.fullscreen,
-                        tip: fs
-                            ? 'Выйти из полноэкранного режима (F11)'
-                            : 'Во весь экран (F11)',
-                        onTap: () => toggleFullScreen(),
-                      ),
-                    ),
-                    const SizedBox(width: 2),
-                  ],
-                  _MailBtn(c: c, p: p),
-                  const SizedBox(width: 2),
-                  _GhostBtn(
-                    key: TourKeys.settings,
-                    p: p,
-                    icon: Icons.settings_outlined,
-                    tip: 'Настройки',
-                    onTap: () => settingsSheet(context, c, p),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
+      child: row,
     );
   }
 }
@@ -800,6 +1030,8 @@ class _GhostBtn extends StatefulWidget {
   final VoidCallback onTap;
   final Color? tint;
   final bool badge;
+  final bool mobile;
+  final bool accent;
   const _GhostBtn({
     super.key,
     required this.p,
@@ -808,6 +1040,8 @@ class _GhostBtn extends StatefulWidget {
     required this.onTap,
     this.tint,
     this.badge = false,
+    this.mobile = false,
+    this.accent = false,
   });
   @override
   State<_GhostBtn> createState() => _GhostBtnState();
@@ -818,6 +1052,69 @@ class _GhostBtnState extends State<_GhostBtn> {
   @override
   Widget build(BuildContext context) {
     final p = widget.p;
+    if (widget.mobile) {
+      final acc = widget.accent;
+      return Tooltip(
+        message: widget.tip,
+        child: Material(
+          type: MaterialType.transparency,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(12),
+            onTap: widget.onTap,
+            onFocusChange: (f) => setState(() => _f = f),
+            focusColor: p.acc.withValues(alpha: .16),
+            hoverColor: p.acc.withValues(alpha: .10),
+            splashColor: p.acc.withValues(alpha: .22),
+            highlightColor: p.acc.withValues(alpha: .10),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 140),
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: acc
+                    ? p.acc.withValues(alpha: p.light ? .12 : .20)
+                    : (p.amoled
+                          ? const Color(0xFF101018)
+                          : (p.light ? p.bg : p.chip.withValues(alpha: .80))),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: _f
+                      ? p.acc2
+                      : (acc
+                            ? p.acc.withValues(alpha: p.light ? .28 : .38)
+                            : (p.amoled ? const Color(0xFF222230) : p.line)),
+                  width: _f ? 2 : 1,
+                ),
+              ),
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  Icon(
+                    widget.icon,
+                    size: 19,
+                    color: widget.tint ?? (acc ? p.acc2 : p.txt),
+                  ),
+                  if (widget.badge)
+                    Positioned(
+                      right: 6,
+                      top: 6,
+                      child: Container(
+                        width: 8,
+                        height: 8,
+                        decoration: BoxDecoration(
+                          color: p.acc2,
+                          shape: BoxShape.circle,
+                          border: Border.all(color: p.card, width: 1.5),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+    }
     return Tooltip(
       message: widget.tip,
       child: Material(
@@ -1196,7 +1493,8 @@ class _Banner extends StatelessWidget {
 class _MailBtn extends StatelessWidget {
   final NoxController c;
   final Pal p;
-  const _MailBtn({required this.c, required this.p});
+  final bool mobile;
+  const _MailBtn({required this.c, required this.p, this.mobile = false});
   @override
   Widget build(BuildContext context) {
     final has = c.s['update'] is Map;
@@ -1206,6 +1504,7 @@ class _MailBtn extends StatelessWidget {
       icon: has ? Icons.mark_email_unread_outlined : Icons.mail_outline,
       tint: has ? p.acc2 : null,
       badge: has,
+      mobile: mobile,
       tip: has ? 'Доступно обновление' : 'Обновления и сообщения',
       onTap: () => updateSheet(context, c, p),
     );
@@ -1274,11 +1573,19 @@ class _SubBlock extends StatelessWidget {
   final NoxController c;
   final Pal p;
   final J b;
+  final bool first;
+  final bool mobile;
+  final bool collapsed;
+  final VoidCallback? onToggleCollapse;
   const _SubBlock({
     super.key,
     required this.c,
     required this.p,
     required this.b,
+    this.first = false,
+    this.mobile = false,
+    this.collapsed = false,
+    this.onToggleCollapse,
   });
   @override
   Widget build(BuildContext context) {
@@ -1310,7 +1617,9 @@ class _SubBlock extends StatelessWidget {
         : 'до ${dt.day.toString().padLeft(2, '0')}.${dt.month.toString().padLeft(2, '0')}.${dt.year}';
     return Container(
       margin: const EdgeInsets.only(top: 8),
-      padding: const EdgeInsets.fromLTRB(12, 10, 6, 8),
+      padding: mobile
+          ? EdgeInsets.fromLTRB(12, 10, 10, collapsed ? 10 : 8)
+          : const EdgeInsets.fromLTRB(12, 10, 6, 8),
       decoration: _box(p),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1320,22 +1629,28 @@ class _SubBlock extends StatelessWidget {
               Icon(Icons.workspace_premium_rounded, size: 18, color: p.acc2),
               const SizedBox(width: 6),
               Expanded(
-                child: Text(
-                  'Подписка · $n серв.',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: p.txt,
-                    fontWeight: FontWeight.w700,
-                    fontSize: 13,
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: onToggleCollapse,
+                  child: Text(
+                    'Подписка · $n серв.',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: p.txt,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 13,
+                    ),
                   ),
                 ),
               ),
               _OrbBtn(
+                key: first && mobile ? TourKeys.refresh : null,
                 p: p,
                 icon: Icons.refresh_rounded,
                 tip: 'Обновить',
                 spinWhileBusy: true,
+                mobile: mobile,
                 onTap: () async {
                   final r = await c.call('RefreshSub', [b['id']]);
                   await c.refresh();
@@ -1351,52 +1666,67 @@ class _SubBlock extends StatelessWidget {
                 p: p,
                 icon: Icons.more_horiz_rounded,
                 tip: 'Действия с подпиской',
+                mobile: mobile,
                 onTap: () async => subSheet(context, c, p, b),
               ),
+              if (mobile && onToggleCollapse != null) ...[
+                const SizedBox(width: 6),
+                _OrbBtn(
+                  p: p,
+                  icon: collapsed
+                      ? Icons.keyboard_arrow_down_rounded
+                      : Icons.keyboard_arrow_up_rounded,
+                  tip: collapsed ? 'Развернуть подписку' : 'Свернуть подписку',
+                  mobile: true,
+                  onTap: () async => onToggleCollapse!(),
+                ),
+              ],
             ],
           ),
-          const SizedBox(height: 6),
-          Row(
-            children: [
-              Expanded(
-                child: _Meter(
-                  p: p,
-                  frac: dFrac,
-                  icon: Icons.event_rounded,
-                  label: '',
-                  value: expireTxt,
-                  sub: dateTxt,
+          if (!mobile || !collapsed) ...[
+            const SizedBox(height: 6),
+            Row(
+              children: [
+                Expanded(
+                  child: _Meter(
+                    p: p,
+                    frac: dFrac,
+                    icon: Icons.event_rounded,
+                    label: '',
+                    value: expireTxt,
+                    sub: dateTxt,
+                  ),
                 ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: _Meter(
-                  p: p,
-                  frac: tFrac,
-                  icon: Icons.data_usage_rounded,
-                  label: '',
-                  value: trafficTxt,
-                  sub: total > 0
-                      ? 'из ${fmtBytes(total)}'
-                      : 'израсходовано ${fmtBytes(used)}',
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _Meter(
+                    p: p,
+                    frac: tFrac,
+                    icon: Icons.data_usage_rounded,
+                    label: '',
+                    value: trafficTxt,
+                    sub: total > 0
+                        ? 'из ${fmtBytes(total)}'
+                        : 'израсходовано ${fmtBytes(used)}',
+                  ),
                 ),
-              ),
-              const SizedBox(width: 6),
-            ],
-          ),
-          if (ann.isNotEmpty) _Announce(c: c, p: p, text: ann),
-          if ((b['webPage'] ?? '') != '' || (b['support'] ?? '') != '')
-            Padding(
-              padding: const EdgeInsets.only(top: 2),
-              child: Wrap(
-                children: [
-                  if ((b['webPage'] ?? '') != '')
-                    _Link(p: p, text: 'Подробнее', url: b['webPage']),
-                  if ((b['support'] ?? '') != '')
-                    _Link(p: p, text: 'Поддержка', url: b['support']),
-                ],
-              ),
+                const SizedBox(width: 6),
+              ],
             ),
+            if (ann.isNotEmpty) _Announce(c: c, p: p, text: ann),
+            if ((b['webPage'] ?? '') != '' || (b['support'] ?? '') != '')
+              Padding(
+                padding: const EdgeInsets.only(top: 2),
+                child: Wrap(
+                  children: [
+                    if ((b['webPage'] ?? '') != '')
+                      _Link(p: p, text: 'Подробнее', url: b['webPage']),
+                    if ((b['support'] ?? '') != '')
+                      _Link(p: p, text: 'Поддержка', url: b['support']),
+                  ],
+                ),
+              ),
+          ],
         ],
       ),
     );
@@ -1844,7 +2174,17 @@ class _FilterBar extends StatefulWidget {
   final NoxController c;
   final Pal p;
   final int shown;
-  const _FilterBar({required this.c, required this.p, required this.shown});
+  final bool mobile;
+  final bool collapsed;
+  final VoidCallback? onToggleCollapse;
+  const _FilterBar({
+    required this.c,
+    required this.p,
+    required this.shown,
+    this.mobile = false,
+    this.collapsed = false,
+    this.onToggleCollapse,
+  });
   @override
   State<_FilterBar> createState() => _FilterBarState();
 }
@@ -1880,7 +2220,7 @@ class _FilterBarState extends State<_FilterBar> {
     final s = c.s;
     final pinging = s['pinging'] == true;
     final ts = MediaQuery.textScalerOf(context);
-    final h = ts.scale(13) + 24; // text + paddings + indicator
+    final h = widget.mobile ? ts.scale(14) + 22 : ts.scale(13) + 24;
     WidgetsBinding.instance.addPostFrameCallback((_) => _edges());
     final strip = ShaderMask(
       blendMode: BlendMode.dstIn,
@@ -1903,8 +2243,22 @@ class _FilterBarState extends State<_FilterBar> {
             p: p,
             text: t,
             iso: iso,
-            on: k == cat,
-            onTap: () => c.setPref('cat', k),
+            on: k == cat && !widget.collapsed,
+            mobile: widget.mobile,
+            onTap: () {
+              if (widget.mobile) {
+                if (widget.collapsed) {
+                  c.setPref('cat', k);
+                  widget.onToggleCollapse?.call();
+                } else if (k == cat && widget.onToggleCollapse != null) {
+                  widget.onToggleCollapse!.call();
+                } else {
+                  c.setPref('cat', k);
+                }
+              } else {
+                c.setPref('cat', k);
+              }
+            },
           );
         },
       ),
@@ -1931,21 +2285,22 @@ class _FilterBarState extends State<_FilterBar> {
                   toast(context, 'Проверяю пинг…');
                 },
               ),
-              _IconBtn(
-                key: TourKeys.refresh,
-                p: p,
-                small: true,
-                icon: Icons.refresh,
-                tip: 'Обновить подписки',
-                onTap: () async {
-                  toast(context, 'Обновляю подписки…');
-                  final r = await c.call('RefreshSubs');
-                  await c.refresh();
-                  if (context.mounted) {
-                    toast(context, (r ?? 'Готово').toString());
-                  }
-                },
-              ),
+              if (!widget.mobile || c.subs.isEmpty)
+                _IconBtn(
+                  key: TourKeys.refresh,
+                  p: p,
+                  small: true,
+                  icon: Icons.refresh,
+                  tip: 'Обновить подписки',
+                  onTap: () async {
+                    toast(context, 'Обновляю подписки…');
+                    final r = await c.call('RefreshSubs');
+                    await c.refresh();
+                    if (context.mounted) {
+                      toast(context, (r ?? 'Готово').toString());
+                    }
+                  },
+                ),
               _IconBtn(
                 key: TourKeys.more,
                 p: p,
@@ -1959,10 +2314,22 @@ class _FilterBarState extends State<_FilterBar> {
                   caption: listCaption(c, widget.shown),
                 ),
               ),
+              if (widget.mobile && widget.onToggleCollapse != null)
+                _IconBtn(
+                  p: p,
+                  small: true,
+                  icon: widget.collapsed
+                      ? Icons.keyboard_arrow_down_rounded
+                      : Icons.keyboard_arrow_up_rounded,
+                  tip: widget.collapsed
+                      ? 'Развернуть серверы'
+                      : 'Свернуть серверы',
+                  onTap: widget.onToggleCollapse!,
+                ),
             ],
           ),
-          // hairline under the strip; ping progress as a tiny caption only while pinging
-          Container(height: 1, color: p.line.withValues(alpha: .6)),
+          if (!widget.mobile)
+            Container(height: 1, color: p.line.withValues(alpha: .6)),
           if (pinging)
             Padding(
               padding: const EdgeInsets.only(top: 4),
@@ -1992,6 +2359,7 @@ class _Tab extends StatelessWidget {
   final String text;
   final String? iso;
   final bool on;
+  final bool mobile;
   final VoidCallback onTap;
   const _Tab({
     required this.p,
@@ -1999,9 +2367,90 @@ class _Tab extends StatelessWidget {
     required this.iso,
     required this.on,
     required this.onTap,
+    this.mobile = false,
   });
   @override
-  Widget build(BuildContext context) => Semantics(
+  Widget build(BuildContext context) {
+    if (mobile) {
+      return Padding(
+        padding: const EdgeInsets.only(right: 8),
+        child: Semantics(
+          selected: on,
+          button: true,
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: onTap,
+              borderRadius: BorderRadius.circular(12),
+              focusColor: p.acc.withValues(alpha: .22),
+              hoverColor: p.acc.withValues(alpha: .10),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 180),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 7,
+                ),
+                decoration: BoxDecoration(
+                  gradient: on ? accentGradient(p) : null,
+                  color: on
+                      ? null
+                      : (p.amoled
+                            ? const Color(0xFF0A0A12)
+                            : (p.light ? p.card : p.chip)),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: on
+                        ? p.acc2.withValues(alpha: .65)
+                        : (p.amoled ? const Color(0xFF222230) : p.line),
+                    width: 1,
+                  ),
+                  boxShadow: on && vol3d
+                      ? [
+                          BoxShadow(
+                            color: p.acc.withValues(alpha: p.light ? .22 : .32),
+                            blurRadius: 8,
+                            offset: const Offset(0, 2),
+                          ),
+                        ]
+                      : null,
+                ),
+                child: Center(
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (iso != null && hasFlag(iso!)) ...[
+                        ClipOval(
+                          child: SvgPicture.asset(
+                            'assets/flags/${iso!.toLowerCase()}.svg',
+                            width: 16,
+                            height: 16,
+                            fit: BoxFit.cover,
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                      ],
+                      Text(
+                        text,
+                        maxLines: 1,
+                        softWrap: false,
+                        style: TextStyle(
+                          color: on
+                              ? Colors.white
+                              : p.txt.withValues(alpha: .90),
+                          fontSize: 14,
+                          fontWeight: on ? FontWeight.w700 : FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+    return Semantics(
     selected: on,
     button: true,
     child: InkWell(
@@ -2058,6 +2507,7 @@ class _Tab extends StatelessWidget {
       ),
     ),
   );
+  }
 }
 
 // ------------------------------------------------------------------ servers
