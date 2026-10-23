@@ -43,6 +43,7 @@ class MainActivity : FlutterActivity() {
                 "prepareVpn" -> prepareVpn(res)
                 "isTv" -> res.success(isTv())
                 "setHighRefresh" -> { setHighRefresh(); res.success(null) }
+                "setCompactHeight" -> { setCompactHeight(call.argument<Double>("dp") ?: 0.0); res.success(null) }
                 "listApps" -> exec.execute {
                     val r = listApps()
                     runOnUiThread { res.success(r) }
@@ -172,6 +173,35 @@ class MainActivity : FlutterActivity() {
             if (grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) startScan()
             else { scanResult?.success("error:denied"); scanResult = null }
         }
+    }
+
+    private fun setCompactHeight(dp: Double) {
+        if (isTv()) return
+        try {
+            val lp = window.attributes
+            if (dp > 0.0) {
+                if (Build.VERSION.SDK_INT >= 30) {
+                    try { setTranslucent(true) } catch (_: Exception) {}
+                }
+                val density = resources.displayMetrics.density
+                val screenH = resources.displayMetrics.heightPixels
+                val targetPx = (dp * density).toInt().coerceIn((220 * density).toInt(), screenH)
+                lp.height = targetPx
+                lp.gravity = android.view.Gravity.TOP
+                lp.dimAmount = 0.35f
+                window.addFlags(android.view.WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+                window.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT))
+            } else {
+                lp.height = android.view.WindowManager.LayoutParams.MATCH_PARENT
+                lp.gravity = android.view.Gravity.FILL
+                lp.dimAmount = 0f
+                window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+                if (Build.VERSION.SDK_INT >= 30) {
+                    try { setTranslucent(false) } catch (_: Exception) {}
+                }
+            }
+            window.attributes = lp
+        } catch (_: Exception) {}
     }
 
     private fun setHighRefresh() {

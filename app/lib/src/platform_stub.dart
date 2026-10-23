@@ -58,3 +58,8 @@ final pairLinks = ValueNotifier<String?>(null);
 Future<void> initPairLinks() async {}
 
 Future<void> updNotify(String state, int pct, String text) async {}
+
+Future<void> syncWindowCollapse({
+  required double? compactHeight,
+  required double viewportHeight,
+}) async {}

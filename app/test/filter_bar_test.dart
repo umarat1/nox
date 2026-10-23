@@ -138,28 +138,39 @@ void main() {
     expect(c.category, second.$1);
   });
 
-  testWidgets('mobile header and sections collapse and center on phone', (t) async {
+  testWidgets('sections collapse shrinks window height with no top/bottom space', (t) async {
     await _app(t, const Size(411, 860));
-    // Header collapse toggle works independently
+    expect(t.getSize(find.byType(MaterialApp)).height, 860);
+
+    // Header collapse toggle works independently and reduces height
     expect(find.byTooltip('Свернуть шапку'), findsOneWidget);
     await t.tap(find.byTooltip('Свернуть шапку'));
     await t.pump();
+    await t.pump();
     expect(find.byTooltip('Развернуть шапку'), findsOneWidget);
+    expect(t.getSize(find.byType(MaterialApp)).height, lessThan(860));
     await t.tap(find.byTooltip('Развернуть шапку'));
     await t.pump();
+    await t.pump();
     expect(find.byTooltip('Свернуть шапку'), findsOneWidget);
+    expect(t.getSize(find.byType(MaterialApp)).height, 860);
 
-    // Collapsing subscription and server sections hides full header and centers VPN card
+    // Collapsing subscription and server sections shrinks height tightly with no top/bottom space
     await t.tap(find.byTooltip('Свернуть подписку'));
     await t.pump();
+    await t.pump();
     expect(find.byTooltip('Развернуть подписку'), findsOneWidget);
+    expect(t.getSize(find.byType(MaterialApp)).height, lessThan(750));
 
     await t.tap(find.byTooltip('Свернуть серверы'));
+    await t.pump();
     await t.pump();
     expect(find.byTooltip('Свернуть шапку'), findsNothing);
     expect(find.byTooltip('Развернуть серверы'), findsOneWidget);
     final powerY = t.getCenter(find.byIcon(Icons.power_settings_new)).dy;
-    expect(powerY, greaterThan(220));
-    expect(powerY, lessThan(550));
+    expect(powerY, lessThanOrEqualTo(140));
+    final compactH = t.getSize(find.byType(MaterialApp)).height;
+    expect(compactH, lessThan(360));
+    expect(compactH, greaterThan(240));
   });
 }

@@ -5,6 +5,7 @@ import 'split_apps.dart';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
@@ -47,7 +48,8 @@ class Home extends StatelessWidget {
                         // A 1080p TV is ~960 dp; with TV UI scale (≤1.3) it is ≥738,
                         // so TVs keep the two panes from 640 dp.
                         final wide = box.maxWidth >= (c.isTv ? 640 : 840);
-                        return Center(
+                        return Align(
+                          alignment: Alignment.topCenter,
                           child: ConstrainedBox(
                             constraints: BoxConstraints(
                               maxWidth: wide ? double.infinity : 560,
@@ -96,7 +98,7 @@ void toast(BuildContext ctx, String t) {
     );
 }
 
-class _Body extends StatelessWidget {
+class _Body extends StatefulWidget {
   final NoxController c;
   final Pal p;
   final bool wide;
@@ -108,6 +110,72 @@ class _Body extends StatelessWidget {
     this.w = 0,
     this.h = 0,
   });
+
+  @override
+  State<_Body> createState() => _BodyState();
+}
+
+class _BodyState extends State<_Body> {
+  final GlobalKey _compactKey = GlobalKey();
+  double? _baseViewHeight;
+  double? _appliedViewHeight;
+
+  NoxController get c => widget.c;
+  Pal get p => widget.p;
+  bool get wide => widget.wide;
+  double get w => widget.w;
+  double get h => widget.h;
+
+  void _scheduleSizeSync(bool hdrCol, bool subCol, bool srvCol) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (c.isTv) return;
+      final rv = RendererBinding.instance.renderViews.firstOrNull;
+      if (rv == null || !rv.hasConfiguration) return;
+      final curH = rv.size.height;
+      final anyCol = hdrCol || subCol || srvCol;
+      if (_baseViewHeight == null ||
+          (!anyCol && _appliedViewHeight == null) ||
+          ((_appliedViewHeight == null || (curH - _appliedViewHeight!).abs() > 2.0) &&
+              curH > (_baseViewHeight ?? 0))) {
+        _baseViewHeight = curH;
+      }
+      final baseH = _baseViewHeight ?? curH;
+      double? targetH;
+      if (srvCol) {
+        final rb = _compactKey.currentContext?.findRenderObject() as RenderBox?;
+        if (rb != null && rb.hasSize && rb.size.height > 0) {
+          final mq = MediaQuery.maybeOf(context);
+          final safeV = mq != null ? (mq.padding.top + mq.padding.bottom) : 0.0;
+          targetH = ((rb.size.height + safeV) * c.uiScale).ceilToDouble();
+        }
+      } else if (hdrCol || subCol) {
+        final subCount = c.subs.isEmpty ? 1 : c.subs.length;
+        final saved = ((hdrCol ? 36.0 : 0.0) + (subCol ? 148.0 * subCount : 0.0)) * c.uiScale;
+        targetH = (baseH - saved).clamp(320.0, baseH);
+      }
+
+      final desiredViewH = targetH ?? baseH;
+      if ((desiredViewH - curH).abs() > 1.0 &&
+          (_appliedViewHeight == null || (_appliedViewHeight! - desiredViewH).abs() > 1.0 || targetH == null)) {
+        _appliedViewHeight = targetH;
+        final dpr = rv.configuration.devicePixelRatio;
+        final curW = rv.size.width;
+        rv.configuration = ViewConfiguration(
+          logicalConstraints: BoxConstraints.tight(Size(curW, desiredViewH)),
+          physicalConstraints: BoxConstraints.tight(Size(curW * dpr, desiredViewH * dpr)),
+          devicePixelRatio: dpr,
+        );
+        WidgetsBinding.instance.scheduleFrame();
+      } else if (targetH == null) {
+        _appliedViewHeight = null;
+      }
+      syncWindowCollapse(
+        compactHeight: targetH,
+        viewportHeight: baseH,
+      );
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -145,6 +213,7 @@ class _Body extends StatelessWidget {
     final hdrCol = mobile && c.flag('hdrCol', false);
     final subCol = mobile && c.flag('subCol', false);
     final srvCol = mobile && c.flag('srvCol', false);
+    _scheduleSizeSync(hdrCol, subCol, srvCol);
     final head = <Widget>[
       if (!wide && !srvCol)
         _TopBar(
@@ -236,45 +305,39 @@ class _Body extends StatelessWidget {
             const SizedBox(width: gap),
             Expanded(
               child: ConstrainedBox(
-                constraints: const BoxConstraints(minHeight: 210),
-                child: _GraphCard(c: c, p: p),
+                constraints: BoxConstraints(minHeight: srvCol ? 172 : 210),
+                child: _GraphCard(c: c, p: p, marginTop: 0),
               ),
             ),
           ],
         ),
       );
       if (srvCol) {
-        return Padding(
-          padding: const EdgeInsets.all(pad),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              _CollapsedHeaderPill(
-                p: p,
-                onTap: () {
-                  c.setPrefLive('srvCol', '0');
-                  c.setPrefLive('hdrCol', '0');
-                },
-              ),
-              Expanded(
-                child: Center(
-                  child: SingleChildScrollView(
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        topRow,
-                        const SizedBox(height: 12),
-                        ...rest,
-                        ...listHead,
-                      ],
-                    ),
-                  ),
+        return SingleChildScrollView(
+          physics: const ClampingScrollPhysics(),
+          child: Padding(
+            key: _compactKey,
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _TopBar(
+                  c: c,
+                  p: p,
+                  mobile: true,
+                  showFullScreen: canFullScreen,
+                  collapsed: true,
+                  onToggleCollapse: () {
+                    c.setPrefLive('srvCol', '0');
+                    c.setPrefLive('hdrCol', '0');
+                  },
                 ),
-              ),
-            ],
+                topRow,
+                ...rest,
+                ...listHead,
+              ],
+            ),
           ),
         );
       }
@@ -397,37 +460,31 @@ class _Body extends StatelessWidget {
     }
     // Phone: pin logo/actions + connection card; banners, subs, chips and list scroll under them.
     if (srvCol) {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
-            child: _CollapsedHeaderPill(
-              p: p,
-              onTap: () {
-                c.setPrefLive('srvCol', '0');
-                c.setPrefLive('hdrCol', '0');
-              },
-            ),
-          ),
-          Expanded(
-            child: Center(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    for (final wdg in head)
-                      if (wdg is! _TopBar) wdg,
-                    ...listHead,
-                  ],
-                ),
+      return SingleChildScrollView(
+        physics: const ClampingScrollPhysics(),
+        child: Padding(
+          key: _compactKey,
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _TopBar(
+                c: c,
+                p: p,
+                mobile: true,
+                collapsed: true,
+                onToggleCollapse: () {
+                  c.setPrefLive('srvCol', '0');
+                  c.setPrefLive('hdrCol', '0');
+                },
               ),
-            ),
+              for (final wdg in head)
+                if (wdg is! _TopBar) wdg,
+              ...listHead,
+            ],
           ),
-        ],
+        ),
       );
     }
     final pinned = <Widget>[
@@ -920,7 +977,7 @@ class _TopBar extends StatelessWidget {
   Widget build(BuildContext context) {
     if (mobile && collapsed && onToggleCollapse != null) {
       return Padding(
-        padding: const EdgeInsets.only(bottom: 8),
+        padding: const EdgeInsets.only(bottom: 6),
         child: _CollapsedHeaderPill(p: p, onTap: onToggleCollapse!),
       );
     }
@@ -1450,13 +1507,14 @@ class _GraphSlot extends StatelessWidget {
 class _GraphCard extends StatelessWidget {
   final NoxController c;
   final Pal p;
-  const _GraphCard({required this.c, required this.p});
+  final double marginTop;
+  const _GraphCard({required this.c, required this.p, this.marginTop = 10});
   @override
   Widget build(BuildContext context) {
     final t = c.traffic;
     final on = c.connected && t != null;
     return Container(
-      margin: const EdgeInsets.only(top: 10),
+      margin: EdgeInsets.only(top: marginTop),
       padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
       decoration: _box(p, r: 20),
       child: Column(
@@ -2530,7 +2588,7 @@ class _FilterBarState extends State<_FilterBar> {
       ),
     );
     return Padding(
-      padding: const EdgeInsets.only(top: 8, bottom: 6),
+      padding: EdgeInsets.only(top: 8, bottom: widget.collapsed ? 0 : 6),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [

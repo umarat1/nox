@@ -57,39 +57,46 @@ class NoxApp extends StatelessWidget {
         shortcuts: {...WidgetsApp.defaultShortcuts},
         builder: (ctx, child) {
           SystemChrome.setSystemUIOverlayStyle(systemBars(pal));
-          final mq = MediaQuery.of(ctx);
-          final fs = c.fontScale;
-          final us = c.uiScale;
-          // Font via textScaler; UI density by scaling the logical viewport (TV defaults larger).
-          Widget body = MediaQuery(
-            data: mq.copyWith(textScaler: TextScaler.linear(fs)),
-            child: child ?? const SizedBox.shrink(),
-          );
-          if ((us - 1.0).abs() > 0.01) {
-            body = OverflowBox(
-              minWidth: mq.size.width / us,
-              maxWidth: mq.size.width / us,
-              minHeight: mq.size.height / us,
-              maxHeight: mq.size.height / us,
-              alignment: Alignment.topCenter,
-              child: Transform.scale(
-                scale: us,
-                alignment: Alignment.topCenter,
-                child: SizedBox(
-                  width: mq.size.width / us,
-                  height: mq.size.height / us,
-                  child: MediaQuery(
-                    data: mq.copyWith(
-                      size: Size(mq.size.width / us, mq.size.height / us),
-                      textScaler: TextScaler.linear(fs),
+          return LayoutBuilder(
+            builder: (ctx, box) {
+              final mq0 = MediaQuery.of(ctx);
+              final mq = box.maxWidth.isFinite && box.maxHeight.isFinite
+                  ? mq0.copyWith(size: Size(box.maxWidth, box.maxHeight))
+                  : mq0;
+              final fs = c.fontScale;
+              final us = c.uiScale;
+              // Font via textScaler; UI density by scaling the logical viewport (TV defaults larger).
+              Widget body = MediaQuery(
+                data: mq.copyWith(textScaler: TextScaler.linear(fs)),
+                child: child ?? const SizedBox.shrink(),
+              );
+              if ((us - 1.0).abs() > 0.01) {
+                body = OverflowBox(
+                  minWidth: mq.size.width / us,
+                  maxWidth: mq.size.width / us,
+                  minHeight: mq.size.height / us,
+                  maxHeight: mq.size.height / us,
+                  alignment: Alignment.topCenter,
+                  child: Transform.scale(
+                    scale: us,
+                    alignment: Alignment.topCenter,
+                    child: SizedBox(
+                      width: mq.size.width / us,
+                      height: mq.size.height / us,
+                      child: MediaQuery(
+                        data: mq.copyWith(
+                          size: Size(mq.size.width / us, mq.size.height / us),
+                          textScaler: TextScaler.linear(fs),
+                        ),
+                        child: child ?? const SizedBox.shrink(),
+                      ),
                     ),
-                    child: child ?? const SizedBox.shrink(),
                   ),
-                ),
-              ),
-            );
-          }
-          return body;
+                );
+              }
+              return body;
+            },
+          );
         },
         home: Home(c: c),
       );

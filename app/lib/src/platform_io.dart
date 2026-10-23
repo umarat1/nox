@@ -267,7 +267,7 @@ Future<void> initDesktop(
   await windowManager.waitUntilReadyToShow(
     const WindowOptions(
       size: Size(460, 860),
-      minimumSize: Size(400, 620),
+      minimumSize: Size(380, 260),
       title: 'Nox',
       center: true,
     ),
@@ -463,4 +463,63 @@ Future<void> updNotify(String state, int pct, String text) async {
       'text': text,
     });
   } catch (_) {}
+}
+
+double _expandedWinHeight = 860.0;
+double _chromeHeight = 0.0;
+double? _lastTargetWinHeight;
+double? _lastAndroidDp;
+
+/// Shrinks the native window on Windows, macOS, Linux, and Android when UI sections
+/// are collapsed, and restores the full height when expanded.
+Future<void> syncWindowCollapse({
+  required double? compactHeight,
+  required double viewportHeight,
+}) async {
+  if (_mock) return;
+  if (isDesktop) {
+    if (fullScreen.value) return;
+    try {
+      final curSize = await windowManager.getSize();
+      if (compactHeight == null) {
+        if (_lastTargetWinHeight != null) {
+          final restoreH = _expandedWinHeight.clamp(560.0, 2400.0);
+          _lastTargetWinHeight = null;
+          await windowManager.setMinimumSize(const Size(380, 520));
+          if ((curSize.height - restoreH).abs() > 2.0) {
+            await windowManager.setSize(Size(curSize.width, restoreH));
+          }
+        } else {
+          _expandedWinHeight = curSize.height;
+          if (viewportHeight > 0 && curSize.height >= viewportHeight) {
+            _chromeHeight = (curSize.height - viewportHeight).clamp(0.0, 80.0);
+          }
+        }
+      } else {
+        if (_lastTargetWinHeight == null) {
+          _expandedWinHeight = curSize.height;
+          if (viewportHeight > 0 && curSize.height >= viewportHeight) {
+            _chromeHeight = (curSize.height - viewportHeight).clamp(0.0, 80.0);
+          }
+        }
+        final targetH = (compactHeight + _chromeHeight).ceilToDouble().clamp(240.0, 2400.0);
+        if (_lastTargetWinHeight == null || (_lastTargetWinHeight! - targetH).abs() > 1.5) {
+          _lastTargetWinHeight = targetH;
+          await windowManager.setMinimumSize(Size(380, targetH.clamp(240.0, 520.0)));
+          await windowManager.setSize(Size(curSize.width, targetH));
+        }
+      }
+    } catch (_) {}
+    return;
+  }
+  if (Platform.isAndroid) {
+    final dp = compactHeight ?? 0.0;
+    final changed = _lastAndroidDp == null ? dp > 0 : (_lastAndroidDp! - dp).abs() > 1.5;
+    if (changed) {
+      _lastAndroidDp = dp > 0 ? dp : null;
+      try {
+        await _ch.invokeMethod('setCompactHeight', {'dp': dp});
+      } catch (_) {}
+    }
+  }
 }

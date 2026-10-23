@@ -29,7 +29,7 @@ var UpdateFallbackURLs = []string{
 
 // VersionCode is the pubspec build number (260 for 1.0.26). Split APKs use abi*1000+VersionCode;
 // update checks compare VersionCode to the server's top-level versionCode (0.7.x style).
-const VersionCode = 260
+const VersionCode = 270
 
 type UpdateInfo struct {
 	Version string `json:"versionName"`
