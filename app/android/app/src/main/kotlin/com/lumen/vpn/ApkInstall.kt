@@ -206,19 +206,23 @@ object ApkInstall {
         private var latch: CountDownLatch? = null
         private var err: AtomicReference<String?>? = null
 
-        fun arm(session: Int, l: CountDownLatch, e: AtomicReference<String?>) = synchronized(lock) {
-            sid = session
-            latch = l
-            err = e
+        fun arm(session: Int, l: CountDownLatch, e: AtomicReference<String?>) {
+            synchronized(lock) {
+                sid = session
+                latch = l
+                err = e
+            }
         }
 
         fun ok(session: Int) = finish(session, null)
         fun fail(session: Int, message: String) = finish(session, message)
 
-        private fun finish(session: Int, message: String?) = synchronized(lock) {
-            if (session != -1 && sid != -1 && sid != session) return
-            err?.set(message)
-            latch?.countDown()
+        private fun finish(session: Int, message: String?) {
+            synchronized(lock) {
+                if (session != -1 && sid != -1 && sid != session) return@synchronized
+                err?.set(message)
+                latch?.countDown()
+            }
         }
 
         fun clear(session: Int) = synchronized(lock) {
