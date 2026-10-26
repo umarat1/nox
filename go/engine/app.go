@@ -550,10 +550,14 @@ func (a *App) httpClient() *http.Client {
 	return &http.Client{Timeout: 25 * time.Second, Transport: tr}
 }
 
-// fetchDescs: Remnawave sends host serverDescription only to "extended" clients (Happ UA).
+// fetchDescs loads host serverDescription values. The same NOX User-Agent as the
+// list fetch: a Happ or v2rayNG agent makes the panel strip NOX-only protocols.
 func (a *App) fetchDescs(u string) map[string]string {
-	req, _ := http.NewRequest("GET", u, nil)
-	req.Header.Set("User-Agent", "Happ/3.0.0 VPS/"+Version)
+	req, err := http.NewRequest("GET", u, nil)
+	if err != nil {
+		return nil
+	}
+	req.Header.Set("User-Agent", subUserAgent())
 	req.Header.Set("Cache-Control", "no-cache")
 	cl := a.subClient()
 	cl.Timeout = 4 * time.Second

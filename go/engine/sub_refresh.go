@@ -15,18 +15,13 @@ import (
 	"nox/core"
 )
 
-// subUserAgents: a plain v2rayNG / Happ agent first. Remnawave picks the response
-// template by the first matching User-Agent rule. An agent that starts with "Nox/"
-// can hit a custom or stale template and keep yesterday's regions; the standard
-// clients get the host list the panel has right now. Nox is last, as a fallback.
-func subUserAgents() []string {
-	return []string{
-		"v2rayNG/1.10.16",
-		"Happ/2.14.1",
-		"v2rayN/7.13.8",
-		"sing-box/1.14.3",
-		"Nox/" + Version,
-	}
+// subUserAgent is the only User-Agent on subscription requests.
+// The panel keeps NOX-only protocols when the agent contains NOX/<version>
+// (it matches the word "nox", or the older VPS/<digit> token). Happ and v2rayNG
+// agents are classified as Happ and those protocols are stripped, so they are
+// never sent — not even as a fallback.
+func subUserAgent() string {
+	return "NOX/" + Version + " " + deviceOS()
 }
 
 func deviceOS() string {
@@ -42,8 +37,8 @@ func deviceOS() string {
 	}
 }
 
-func (a *App) stampSub(req *http.Request, ua string) {
-	req.Header.Set("User-Agent", ua)
+func (a *App) stampSub(req *http.Request) {
+	req.Header.Set("User-Agent", subUserAgent())
 	req.Header.Set("Accept", "*/*")
 	req.Header.Set("Cache-Control", "no-cache, no-store")
 	req.Header.Set("Pragma", "no-cache")
@@ -109,17 +104,16 @@ type subHit struct {
 	support  string
 	interval int
 	info     string
-	trusted  bool
 	nextURL  string
 }
 
-func (a *App) readSub(cl *http.Client, raw, ua string) (*http.Response, []byte, error) {
+func (a *App) readSub(cl *http.Client, raw string) (*http.Response, []byte, error) {
 	get := func(u string) (*http.Response, []byte, error) {
 		req, err := http.NewRequest("GET", u, nil)
 		if err != nil {
 			return nil, nil, err
 		}
-		a.stampSub(req, ua)
+		a.stampSub(req)
 		resp, err := cl.Do(req)
 		if err != nil {
 			return nil, nil, err
@@ -148,48 +142,33 @@ func (a *App) fetchSub(sub *Sub, isNew bool) (int, []string, error) {
 	defer a.subFetchMu.Unlock()
 	cl := a.subClient()
 	defer cl.CloseIdleConnections()
-	var lastErr error
-	var fallback *subHit
+	ua := subUserAgent()
 	var chosen *subHit
-	for _, ua := range subUserAgents() {
-		resp, body, err := a.readSub(cl, sub.URL, ua)
-		if err != nil {
-			lastErr = err
-			continue
-		}
-		if resp.StatusCode != 200 {
-			lastErr = fmt.Errorf("HTTP %d", resp.StatusCode)
-			continue
-		}
+	var lastErr error
+	resp, body, err := a.readSub(cl, sub.URL)
+	if err != nil {
+		lastErr = err
+	} else if resp.StatusCode != 200 {
+		lastErr = fmt.Errorf("HTTP %d", resp.StatusCode)
+	} else {
 		text := string(body)
 		if isHTMLBody(resp.Header.Get("Content-Type"), text) {
 			lastErr = errors.New("панель вернула страницу вместо списка серверов")
-			continue
+		} else {
+			r := core.ParseContent(text)
+			if len(r.Servers) == 0 {
+				lastErr = errors.New("серверы не найдены")
+			} else {
+				chosen = &subHit{
+					servers: r.Servers, errs: r.Errors, ua: ua,
+					title: headerText(resp.Header, "profile-title"), announce: headerText(resp.Header, "announce"),
+					web: headerText(resp.Header, "profile-web-page-url"), support: headerText(resp.Header, "support-url"),
+					interval: parseIntervalHours(resp.Header.Get("profile-update-interval")),
+					info:     resp.Header.Get("subscription-userinfo"),
+					nextURL:  nextSubURL(resp.Header),
+				}
+			}
 		}
-		r := core.ParseContent(text)
-		if len(r.Servers) == 0 {
-			lastErr = errors.New("серверы не найдены")
-			continue
-		}
-		hit := &subHit{
-			servers: r.Servers, errs: r.Errors, ua: ua,
-			title: headerText(resp.Header, "profile-title"), announce: headerText(resp.Header, "announce"),
-			web: headerText(resp.Header, "profile-web-page-url"), support: headerText(resp.Header, "support-url"),
-			interval: parseIntervalHours(resp.Header.Get("profile-update-interval")),
-			info:     resp.Header.Get("subscription-userinfo"),
-			nextURL:  nextSubURL(resp.Header),
-		}
-		hit.trusted = hit.info != "" || hit.title != "" || hit.interval > 0
-		if hit.trusted {
-			chosen = hit
-			break // a real subscription response; do not let a later agent append old hosts
-		}
-		if fallback == nil {
-			fallback = hit
-		}
-	}
-	if chosen == nil {
-		chosen = fallback
 	}
 	if chosen == nil {
 		if lastErr == nil {

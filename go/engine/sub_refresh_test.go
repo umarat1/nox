@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -13,6 +14,21 @@ import (
 const subOld = "vless://11111111-2222-3333-4444-555555555555@9.9.9.9:443?security=tls#Old1\n" +
 	"vless://11111111-2222-3333-4444-555555555555@8.8.8.8:443?security=tls#Old2\n"
 const subNew = "vless://11111111-2222-3333-4444-555555555555@1.2.3.4:443?security=tls#New\n"
+
+// noxUA reports a subscription User-Agent that is not the NOX/2.0 agent.
+// Happ and v2rayNG impersonation makes the panel strip NOX-only protocols.
+func badSubUA(ua string) string {
+	if !strings.Contains(ua, "NOX/2.0") {
+		return "missing NOX/2.0"
+	}
+	low := strings.ToLower(ua)
+	for _, bad := range []string{"happ", "v2rayng", "v2rayn"} {
+		if strings.Contains(low, bad) {
+			return "impersonates " + bad
+		}
+	}
+	return ""
+}
 
 func TestFetchSubReplacesList(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -24,17 +40,12 @@ func TestFetchSubReplacesList(t *testing.T) {
 		w.Header().Set("subscription-userinfo", "upload=1; download=2; total=9; expire=2000000000")
 		w.Header().Set("profile-update-interval", "3")
 		w.Header().Set("profile-title", "Panel")
-		// A Nox-specific body still carries yesterday's regions. The client must not use it
-		// when a standard client already got the current list.
-		if strings.HasPrefix(ua, "Nox/") {
+		// A Happ or v2rayNG body is the filtered list. Only the NOX agent is acceptable.
+		if badSubUA(ua) != "" {
 			_, _ = w.Write([]byte(subOld))
 			return
 		}
-		if strings.HasPrefix(ua, "v2rayNG/") {
-			_, _ = w.Write([]byte(subNew))
-			return
-		}
-		http.Error(w, "ua", 404)
+		_, _ = w.Write([]byte(subNew))
 	}))
 	defer srv.Close()
 
@@ -97,8 +108,8 @@ func TestFetchFailureKeepsServers(t *testing.T) {
 
 func TestProfileUpdateURLIsStored(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !strings.HasPrefix(r.Header.Get("User-Agent"), "v2rayNG/") {
-			http.Error(w, "ua", 404)
+		if why := badSubUA(r.Header.Get("User-Agent")); why != "" {
+			http.Error(w, why, 404)
 			return
 		}
 		w.Header().Set("subscription-userinfo", "upload=0; download=0; total=1; expire=0")
@@ -126,30 +137,25 @@ func TestProfileUpdateURLIsStored(t *testing.T) {
 
 func TestFetchSubSkipsHTML(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasPrefix(r.Header.Get("User-Agent"), "v2rayNG/") {
-			w.Header().Set("Content-Type", "text/html")
-			_, _ = w.Write([]byte("<html><body>vless://11111111-2222-3333-4444-555555555555@9.9.9.9:443?security=tls#Stale</body></html>"))
+		if why := badSubUA(r.Header.Get("User-Agent")); why != "" {
+			http.Error(w, why, 404)
 			return
 		}
-		if strings.HasPrefix(r.Header.Get("User-Agent"), "Happ/") {
-			w.Header().Set("subscription-userinfo", "upload=0; download=0; total=0; expire=0")
-			_, _ = w.Write([]byte(subNew))
-			return
-		}
-		http.Error(w, "no", 404)
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = w.Write([]byte("<html><body>vless://11111111-2222-3333-4444-555555555555@1.2.3.4:443?security=tls#New</body></html>"))
 	}))
 	defer srv.Close()
 	a := NewApp(t.TempDir(), t.TempDir())
 	a.mu.Lock()
 	a.p.Subs = []Sub{{ID: "s1", URL: srv.URL}}
-	a.p.Servers = []core.Server{{ID: "old", SubID: "s1", Name: "Stale", Type: "VLESS", Host: "9.9.9.9", Port: 443}}
+	a.p.Servers = []core.Server{{ID: "old", SubID: "s1", Name: "Keep", Type: "VLESS", Host: "9.9.9.9", Port: 443}}
 	a.save()
 	a.mu.Unlock()
-	if _, _, err := a.fetchSub(&a.p.Subs[0], false); err != nil {
-		t.Fatal(err)
+	if _, _, err := a.fetchSub(&a.p.Subs[0], false); err == nil {
+		t.Fatal("html body accepted")
 	}
 	st := a.GetState()
-	if len(st.Servers) != 1 || st.Servers[0].Name != "New" || st.Servers[0].Host != "1.2.3.4" {
+	if len(st.Servers) != 1 || st.Servers[0].Name != "Keep" || st.Servers[0].Host != "9.9.9.9" {
 		t.Fatalf("%+v", st.Servers)
 	}
 }
@@ -167,8 +173,8 @@ func TestFlattenWrappedSubURL(t *testing.T) {
 
 func TestImportWrappedURLAndExisting(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasPrefix(r.Header.Get("User-Agent"), "Happ/3") {
-			http.NotFound(w, r)
+		if why := badSubUA(r.Header.Get("User-Agent")); why != "" {
+			http.Error(w, why, 404)
 			return
 		}
 		w.Header().Set("subscription-userinfo", "upload=0; download=0; total=1; expire=0")
@@ -198,8 +204,8 @@ func TestImportWrappedURLAndExisting(t *testing.T) {
 
 func TestProfileWebPageDoesNotReplaceURL(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasPrefix(r.Header.Get("User-Agent"), "Happ/3") {
-			http.NotFound(w, r)
+		if why := badSubUA(r.Header.Get("User-Agent")); why != "" {
+			http.Error(w, why, 404)
 			return
 		}
 		w.Header().Set("subscription-userinfo", "upload=0; download=0; total=1; expire=0")
@@ -238,7 +244,14 @@ func TestImportNoServersIsNotOK(t *testing.T) {
 func TestFetchSubReturnsBeforeDescFetch(t *testing.T) {
 	release := make(chan struct{})
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasPrefix(r.Header.Get("User-Agent"), "Happ/3") {
+		ua := r.Header.Get("User-Agent")
+		if why := badSubUA(ua); why != "" {
+			http.Error(w, why, 500)
+			return
+		}
+		// Description fetch has no cache-buster. It must not block the list refresh,
+		// and it must use the same NOX agent (not Happ).
+		if r.URL.Query().Get("nocache") == "" {
 			<-release
 			http.NotFound(w, r)
 			return
@@ -262,5 +275,88 @@ func TestFetchSubReturnsBeforeDescFetch(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("refresh blocked on the description request")
+	}
+}
+
+func TestSubUserAgentContainsNoxVersion(t *testing.T) {
+	ua := subUserAgent()
+	if ua != "NOX/2.0 "+deviceOS() {
+		t.Fatal(ua)
+	}
+	if why := badSubUA(ua); why != "" {
+		t.Fatal(why, ua)
+	}
+}
+
+func TestFetchDescsUsesNoxAgent(t *testing.T) {
+	var ua string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ua = r.Header.Get("User-Agent")
+		_, _ = w.Write([]byte("vless://11111111-2222-3333-4444-555555555555@1.2.3.4:443?security=tls#New?serverDescription=aGk\n"))
+	}))
+	defer srv.Close()
+	a := NewApp(t.TempDir(), t.TempDir())
+	m := a.fetchDescs(srv.URL)
+	if why := badSubUA(ua); why != "" {
+		t.Fatal(why, ua)
+	}
+	if m["New"] != "hi" {
+		t.Fatalf("ua %q descs %+v", ua, m)
+	}
+}
+
+func TestEverySubRequestUsesNoxAgent(t *testing.T) {
+	var mu sync.Mutex
+	var uas []string
+	desc := make(chan struct{}, 1)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		uas = append(uas, r.Header.Get("User-Agent"))
+		mu.Unlock()
+		if r.URL.Query().Get("nocache") == "" {
+			select {
+			case desc <- struct{}{}:
+			default:
+			}
+			_, _ = w.Write([]byte("vless://11111111-2222-3333-4444-555555555555@1.2.3.4:443?security=tls#New?serverDescription=aGk\n"))
+			return
+		}
+		w.Header().Set("subscription-userinfo", "upload=0; download=0; total=1; expire=0")
+		_, _ = w.Write([]byte(subNew))
+	}))
+	defer srv.Close()
+	a := NewApp(t.TempDir(), t.TempDir())
+	a.mu.Lock()
+	a.p.Subs = []Sub{{ID: "s1", URL: srv.URL, Name: "Panel"}}
+	a.save()
+	a.mu.Unlock()
+	if _, _, err := a.fetchSub(&a.p.Subs[0], false); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-desc:
+	case <-time.After(2 * time.Second):
+		t.Fatal("description request was not sent")
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		st := a.GetState()
+		if len(st.Servers) == 1 && st.Servers[0].Desc == "hi" {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("description not applied: %+v", st.Servers)
+		}
+		time.Sleep(15 * time.Millisecond)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(uas) < 2 {
+		t.Fatalf("requests %v", uas)
+	}
+	for _, ua := range uas {
+		if why := badSubUA(ua); why != "" {
+			t.Fatalf("%s: %q in %v", why, ua, uas)
+		}
 	}
 }
