@@ -106,6 +106,12 @@ class NoxController extends ChangeNotifier {
     }
     // autostart lives in HKCU\...\Run (per user); re-assert it so a migrated 0.8
     // setting or a moved install keeps working
+    if (fatal == null && subs.isNotEmpty) {
+      // A long-running desktop service does not re-enter engine Start(); refresh
+      // the subscription list when the window opens. The engine also refreshes
+      // on its own timer (profile-update-interval).
+      unawaited(call('RefreshSubs'));
+    }
     if (settings['autostart'] == true) await setUserAutostart(true);
     _t1 = Timer.periodic(const Duration(seconds: 1), (_) => refresh());
     // speed samples twice a second between full refreshes, so the graph sees each new

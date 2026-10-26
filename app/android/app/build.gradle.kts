@@ -26,6 +26,8 @@ android {
         // pubspec 1.0.0+100: above Nox 0.7.71 (versionCode 99)
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+        // ABIs come from `flutter build apk --split-per-abi --target-platform android-arm,android-arm64`.
+        // Setting ndk.abiFilters here conflicts with those splits on AGP 9.
     }
 
     signingConfigs {
@@ -36,6 +38,11 @@ android {
                 keyAlias = System.getenv("NOX_KEY_ALIAS")
                 keyPassword = System.getenv("NOX_KEY_PASS")
             }
+            // 1.0.23 shipped v2-only. OxygenOS verifies v2+v3; v1 is unused at minSdk 24.
+            enableV1Signing = false
+            enableV2Signing = true
+            enableV3Signing = true
+            enableV4Signing = false
         }
     }
 
@@ -50,17 +57,36 @@ android {
 
     sourceSets {
         getByName("main") {
-            // libqwdtt.so per ABI: an executable started by the engine from nativeLibraryDir
-            jniLibs.srcDir("../../../third_party/android")
+            // Stripped copies (scripts/stage-android-jni.sh). A File, not a Provider:
+            // AGP 9 rejects Provider instances on the SourceSet API.
+            jniLibs.srcDir(layout.buildDirectory.dir("nox-jni").get().asFile)
         }
     }
 
     packaging {
         jniLibs {
-            useLegacyPackaging = true // extract .so files: libqwdtt.so is exec()'d
+            // Uncompressed and 16 KB zip-aligned. The 1.0.23 APK stored every .so
+            // compressed (extractNativeLibs=true), so the installer unpacked ~187 MB
+            // (libnox 108 MB) and OxygenOS never finished. mmap from the APK instead.
+            useLegacyPackaging = false
         }
     }
 }
+
+val stageNoxJni = tasks.register<Exec>("stageNoxJni") {
+    val script = rootProject.file("../../scripts/stage-android-jni.sh")
+    val out = layout.buildDirectory.dir("nox-jni")
+    inputs.dir(rootProject.file("../../third_party/android"))
+    outputs.dir(out)
+    commandLine("bash", script.absolutePath, out.get().asFile.absolutePath)
+}
+
+tasks.configureEach {
+    if (name.contains("JniLib") || name.contains("NativeLibs")) {
+        dependsOn(stageNoxJni)
+    }
+}
+tasks.named("preBuild").configure { dependsOn(stageNoxJni) }
 
 dependencies {
     implementation(files("libs/noxcore.aar")) // Go engine + sing-box (go/mobile/build-aar.sh)

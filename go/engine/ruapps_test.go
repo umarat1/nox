@@ -19,8 +19,14 @@ func TestEffectiveSplit(t *testing.T) {
 	if m, l = effectiveSplit("include", []string{"org.telegram"}, true, nil); m != "include" || len(l) != 1 {
 		t.Fatal(m, l)
 	}
-	if m, l = effectiveSplit("", nil, false, nil); m != "" || l != nil {
+	if m, l = effectiveSplit("", nil, false, nil); m != "exclude" || !slices.Contains(l, "ru.ivi.client") || !slices.Contains(l, "ru.ivi.*") {
 		t.Fatal(m, l)
+	}
+	if m, l = effectiveSplit("include", []string{"ru.ivi.client", "org.telegram"}, false, nil); m != "include" || len(l) != 1 || l[0] != "org.telegram" {
+		t.Fatal("ivi must leave the include list", m, l)
+	}
+	if m, l = effectiveSplit("include", []string{"ru.ivi.client"}, false, nil); m != "exclude" || !slices.Contains(l, "ru.ivi.client") {
+		t.Fatal("include-only-ivi", m, l)
 	}
 }
 

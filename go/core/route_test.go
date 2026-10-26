@@ -38,6 +38,30 @@ func TestRoutingRules(t *testing.T) {
 	if priv < 0 || px < 0 || dir < 0 || ru < 0 || !(priv < px && px < ru && dir < ru) {
 		t.Fatal(priv, px, dir, ru, string(b))
 	}
+	s.DirectRU = false
+	s.FastDial = true
+	b, err = BuildConfig(map[string]any{"type": "vless", "server": "1.2.3.4", "server_port": 443}, s, "127.0.0.1:9", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	js := string(b)
+	for _, d := range []string{"ivi.ru", "ivi.tv", "ivicdn.tv", "tivision.ru"} {
+		if !strings.Contains(js, d) {
+			t.Fatal("ivi not direct", d)
+		}
+	}
+	if !strings.Contains(js, `"tcp_fast_open": true`) {
+		t.Fatal("tfo", js)
+	}
+	vm, err := BuildConfig(map[string]any{"type": "vmess", "server": "1.2.3.4", "server_port": 443}, s, "127.0.0.1:9", "")
+	if err != nil || !strings.Contains(string(vm), `"multiplex"`) {
+		t.Fatal("mux", string(vm))
+	}
+	s.FastDial = false
+	off, err := BuildConfig(map[string]any{"type": "vless", "server": "1.2.3.4", "server_port": 443, "flow": "xtls-rprx-vision"}, s, "127.0.0.1:9", "")
+	if err != nil || strings.Contains(string(off), "tcp_fast_open") || strings.Contains(string(off), "multiplex") {
+		t.Fatal("fast dial off", string(off))
+	}
 	for _, d := range []string{"xn--p1ai", "nalog.ru", "ya.ru", "vk.com", "max.ru", "wildberries.ru", "ivi.tv"} {
 		found := false
 		for _, x := range RuSuffixes {

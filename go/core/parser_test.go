@@ -60,6 +60,27 @@ func TestSingBoxJSON(t *testing.T) {
 	}
 }
 
+func TestLinkJSONAndKeepalive(t *testing.T) {
+	body := `{"links":["vless://11111111-2222-3333-4444-555555555555@1.2.3.4:443?security=tls#DE"],"announce":"https://example.com"}`
+	r := ParseContent(body)
+	if len(r.Servers) != 1 || r.Servers[0].Host != "1.2.3.4" || r.Servers[0].Name != "DE" {
+		t.Fatalf("%+v", r)
+	}
+	raw := base64.StdEncoding.EncodeToString([]byte(`{"outbounds":[{"type":"trojan","tag":"T","server":"t.example","server_port":443,"password":"p"}]}`))
+	r = ParseContent(raw)
+	if len(r.Servers) != 1 || r.Servers[0].Name != "T" {
+		t.Fatalf("b64 json %+v", r.Servers)
+	}
+	ep, err := WgEndpoint("[Interface]\nPrivateKey = PK\nAddress = 10.0.0.2\n[Peer]\nPublicKey = PUB\nAllowedIPs = 0.0.0.0/0\nEndpoint = 127.0.0.1:9000\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	peers := ep["peers"].([]any)
+	if peers[0].(map[string]any)["persistent_keepalive_interval"] != 25 {
+		t.Fatal(ep)
+	}
+}
+
 func TestWgAndConfig(t *testing.T) {
 	ep, err := WgEndpoint("[Interface]\nPrivateKey = PK\nAddress = 10.68.0.5\nMTU = 1280\n[Peer]\nPublicKey = PUB\nAllowedIPs = 0.0.0.0/0\nEndpoint = 127.0.0.1:9000\nPersistentKeepalive = 25\n")
 	if err != nil {

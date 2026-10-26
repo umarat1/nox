@@ -27,7 +27,7 @@ import (
 	"nox/core"
 )
 
-const Version = "1.0.27"
+const Version = "1.0.28"
 
 type Sub struct {
 	ID       string `json:"id"`
@@ -41,6 +41,8 @@ type Sub struct {
 	Announce string `json:"announce,omitempty"`
 	WebPage  string `json:"webPage,omitempty"`
 	Support  string `json:"support,omitempty"`
+	// Hours from the subscription header profile-update-interval (0 = panel did not send it).
+	Interval int `json:"interval,omitempty"`
 }
 
 type Persist struct {
@@ -77,19 +79,24 @@ type App struct {
 	pingAll  int
 	since    int64
 
-	box     coreProc
-	qw      *exec.Cmd
-	xr      *xrayProc // Xray-core for an XHTTP server
-	ext     *extProc  // Mieru/Juicity/Naive/TrustTunnel/Snell/ShadowQUIC local SOCKS
-	captcha *CaptchaReq
-	qwStdin io.WriteCloser
-	qwRetry int       // consecutive automatic qWDTT restarts
-	qwToken int64     // pending restart; Disconnect clears it
-	tun     *exec.Cmd // sstpc (Linux)
-	sstpUp  bool      // Windows RAS SSTP entry dialed / Android bridge up
-	sstpBr  *sstpBridge
-	cancel  context.CancelFunc
-	logBuf  []string
+	box        coreProc
+	qw         *exec.Cmd
+	xr         *xrayProc // Xray-core for an XHTTP server
+	ext        *extProc  // Mieru/Juicity/Naive/TrustTunnel/Snell/ShadowQUIC local SOCKS
+	captcha    *CaptchaReq
+	qwStdin    io.WriteCloser
+	qwRetry    int   // consecutive automatic qWDTT restarts
+	qwToken    int64 // pending restart; Disconnect clears it
+	qwHandoff  bool  // qWDTT watcher is already restarting; the core watcher must not schedule another
+	stopWanted bool  // user pressed Disconnect; do not auto-reconnect
+	coreRetry  int
+	coreToken  int64
+	subFetchMu sync.Mutex // one subscription fetch at a time (manual + timer)
+	tun        *exec.Cmd  // sstpc (Linux)
+	sstpUp     bool       // Windows RAS SSTP entry dialed / Android bridge up
+	sstpBr     *sstpBridge
+	cancel     context.CancelFunc
+	logBuf     []string
 
 	up, down, upTotal, downTotal int64
 	hist                         [][2]int64
@@ -145,6 +152,12 @@ func NewApp(dataDir, binDir string) *App {
 		a.p.SetVer = 110
 		a.save()
 	}
+	if a.p.SetVer < 128 { // 1.0.28: pick the fastest server after a ping; TCP fast open / mux where safe
+		a.p.Settings.AutoBest = true
+		a.p.Settings.FastDial = true
+		a.p.SetVer = 128
+		a.save()
+	}
 	if a.p.DeviceID == "" {
 		b := make([]byte, 8)
 		rand.Read(b)
@@ -194,6 +207,7 @@ func (a *App) ImportLegacy(stateJSON string) bool {
 // Start runs background loops (update check, auto-connect). Call once.
 func (a *App) Start() {
 	go a.updateLoop()
+	go a.subLoop()
 	if a.migrated && a.p.Settings.Autostart && !a.Service {
 		// old VPS autostart task -> Nox task (setAutostart also removes the legacy "VPS" task)
 		go func() {
@@ -417,8 +431,6 @@ func (a *App) Import(text string) ImportResult {
 	return ImportResult{Added: len(r.Servers), Errors: r.Errors, Msg: fmt.Sprintf("Добавлено серверов: %d", len(r.Servers))}
 }
 
-var userAgents = []string{"Nox/" + Version + " v2rayNG/1.10.16", "Happ/2.7.0 Nox/" + Version, "v2rayN/7.13.8", "sing-box 1.14.2"}
-
 func parseUserInfo(h string, s *Sub) {
 	for _, part := range strings.Split(h, ";") {
 		k, v, ok := strings.Cut(strings.TrimSpace(part), "=")
@@ -439,6 +451,12 @@ func parseUserInfo(h string, s *Sub) {
 	}
 }
 
+// directClient never uses the local proxy. Subscription fetches must hit the panel
+// itself: going through the tunnel can keep a cached or filtered copy.
+func (a *App) directClient() *http.Client {
+	return &http.Client{Timeout: 25 * time.Second, Transport: &http.Transport{Proxy: nil, TLSHandshakeTimeout: 15 * time.Second}}
+}
+
 func (a *App) httpClient() *http.Client {
 	tr := &http.Transport{Proxy: nil, TLSHandshakeTimeout: 15 * time.Second}
 	a.mu.Lock()
@@ -450,135 +468,12 @@ func (a *App) httpClient() *http.Client {
 	return &http.Client{Timeout: 25 * time.Second, Transport: tr}
 }
 
-func (a *App) fetchSub(sub *Sub, isNew bool) (int, []string, error) {
-	cl := a.httpClient()
-	var lastErr error
-	for _, ua := range userAgents {
-		req, _ := http.NewRequest("GET", sub.URL, nil)
-		req.Header.Set("User-Agent", ua)
-		req.Header.Set("Accept", "*/*")
-		resp, err := cl.Do(req)
-		if err != nil {
-			lastErr = err
-			continue
-		}
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 16<<20))
-		resp.Body.Close()
-		if resp.StatusCode != 200 {
-			lastErr = fmt.Errorf("HTTP %d", resp.StatusCode)
-			continue
-		}
-		r := core.ParseContent(string(body))
-		if len(r.Servers) == 0 {
-			lastErr = errors.New("серверы не найдены")
-			continue
-		}
-		parseUserInfo(resp.Header.Get("subscription-userinfo"), sub)
-		hdr := func(k string) string {
-			v := strings.TrimSpace(resp.Header.Get(k))
-			if strings.HasPrefix(v, "base64:") {
-				if d, ok := core.B64(v[7:]); ok {
-					v = d
-				}
-			}
-			return v
-		}
-		sub.Announce, sub.WebPage, sub.Support = hdr("announce"), hdr("profile-web-page-url"), hdr("support-url")
-		if t := resp.Header.Get("profile-title"); t != "" {
-			if strings.HasPrefix(t, "base64:") {
-				if d, ok := core.B64(t[7:]); ok {
-					t = d
-				}
-			}
-			sub.Name = strings.TrimSpace(t)
-		}
-		if sub.Name == "" {
-			if u, err := url.Parse(sub.URL); err == nil {
-				sub.Name = u.Host
-			}
-		}
-		sub.Updated = time.Now().Unix()
-		descs := a.fetchDescs(sub.URL)
-		for i := range r.Servers {
-			if d, ok := descs[r.Servers[i].Name]; ok && r.Servers[i].Desc == "" {
-				r.Servers[i].Desc = d
-			}
-		}
-		a.mu.Lock()
-		// keep selection by name when refreshing
-		selName := ""
-		for _, s := range a.p.Servers {
-			if s.ID == a.p.Selected && s.SubID == sub.ID {
-				selName = s.Name
-			}
-		}
-		old := map[string]core.Server{}
-		keep := a.p.Servers[:0]
-		for _, s := range a.p.Servers {
-			if s.SubID == sub.ID {
-				old[s.Name] = s
-			} else {
-				keep = append(keep, s)
-			}
-		}
-		oldIdx := map[string]int{}
-		for i, s := range a.p.Servers {
-			if s.SubID == sub.ID {
-				oldIdx[s.Name] = i
-			}
-		}
-		a.p.Servers = keep
-		sortByOld(r.Servers, oldIdx)
-		for _, s := range r.Servers {
-			s.SubID = sub.ID
-			if o, ok := old[s.Name]; ok {
-				s.ID, s.Ping = o.ID, o.Ping
-				if s.Desc == "" {
-					s.Desc = o.Desc
-				}
-			} else {
-				s.ID = newID()
-			}
-			if s.Name == selName {
-				a.p.Selected = s.ID
-			}
-			a.p.Servers = append(a.p.Servers, s)
-		}
-		found := false
-		for i := range a.p.Subs {
-			if a.p.Subs[i].ID == sub.ID {
-				a.p.Subs[i] = *sub
-				found = true
-			}
-		}
-		if !found {
-			a.p.Subs = append(a.p.Subs, *sub)
-		}
-		if isNew {
-			a.p.Category = sub.ID
-		}
-		if a.p.Selected == "" || !a.hasServerLocked(a.p.Selected) {
-			a.p.Selected = r.Servers[0].ID
-			for _, s := range a.p.Servers {
-				if s.SubID == sub.ID {
-					a.p.Selected = s.ID
-					break
-				}
-			}
-		}
-		a.save()
-		a.mu.Unlock()
-		a.log(fmt.Sprintf("подписка %s: %d серверов (UA %s)", sub.Name, len(r.Servers), ua))
-		return len(r.Servers), r.Errors, nil
-	}
-	return 0, nil, lastErr
-}
-
 // fetchDescs: Remnawave sends host serverDescription only to "extended" clients (Happ UA).
 func (a *App) fetchDescs(u string) map[string]string {
 	req, _ := http.NewRequest("GET", u, nil)
 	req.Header.Set("User-Agent", "Happ/3.0.0 VPS/"+Version)
-	cl := a.httpClient()
+	req.Header.Set("Cache-Control", "no-cache")
+	cl := a.directClient()
 	cl.Timeout = 10 * time.Second
 	resp, err := cl.Do(req)
 	if err != nil {
@@ -599,22 +494,6 @@ func (a *App) hasServerLocked(id string) bool {
 		}
 	}
 	return false
-}
-
-func (a *App) RefreshSubs() string {
-	a.mu.Lock()
-	subs := append([]Sub(nil), a.p.Subs...)
-	a.mu.Unlock()
-	var fails []string
-	for i := range subs {
-		if _, _, err := a.fetchSub(&subs[i], false); err != nil {
-			fails = append(fails, subs[i].Name+": "+err.Error())
-		}
-	}
-	if len(fails) > 0 {
-		return "Ошибка обновления: " + strings.Join(fails, "; ")
-	}
-	return "Подписки обновлены"
 }
 
 // ---------------------------------------------------------------- ping
@@ -647,19 +526,33 @@ func (a *App) PingServers(ids []string) {
 				a.p.Servers[i].Ping = v
 			}
 		}
+		if a.p.Settings.AutoBest && a.status == "disconnected" {
+			if id := a.bestIDLocked(40); id != "" && id != a.p.Selected {
+				a.p.Selected = id
+				a.logLocked("автовыбор: сервер с меньшей задержкой")
+			}
+		}
 		a.save()
 		a.mu.Unlock()
 	}()
 }
 
-func (a *App) setPing(id string, v int) {
+func (a *App) setPing(id string, v int) { a.setPingN(id, v, true) }
+
+// setPingQuiet updates a shown latency without counting another finished probe
+// (the fast TCP preview is replaced by the URL test).
+func (a *App) setPingQuiet(id string, v int) { a.setPingN(id, v, false) }
+
+func (a *App) setPingN(id string, v int, count bool) {
 	a.mu.Lock()
 	for i := range a.p.Servers {
 		if a.p.Servers[i].ID == id {
 			a.p.Servers[i].Ping = v
 		}
 	}
-	a.pingDone++
+	if count {
+		a.pingDone++
+	}
 	a.mu.Unlock()
 }
 
@@ -674,13 +567,30 @@ func freePort() int {
 
 func (a *App) ping(list []core.Server, mode string) map[string]int {
 	res := map[string]int{}
+	final := map[string]bool{}
 	var mu sync.Mutex
-	set := func(id string, v int) { mu.Lock(); res[id] = v; mu.Unlock(); a.setPing(id, v) }
+	set := func(id string, v int) {
+		mu.Lock()
+		final[id] = true
+		res[id] = v
+		mu.Unlock()
+		a.setPing(id, v)
+	}
+	setPreview := func(id string, v int) {
+		mu.Lock()
+		if final[id] || v <= 0 {
+			mu.Unlock()
+			return
+		}
+		res[id] = v
+		mu.Unlock()
+		a.setPingQuiet(id, v)
+	}
 	atomic.StoreInt32(&boundDNSDead, 0)
 	pn := a.pingNetwork() // VPN on: sockets pinned to the physical NIC, bypassing the tunnel
 	var wg sync.WaitGroup
 	var urlList []core.Server
-	sem := make(chan struct{}, 16)
+	sem := make(chan struct{}, 32)
 	var bals []core.Server
 	for _, s := range list {
 		s := s
@@ -718,6 +628,17 @@ func (a *App) ping(list []core.Server, mode string) map[string]int {
 		urlList = append(urlList, s)
 	}
 	if len(urlList) > 0 {
+		for _, s := range urlList {
+			if isUDPServer(s) {
+				continue
+			}
+			s := s
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				setPreview(s.ID, pn.tcpPing(s.Host, s.Port))
+			}()
+		}
 		a.urlTest(urlList, set, pn)
 	}
 	wg.Wait()
@@ -916,7 +837,7 @@ func (a *App) urlTest(list []core.Server, set func(string, int), pn pingNet) {
 	}
 	a.mu.Unlock()
 	var wg sync.WaitGroup
-	sem := make(chan struct{}, 24)
+	sem := make(chan struct{}, 32)
 	for tag, id := range tags {
 		tag, id := tag, id
 		wg.Add(1)
@@ -951,18 +872,15 @@ func (a *App) urlTest(list []core.Server, set func(string, int), pn pingNet) {
 			for _, u := range checkURLs {
 				first := 0
 				for try := 0; try < 2 && first <= 0; try++ {
-					first = get(u, 10*time.Second)
+					first = get(u, 6*time.Second)
 				}
 				if first <= 0 {
 					continue
 				}
 				best := 0
-				for k := 0; k < 3; k++ {
-					if d := get(u, 10*time.Second); d > 0 && (best == 0 || d < best) {
+				for k := 0; k < 2; k++ {
+					if d := get(u, 6*time.Second); d > 0 && (best == 0 || d < best) {
 						best = d
-					}
-					if best > 0 && k >= 1 {
-						break
 					}
 				}
 				if best == 0 {
@@ -1035,7 +953,7 @@ func (a *App) qwdttPing(s core.Server) int {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 40*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, a.bin("qwdtt"), q.PingArgs(pickDNS(q))...)
+	cmd := commandContext(ctx, a.bin("qwdtt"), q.PingArgs(pickDNS(q))...)
 	cmd.Dir = a.dataDir
 	hideWindow(cmd)
 	out, _ := cmd.CombinedOutput()
@@ -1101,6 +1019,15 @@ func (a *App) Connect() {
 		a.mu.Unlock()
 		return
 	}
+	a.stopWanted = false
+	if a.p.Selected == "" || !a.hasServerLocked(a.p.Selected) {
+		if id := a.bestIDLocked(0); id != "" {
+			a.p.Selected = id
+		} else if len(a.p.Servers) > 0 {
+			a.p.Selected = a.p.Servers[0].ID
+		}
+		a.save()
+	}
 	var srv *core.Server
 	for i := range a.p.Servers {
 		if a.p.Servers[i].ID == a.p.Selected {
@@ -1127,7 +1054,7 @@ func (a *App) Connect() {
 		if err != nil {
 			a.log("ошибка: " + err.Error())
 			a.stopAll()
-			if ctx.Err() == nil && srv.Type == "qWDTT" && a.qwdttRestartFailed(err) {
+			if ctx.Err() == nil && srv.Type == "qWDTT" && qwdttRetryable(err) && a.qwdttRestartFailed(err) {
 				return
 			}
 			a.mu.Lock()
@@ -1187,13 +1114,12 @@ func (a *App) connect(ctx context.Context, srv core.Server, s core.Settings) err
 		go func() {
 			<-x.done
 			a.mu.Lock()
-			if a.xr == x && (a.status == "connected" || a.status == "connecting") {
-				a.errMsg = "Xray завершился: " + x.lastErr()
+			if a.xr != x || (a.status != "connected" && a.status != "connecting") {
 				a.mu.Unlock()
-				a.stopAll()
 				return
 			}
 			a.mu.Unlock()
+			a.noteCoreExit("Xray завершился: " + x.lastErr())
 		}()
 	} else if err := json.Unmarshal(srv.Outbound, &proxy); err != nil {
 		return err
@@ -1275,18 +1201,18 @@ func (a *App) connect(ctx context.Context, srv core.Server, s core.Settings) err
 	go a.trafficLoop(ctx)
 	go a.healthCheck(ctx, srv, s)
 	go a.autoSwitchLoop(ctx, srv, s)
+	if srv.Type == "qWDTT" {
+		go a.qwdttHealthLoop(ctx, srv, s)
+	}
 	go func() {
 		select {
 		case <-ctx.Done():
+			return
 		case e := <-exited:
-			a.mu.Lock()
-			if a.status == "connected" {
-				tmu.Lock()
-				a.errMsg = "Соединение прервано: ядро завершилось (" + fmt.Sprint(e) + ") " + lastLines(strings.Join(tail, "\n"), 2)
-				tmu.Unlock()
-			}
-			a.mu.Unlock()
-			a.stopAll()
+			tmu.Lock()
+			why := fmt.Sprint(e) + " " + lastLines(strings.Join(tail, "\n"), 2)
+			tmu.Unlock()
+			a.noteCoreExit(why)
 		}
 	}()
 	return nil
@@ -1342,7 +1268,7 @@ func (a *App) startQwdtt(ctx context.Context, q core.Qwdtt) (map[string]any, err
 			}
 		}
 	}
-	cmd := exec.Command(a.bin("qwdtt"), args...)
+	cmd := command(a.bin("qwdtt"), args...)
 	cmd.Dir = work
 	hideWindow(cmd)
 	stdin, _ := cmd.StdinPipe()
@@ -1462,7 +1388,8 @@ func (a *App) startQwdtt(ctx context.Context, q core.Qwdtt) (map[string]any, err
 
 func (a *App) Disconnect() {
 	a.mu.Lock()
-	a.qwToken, a.qwRetry = 0, 0
+	a.stopWanted = true
+	a.qwToken, a.qwRetry, a.coreToken, a.coreRetry = 0, 0, 0, 0
 	if a.status == "disconnected" {
 		a.mu.Unlock()
 		return

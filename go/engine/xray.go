@@ -67,7 +67,7 @@ func (a *App) startXray(name string, obs []json.RawMessage, pn pingNet) (*xrayPr
 	if err := os.WriteFile(cfg, b, 0o600); err != nil {
 		return nil, err
 	}
-	cmd := exec.Command(a.bin("xray"), "run", "-c", cfg)
+	cmd := command(a.bin("xray"), "run", "-c", cfg)
 	cmd.Dir = dir
 	cmd.Env = append(os.Environ(), "XRAY_LOCATION_ASSET="+dir)
 	hideWindow(cmd)

@@ -43,14 +43,26 @@ type Settings struct {
 	// Custom routing: domain suffixes always direct / always through the VPN (wins over RU rules).
 	DirectDomains []string `json:"directDomains,omitempty"`
 	// 1.0.20 «Раздача VPN»: login/password for the LAN proxy (AllowLAN); empty = no auth
-	ShareUser string `json:"shareUser,omitempty"`
-	SharePass string `json:"sharePass,omitempty"`
-	ProxyDomains  []string `json:"proxyDomains,omitempty"`
+	ShareUser    string   `json:"shareUser,omitempty"`
+	SharePass    string   `json:"sharePass,omitempty"`
+	ProxyDomains []string `json:"proxyDomains,omitempty"`
+	// 1.0.28: after a ping, select the lowest-latency server (while disconnected).
+	AutoBest bool `json:"autoBest"`
+	// TCP Fast Open, and multiplex only for VMess/Shadowsocks (not VLESS+Vision, not QUIC).
+	FastDial bool `json:"fastDial"`
 }
 
 func DefaultSettings() Settings {
-	return Settings{Mode: "tun", DNS: "auto", DirectRU: true, RuApps: true, IPv6: false, ProxyPort: 10808, PingMode: "url", MTU: 9000, Sniff: true, LogLevel: "warn"}
+	return Settings{Mode: "tun", DNS: "auto", DirectRU: true, RuApps: true, IPv6: false, ProxyPort: 10808, PingMode: "url", MTU: 9000, Sniff: true, LogLevel: "warn", AutoBest: true, FastDial: true}
 }
+
+// IviSuffixes always go direct (the site and its own CDN), even when «российские сайты» is off.
+// ivi.ru covers api/dfs/rocket/player subdomains. ivicdn.tv and tivision.ru are the player CDN
+// (ASN IVI); video segments are served from *.dfs.ivi.ru.
+var IviSuffixes = []string{"ivi.ru", "ivi.tv", "ivicdn.tv", "tivision.ru"}
+
+// IviProcesses: desktop player binaries. Android uses package exclusion (ru.ivi.*) instead.
+var IviProcesses = []string{"ivi.exe", "Ivi.exe", "IVI.exe", "ivi", "Ivi"}
 
 func dnsServer(s Settings) map[string]any {
 	switch s.DNS {
@@ -185,6 +197,8 @@ func BuildConfig(proxy map[string]any, s Settings, clashAddr string, ruleDir str
 	ds["detour"] = "proxy"
 	servers := []any{ds, map[string]any{"type": "local", "tag": "local"}}
 	dnsRules := []any{}
+	// ivi is resolved on the direct resolver so the player does not get a tunnel address.
+	dnsRules = append(dnsRules, map[string]any{"domain_suffix": IviSuffixes, "server": "local"})
 	if pd := cleanDomains(s.ProxyDomains); len(pd) > 0 {
 		dnsRules = append(dnsRules, map[string]any{"domain_suffix": pd, "server": "remote"})
 	}
@@ -211,6 +225,9 @@ func BuildConfig(proxy map[string]any, s Settings, clashAddr string, ruleDir str
 	)
 	procs := []string{"sing-box.exe", "qwdtt.exe", "xray.exe", "noxd.exe", "naive.exe", "sing-box", "qwdtt", "xray", "noxd", "naive"}
 	rules = append(rules, map[string]any{"process_name": procs, "outbound": "direct"})
+	// ivi site, CDN and desktop app — always direct, ahead of user proxy rules.
+	rules = append(rules, map[string]any{"domain_suffix": IviSuffixes, "outbound": "direct"})
+	rules = append(rules, map[string]any{"process_name": IviProcesses, "outbound": "direct"})
 	if s.BlockAds {
 		rules = append(rules, map[string]any{"rule_set": "ads", "action": "reject"})
 	}
@@ -259,12 +276,44 @@ func BuildConfig(proxy map[string]any, s Settings, clashAddr string, ruleDir str
 		"experimental": map[string]any{"clash_api": map[string]any{"external_controller": clashAddr},
 			"cache_file": map[string]any{"enabled": false}},
 	}
+	if s.FastDial {
+		tuneOutbound(proxy)
+		for _, o := range extraOuts {
+			if m, ok := o.(map[string]any); ok {
+				tuneOutbound(m)
+			}
+		}
+	}
 	if isEndpoint {
 		cfg["endpoints"] = []any{proxy}
 	} else {
 		cfg["outbounds"] = append(append([]any{proxy}, extraOuts...), map[string]any{"type": "direct", "tag": "direct"})
 	}
 	return json.MarshalIndent(cfg, "", "  ")
+}
+
+// tuneOutbound lowers handshake latency where it is safe.
+// TCP Fast Open falls back to a normal handshake if the server ignores it.
+// Multiplex is only added for VMess and Shadowsocks: VLESS with XTLS Vision, Reality and
+// QUIC/Hysteria break when the client muxes, and fragment (DPI) adds delay, so it is not set.
+func tuneOutbound(ob map[string]any) {
+	if ob == nil {
+		return
+	}
+	t, _ := ob["type"].(string)
+	switch t {
+	case "vless", "vmess", "trojan", "shadowsocks", "socks", "http", "anytls":
+		if _, ok := ob["tcp_fast_open"]; !ok {
+			ob["tcp_fast_open"] = true
+		}
+	}
+	if t == "vmess" || t == "shadowsocks" {
+		if _, ok := ob["multiplex"]; !ok {
+			ob["multiplex"] = map[string]any{
+				"enabled": true, "protocol": "smux", "max_connections": 4, "min_streams": 4, "padding": false,
+			}
+		}
+	}
 }
 
 // TestConfig: minimal config exposing the server through a local mixed port (used for URL ping).

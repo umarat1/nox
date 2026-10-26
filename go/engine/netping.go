@@ -315,21 +315,42 @@ func parseA(b []byte, id [2]byte) string {
 	return ""
 }
 
-// tcpPing measures the TCP handshake time to host:port (-1 = timeout / unreachable).
+// tcpPing measures the TCP handshake to host:port (-1 = timeout / unreachable).
+// Two handshakes run together and the faster one is kept, so a single delayed SYN
+// does not decide the latency and a lost first packet still gets a second try.
 func (p pingNet) tcpPing(host string, port int) int {
 	ip := p.resolve(host)
 	if ip == "" {
 		return -1
 	}
-	t0 := time.Now()
-	c, err := p.dialer(2500*time.Millisecond).Dial("tcp", net.JoinHostPort(ip, strconv.Itoa(port)))
-	if err != nil {
-		return -1
+	addr := net.JoinHostPort(ip, strconv.Itoa(port))
+	type res struct {
+		ms int
+		ok bool
 	}
-	c.Close()
-	ms := int(time.Since(t0).Milliseconds())
-	if ms < 1 {
-		ms = 1
+	ch := make(chan res, 2)
+	for i := 0; i < 2; i++ {
+		go func() {
+			t0 := time.Now()
+			c, err := p.dialer(1200*time.Millisecond).Dial("tcp", addr)
+			if err != nil {
+				ch <- res{}
+				return
+			}
+			c.Close()
+			ms := int(time.Since(t0).Milliseconds())
+			if ms < 1 {
+				ms = 1
+			}
+			ch <- res{ms, true}
+		}()
 	}
-	return ms
+	best := -1
+	for i := 0; i < 2; i++ {
+		r := <-ch
+		if r.ok && (best < 0 || r.ms < best) {
+			best = r.ms
+		}
+	}
+	return best
 }
