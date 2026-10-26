@@ -3648,6 +3648,17 @@ void settingsSheet(BuildContext context, NoxController c, Pal p) {
             shareVpnDialog(context, c, p);
           },
         ),
+      Padding(
+        padding: const EdgeInsets.fromLTRB(4, 10, 4, 2),
+        child: Text(
+          'Внешний вид',
+          style: TextStyle(
+            color: p.sub,
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ),
       item(
         p,
         'Тема',
@@ -3686,21 +3697,19 @@ void settingsSheet(BuildContext context, NoxController c, Pal p) {
       ),
       item(
         p,
-        'Шаблон панели',
-        desc: c.pref('panel', '') == 'text'
-            ? 'Текстовый — без графика'
-            : 'Обычный',
+        'Шаблон',
+        desc: c.pref('panel', '') == 'text' ? 'Текстовый' : 'Стандартный',
         arrow: true,
         onTap: () {
           Navigator.pop(ctx);
           sheet(
             context,
             p,
-            'Шаблон панели',
+            'Шаблон',
             (c2) => [
               item(
                 p,
-                'Обычный',
+                'Стандартный',
                 desc: 'Кнопка, график скорости, карточки',
                 checked: c.pref('panel', '') != 'text',
                 onTap: () {
@@ -3711,7 +3720,8 @@ void settingsSheet(BuildContext context, NoxController c, Pal p) {
               item(
                 p,
                 'Текстовый',
-                desc: 'Статус, скорость текстом, список серверов. Без графиков',
+                desc:
+                    'Статус, страна, пинг, протокол и скорости текстом. Без графиков',
                 checked: c.pref('panel', '') == 'text',
                 onTap: () {
                   c.setPref('panel', 'text');
@@ -5090,6 +5100,12 @@ class _NumPad extends StatelessWidget {
   }
 }
 
+String _countryOf(String name) {
+  final iso = region(name);
+  if (iso == null) return '';
+  return regionName[iso] ?? '';
+}
+
 class _TextPanel extends StatelessWidget {
   final NoxController c;
   final Pal p;
@@ -5107,8 +5123,16 @@ class _TextPanel extends StatelessWidget {
         ? 'Отключение…'
         : 'Отключено';
     final cur = c.current;
+    final name = cur == null ? '' : '${cur['name'] ?? ''}';
+    final country = _countryOf(name);
+    final proto = cur == null ? '' : '${cur['type'] ?? ''}';
+    final ping = cur == null ? '—' : pingText(cur['ping'] as int?);
     final t = c.traffic;
     final servers = c.servers.where((s) => s['type'] != '_balancer').toList();
+    Text row(String k, String v) => Text(
+      '$k: $v',
+      style: TextStyle(color: p.txt, fontSize: 16, height: 1.4),
+    );
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
       children: [
@@ -5116,31 +5140,45 @@ class _TextPanel extends StatelessWidget {
           label,
           style: TextStyle(
             color: p.txt,
-            fontSize: 22,
+            fontSize: 28,
             fontWeight: FontWeight.w700,
           ),
         ),
-        const SizedBox(height: 4),
-        Text(
-          cur == null ? 'Сервер не выбран' : '${cur['name'] ?? ''}',
-          style: TextStyle(color: p.sub, fontSize: 15),
+        const SizedBox(height: 10),
+        row('Сервер', name.isEmpty ? 'не выбран' : dispName(name)),
+        row('Страна', country.isEmpty ? '—' : country),
+        row('Пинг', ping),
+        row('Протокол', proto.isEmpty ? '—' : proto),
+        row(
+          'Скорость',
+          '↓ ${fmtBytes(t?['Down'] ?? 0)}/с   ↑ ${fmtBytes(t?['Up'] ?? 0)}/с',
         ),
-        const SizedBox(height: 8),
-        Text(
-          '↓ ${fmtBytes(t?['Down'] ?? 0)}/с    ↑ ${fmtBytes(t?['Up'] ?? 0)}/с',
-          style: TextStyle(color: p.txt, fontSize: 16),
+        row(
+          'Трафик',
+          '↓ ${fmtBytes(t?['DownTotal'] ?? 0)}   ↑ ${fmtBytes(t?['UpTotal'] ?? 0)}',
         ),
-        Text(
-          'за сеанс ↓ ${fmtBytes(t?['DownTotal'] ?? 0)}  ↑ ${fmtBytes(t?['UpTotal'] ?? 0)}',
-          style: TextStyle(color: p.sub, fontSize: 13),
-        ),
-        const SizedBox(height: 12),
-        _Btn(
-          p: p,
-          label: on ? 'Отключить' : 'Подключить',
-          onTap: () {
-            c.toggle();
-          },
+        const SizedBox(height: 16),
+        SizedBox(
+          width: double.infinity,
+          height: 64,
+          child: Material(
+            color: p.acc,
+            borderRadius: BorderRadius.circular(8),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(8),
+              onTap: c.busy ? null : c.toggle,
+              child: Center(
+                child: Text(
+                  on ? 'Отключить' : 'Подключить',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 20,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ),
+          ),
         ),
         Wrap(
           spacing: 4,
@@ -5225,13 +5263,15 @@ class _TextPanel extends StatelessWidget {
                 children: [
                   Expanded(
                     child: Text(
-                      '${s['id'] == c.selected ? '● ' : ''}${s['name'] ?? ''}  ${s['type'] ?? ''}',
-                      style: TextStyle(color: p.txt, fontSize: 14),
+                      '${s['id'] == c.selected ? '● ' : ''}${dispName('${s['name'] ?? ''}')}'
+                      '${_countryOf('${s['name'] ?? ''}') == '' ? '' : ' · ${_countryOf('${s['name'] ?? ''}')}'}'
+                      ' · ${s['type'] ?? ''}',
+                      style: TextStyle(color: p.txt, fontSize: 15, height: 1.3),
                     ),
                   ),
                   Text(
                     pingText(s['ping'] as int?),
-                    style: TextStyle(color: p.sub, fontSize: 13),
+                    style: TextStyle(color: p.txt, fontSize: 15),
                   ),
                 ],
               ),
