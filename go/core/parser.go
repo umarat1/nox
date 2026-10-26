@@ -73,7 +73,7 @@ type ParseResult struct {
 
 var schemes = map[string]bool{"vless": true, "vmess": true, "trojan": true, "ss": true, "hysteria2": true, "hy2": true,
 	"hysteria": true, "tuic": true, "anytls": true, "socks": true, "socks5": true, "wireguard": true, "wg": true, "qwdtt": true, "sstp": true,
-	"juicity": true, "snell": true, "shadowquic": true,
+	"juicity": true, "snell": true, "shadowquic": true, "noxp": true,
 	"naive+https": true, "naive+quic": true, "naive": true, "mierus": true, "mieru": true, "tt": true, "sq": true, "trusttunnel": true}
 
 func IsShareLink(s string) bool {

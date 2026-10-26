@@ -4559,6 +4559,7 @@ bool _chainable(J s) {
     'Автовыбор',
     'Цепочка',
     'AmneziaWG',
+    'NOX',
   ];
   return !bad.contains(t) && !t.contains('XHTTP');
 }
@@ -4580,7 +4581,7 @@ void chainSheet(BuildContext context, NoxController c, Pal p) {
             Text(
               'Выберите 2–3 сервера по порядку: первый — вход, последний — выход в интернет. '
               'Подходят VLESS, Trojan, VMess, Shadowsocks, SOCKS, HTTP, AnyTLS, TUIC, Hysteria2. '
-              'qWDTT, XHTTP, WireGuard, Naive, Mieru, Juicity, TrustTunnel, Snell и ShadowQUIC в прокси-цепь не ставятся.',
+              'qWDTT, XHTTP, WireGuard, Naive, Mieru, Juicity, TrustTunnel, Snell, ShadowQUIC и NOX в прокси-цепь не ставятся.',
               style: TextStyle(color: p.sub, fontSize: 13),
             ),
             const SizedBox(height: 10),

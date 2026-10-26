@@ -1140,6 +1140,11 @@ func (a *App) Connect() {
 }
 
 func (a *App) connect(ctx context.Context, srv core.Server, s core.Settings) error {
+	return a.connectTry(ctx, srv, s, 0, map[string]bool{})
+}
+
+func (a *App) connectTry(ctx context.Context, srv core.Server, s core.Settings, depth int, tried map[string]bool) error {
+	tried[srv.ID] = true
 	if core.IsFullTunnel(srv.Outbound) {
 		return a.connectFullTunnel(ctx, srv)
 	}
@@ -1167,6 +1172,9 @@ func (a *App) connect(ctx context.Context, srv core.Server, s core.Settings) err
 	} else if core.IsExt(srv.Outbound) {
 		e, err := a.startExt(srv.Outbound)
 		if err != nil {
+			if fb, ok := a.fallbackTransport(ctx, srv, s, depth, tried, err); ok {
+				return fb
+			}
 			return err
 		}
 		a.mu.Lock()
@@ -1271,6 +1279,7 @@ func (a *App) connect(ctx context.Context, srv core.Server, s core.Settings) err
 	a.status = "connected"
 	a.since = time.Now().Unix()
 	a.mu.Unlock()
+	a.markPath(srv.Type, true)
 	a.log("подключено: " + srv.Name)
 	go a.trafficLoop(ctx)
 	go a.healthCheck(ctx, srv, s)

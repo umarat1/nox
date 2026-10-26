@@ -1,0 +1,23 @@
+[Unit]
+Description=NOX cover transport (nox-protocol)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=nox
+Group=nox
+ExecStart=/usr/local/bin/nox-server -config /etc/nox/server.json
+Restart=on-failure
+RestartSec=2
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/nox
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+LimitNOFILE=1048576
+
+[Install]
+WantedBy=multi-user.target

@@ -6,10 +6,12 @@ import (
 	"net"
 	"net/url"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"time"
 
 	"nox/extra"
+	"nox/noxproto"
 )
 
 // extProc: one running in-process/extra protocol behind 127.0.0.1:port (SOCKS5).
@@ -34,6 +36,22 @@ func (a *App) startExt(raw []byte) (*extProc, error) {
 	}
 	if w.Kind == "naive" {
 		return a.startNaive(w.Cfg)
+	}
+	if w.Kind == "nox" {
+		if w.Cfg == nil {
+			w.Cfg = map[string]any{}
+		}
+		if w.Cfg["memfile"] == nil || w.Cfg["memfile"] == "" {
+			w.Cfg["memfile"] = filepath.Join(a.dataDir, "nox-paths.json")
+		}
+		if w.Cfg["network"] == nil || w.Cfg["network"] == "" {
+			w.Cfg["network"] = noxproto.NetworkLabel()
+		}
+		b, err := json.Marshal(map[string]any{"kind": w.Kind, "cfg": w.Cfg})
+		if err != nil {
+			return nil, err
+		}
+		raw = b
 	}
 	l, err := extra.Start(raw)
 	if err != nil {
