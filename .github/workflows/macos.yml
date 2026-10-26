@@ -102,3 +102,7 @@ jobs:
         with:
           name: nox-macos
           path: out/*.dmg
+          if-no-files-found: error
+          # UDZO is already compressed. Deflate on a ~160 MB DMG pinned the
+          # macos-15-intel runner until it lost contact with GitHub (1.0.29).
+          compression-level: 0
