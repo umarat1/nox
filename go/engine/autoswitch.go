@@ -99,12 +99,13 @@ func (a *App) autoSwitchLoop(ctx context.Context, srv core.Server, s core.Settin
 			fails = 2 // no internet at all: not the server's fault, keep watching
 			continue
 		}
+		a.markPath(srv.Type, false)
 		a.mu.Lock()
 		if time.Since(a.lastSwitch) < 60*time.Second || a.p.Selected != srv.ID {
 			a.mu.Unlock()
 			continue
 		}
-		next := nextServer(a.p.Servers, srv)
+		next := a.pickNext(a.p.Servers, srv)
 		if next == nil {
 			a.mu.Unlock()
 			a.log("автопереключение: нет другого рабочего сервера")

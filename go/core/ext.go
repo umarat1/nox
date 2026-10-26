@@ -148,6 +148,9 @@ func parseExt(s string) (Server, bool, error) {
 		}
 		sv, err := extServer(fragName(u), "TrustTunnel", u.Hostname(), p, "mihomo", cfg)
 		return sv, true, err
+	case "noxp":
+		sv, err := parseNox(s)
+		return sv, true, err
 	case "naive+https", "naive+quic", "naive":
 		u, err := url.Parse(s)
 		if err != nil {
@@ -175,6 +178,47 @@ func parseExt(s string) (Server, bool, error) {
 }
 
 func fragName(u *url.URL) string { return u.Fragment }
+
+// parseNox reads noxp://<pubkey>:<password>@host:port?carrier=h2,h3,cdn&sni=&host=&path=&profile=&fp=
+// The scheme is noxp (not nox) because nox:// is already the phone-to-TV pairing QR.
+func parseNox(s string) (Server, error) {
+	u, err := url.Parse(s)
+	if err != nil {
+		return Server{}, err
+	}
+	if u.User == nil || u.User.Username() == "" {
+		return Server{}, errors.New("noxp: нет ключа сервера")
+	}
+	pass, _ := u.User.Password()
+	q := u.Query()
+	p, _ := strconv.Atoi(u.Port())
+	if p == 0 {
+		p = 443
+	}
+	host := u.Hostname()
+	cfg := map[string]any{
+		"pub":       u.User.Username(),
+		"pass":      pass,
+		"server":    host,
+		"port":      p,
+		"sni":       firstNonEmpty(q.Get("sni"), host),
+		"authority": firstNonEmpty(q.Get("host"), q.Get("authority"), host),
+		"path":      firstNonEmpty(q.Get("path"), "/api/v1/events"),
+		"profile":   firstNonEmpty(q.Get("profile"), "mixed"),
+		"fp":        firstNonEmpty(q.Get("fp"), "chrome"),
+		"carrier":   firstNonEmpty(q.Get("carrier"), "h2"),
+	}
+	if v := q.Get("front"); v != "" {
+		cfg["front"] = v
+	}
+	if v := q.Get("insecure"); v == "1" || v == "true" {
+		cfg["insecure"] = true
+	}
+	if v := q.Get("jitter"); v != "" {
+		cfg["jitter"] = v
+	}
+	return extServer(fragName(u), "NOX", host, p, "nox", cfg)
+}
 
 func firstNonEmpty(v ...string) string {
 	for _, x := range v {
