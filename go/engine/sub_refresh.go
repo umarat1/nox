@@ -110,6 +110,7 @@ type subHit struct {
 	interval int
 	info     string
 	trusted  bool
+	nextURL  string
 }
 
 func (a *App) readSub(cl *http.Client, raw, ua string) (*http.Response, []byte, error) {
@@ -176,6 +177,7 @@ func (a *App) fetchSub(sub *Sub, isNew bool) (int, []string, error) {
 			web: headerText(resp.Header, "profile-web-page-url"), support: headerText(resp.Header, "support-url"),
 			interval: parseIntervalHours(resp.Header.Get("profile-update-interval")),
 			info:     resp.Header.Get("subscription-userinfo"),
+			nextURL:  nextSubURL(resp.Header),
 		}
 		hit.trusted = hit.info != "" || hit.title != "" || hit.interval > 0
 		if hit.trusted {
@@ -193,7 +195,12 @@ func (a *App) fetchSub(sub *Sub, isNew bool) (int, []string, error) {
 		if lastErr == nil {
 			lastErr = errors.New("серверы не найдены")
 		}
-		return 0, nil, lastErr
+		a.log("подписка " + sub.Name + ": " + lastErr.Error())
+		return 0, nil, friendlyNetErr(lastErr)
+	}
+	if chosen.nextURL != "" && chosen.nextURL != sub.URL {
+		a.log("подписка " + sub.Name + ": следующий адрес " + chosen.nextURL)
+		sub.URL = chosen.nextURL
 	}
 	parseUserInfo(chosen.info, sub)
 	if chosen.interval > 0 {
@@ -219,6 +226,23 @@ func (a *App) fetchSub(sub *Sub, isNew bool) (int, []string, error) {
 	n := a.applySubServers(sub, chosen.servers, isNew)
 	a.log(fmt.Sprintf("подписка %s: список заменён, %d серверов (UA %s)", sub.Name, n, chosen.ua))
 	return n, chosen.errs, nil
+}
+
+// nextSubURL is the panel telling the client where the subscription moved.
+// profile-update-url is the usual header; update-url is accepted as well.
+func nextSubURL(h http.Header) string {
+	for _, k := range []string{"profile-update-url", "update-url"} {
+		raw := strings.TrimSpace(headerText(h, k))
+		if raw == "" {
+			continue
+		}
+		u, err := url.Parse(raw)
+		if err != nil || u.Host == "" || (u.Scheme != "https" && u.Scheme != "http") {
+			continue
+		}
+		return u.String()
+	}
+	return ""
 }
 
 func serverKey(s core.Server) string {

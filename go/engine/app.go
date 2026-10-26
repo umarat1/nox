@@ -27,7 +27,7 @@ import (
 	"nox/core"
 )
 
-const Version = "1.0.29"
+const Version = "1.0.30"
 
 type Sub struct {
 	ID       string `json:"id"`
@@ -454,11 +454,19 @@ func parseUserInfo(h string, s *Sub) {
 // directClient never uses the local proxy. Subscription fetches must hit the panel
 // itself: going through the tunnel can keep a cached or filtered copy.
 func (a *App) directClient() *http.Client {
-	return &http.Client{Timeout: 25 * time.Second, Transport: &http.Transport{Proxy: nil, TLSHandshakeTimeout: 15 * time.Second}}
+	return &http.Client{Timeout: 25 * time.Second, Transport: directTransport()}
+}
+
+func directTransport() *http.Transport {
+	return &http.Transport{
+		Proxy:               nil,
+		TLSHandshakeTimeout: 12 * time.Second,
+		DialContext:         dialResolved,
+	}
 }
 
 func (a *App) httpClient() *http.Client {
-	tr := &http.Transport{Proxy: nil, TLSHandshakeTimeout: 15 * time.Second}
+	tr := directTransport()
 	a.mu.Lock()
 	if a.status == "connected" && a.p.Settings.Mode == "proxy" {
 		pu, _ := url.Parse(fmt.Sprintf("http://127.0.0.1:%d", a.p.Settings.ProxyPort))

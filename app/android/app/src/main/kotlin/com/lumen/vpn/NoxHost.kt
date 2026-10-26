@@ -51,6 +51,8 @@ class NoxHost(private val ctx: Context) : Host {
 
     override fun getInterfaces(): String = NetMonitor.interfaces(ctx)
 
+    override fun resolve(host: String): String = NetMonitor.resolve(ctx, host)
+
     override fun installApk(path: String) {
         // REQUEST_INSTALL_PACKAGES made Play Protect treat this VPN as an installer and,
         // together with a 187 MB native-lib extract, hung the OxygenOS installer. The

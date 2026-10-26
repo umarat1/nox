@@ -155,22 +155,33 @@ void main() {
     expect(find.byTooltip('Свернуть шапку'), findsOneWidget);
     expect(t.getSize(find.byType(MaterialApp)).height, 860);
 
-    // Collapsing subscription and server sections shrinks height tightly with no top/bottom space
+    // Subscription collapse still shrinks the window. The server list on a phone
+    // has no chevron and stays expanded.
     await t.tap(find.byTooltip('Свернуть подписку'));
     await t.pump();
     await t.pump();
     expect(find.byTooltip('Развернуть подписку'), findsOneWidget);
     expect(t.getSize(find.byType(MaterialApp)).height, lessThan(750));
+    expect(find.byTooltip('Свернуть серверы'), findsNothing);
+    expect(find.byTooltip('Развернуть серверы'), findsNothing);
+    expect(find.text('Лондон 1'), findsWidgets);
+    final row = find.ancestor(
+      of: find.text('Лондон 1').last,
+      matching: find.byType(Row),
+    );
+    expect(
+      find.descendant(of: row.first, matching: find.text('VLESS')),
+      findsNothing,
+    );
+  });
 
+  testWidgets('desktop keeps server collapse and the protocol line', (t) async {
+    await _app(t, const Size(1280, 800));
+    expect(find.byTooltip('Свернуть серверы'), findsOneWidget);
+    expect(find.text('Hysteria2'), findsWidgets);
     await t.tap(find.byTooltip('Свернуть серверы'));
     await t.pump();
     await t.pump();
-    expect(find.byTooltip('Свернуть шапку'), findsNothing);
     expect(find.byTooltip('Развернуть серверы'), findsOneWidget);
-    final powerY = t.getCenter(find.byIcon(Icons.power_settings_new)).dy;
-    expect(powerY, lessThanOrEqualTo(140));
-    final compactH = t.getSize(find.byType(MaterialApp)).height;
-    expect(compactH, lessThan(360));
-    expect(compactH, greaterThan(240));
   });
 }

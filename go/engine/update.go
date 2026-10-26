@@ -27,9 +27,9 @@ var UpdateFallbackURLs = []string{
 	"https://iji.by/dl/version.json",
 }
 
-// VersionCode is the pubspec build number (290 for 1.0.29). Split APKs use abi*1000+VersionCode;
+// VersionCode is the pubspec build number (300 for 1.0.30). Split APKs use abi*1000+VersionCode;
 // update checks compare VersionCode to the server's top-level versionCode (0.7.x style).
-const VersionCode = 290
+const VersionCode = 300
 
 type UpdateInfo struct {
 	Version string `json:"versionName"`

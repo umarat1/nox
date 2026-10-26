@@ -90,7 +90,7 @@ void toast(BuildContext ctx, String t) {
     ..hideCurrentSnackBar()
     ..showSnackBar(
       SnackBar(
-        content: Text(t),
+        content: Text(t, maxLines: 3, overflow: TextOverflow.ellipsis),
         behavior: SnackBarBehavior.floating,
         duration: const Duration(seconds: 3),
         backgroundColor: const Color(0xDD000000),
@@ -214,9 +214,11 @@ class _BodyState extends State<_Body> {
     final view = c.pref('view', 'list');
     final list = c.visible();
     final mobile = !c.isTv;
+    final phone = !wide;
     final hdrCol = mobile && c.flag('hdrCol', false);
     final subCol = mobile && c.flag('subCol', false);
-    final srvCol = mobile && c.flag('srvCol', false);
+    // Phone column stays open: a saved collapse and the chip chevron are desktop-only.
+    final srvCol = !phone && mobile && c.flag('srvCol', false);
     _scheduleSizeSync(hdrCol, subCol, srvCol);
     final head = <Widget>[
       if (!wide && !srvCol)
@@ -284,7 +286,9 @@ class _BodyState extends State<_Body> {
         shown: list.length,
         mobile: mobile,
         collapsed: srvCol,
-        onToggleCollapse: mobile
+        onToggleCollapse: phone
+            ? null
+            : mobile
             ? () => c.setPrefLive('srvCol', srvCol ? '0' : '1')
             : null,
       ),
@@ -556,15 +560,15 @@ class _BodyState extends State<_Body> {
     }
     if (view == 'grid') {
       final ts = MediaQuery.textScalerOf(context);
-      final cardH = math.max(128.0, ts.scale(78) + 50);
+      final cardH = math.max(104.0, ts.scale(64) + 40);
       return [
         SliverPadding(
           padding: h,
           sliver: SliverGrid.builder(
             gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
               maxCrossAxisExtent: 260,
-              mainAxisSpacing: 7,
-              crossAxisSpacing: 7,
+              mainAxisSpacing: 4,
+              crossAxisSpacing: 4,
               mainAxisExtent: cardH,
             ),
             itemCount: list.length,
@@ -587,8 +591,13 @@ class _BodyState extends State<_Body> {
         padding: h,
         sliver: SliverList.builder(
           itemCount: list.length,
-          itemBuilder: (_, i) =>
-              _ServerRow(c: c, p: p, s: list[i], first: i == 0),
+          itemBuilder: (_, i) => _ServerRow(
+            c: c,
+            p: p,
+            s: list[i],
+            first: i == 0,
+            protocol: wide,
+          ),
         ),
       ),
     ];
@@ -619,7 +628,7 @@ class _BodyState extends State<_Body> {
           ),
         ),
         SizedBox(
-          height: 128,
+          height: 108,
           child: ListView.separated(
             padding: const EdgeInsets.symmetric(horizontal: 12),
             scrollDirection: Axis.horizontal,
@@ -2970,56 +2979,69 @@ class _ServerRow extends StatelessWidget {
   final Pal p;
   final J s;
   final bool first; // carries the tour target
+  final bool protocol; // desktop keeps the protocol line; the phone column does not
   const _ServerRow({
     required this.c,
     required this.p,
     required this.s,
     this.first = false,
+    this.protocol = true,
   });
   @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.only(bottom: 7),
-    child: _Tap(
-      p: p,
-      sel: s['id'] == c.selected,
-      onTap: () => c.select(s['id']),
-      onLong: () => serverSheet(context, c, p, s),
-      padding: const EdgeInsets.fromLTRB(12, 10, 4, 10),
-      child: Row(
-        children: [
-          _flag(p, s),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  dispName(s['name'] ?? ''),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(color: p.txt, fontWeight: FontWeight.w600),
-                ),
-                if (_sub(s).isNotEmpty)
+  Widget build(BuildContext context) {
+    final sub = _sub(s);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 3),
+      child: _Tap(
+        p: p,
+        sel: s['id'] == c.selected,
+        onTap: () => c.select(s['id']),
+        onLong: () => serverSheet(context, c, p, s),
+        padding: const EdgeInsets.fromLTRB(10, 4, 0, 4),
+        child: Row(
+          children: [
+            _flag(p, s, size: 22),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
                   Text(
-                    _sub(s),
+                    dispName(s['name'] ?? ''),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: TextStyle(color: p.sub, fontSize: 12),
+                    style: TextStyle(
+                      color: p.txt,
+                      fontWeight: FontWeight.w600,
+                      height: 1.15,
+                    ),
                   ),
-              ],
+                  if (protocol && sub.isNotEmpty)
+                    Text(
+                      sub,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(color: p.sub, fontSize: 11, height: 1.1),
+                    ),
+                ],
+              ),
             ),
-          ),
-          PingChip(p: p, text: _pingOf(c, s)),
-          IconButton(
-            key: first ? TourKeys.server : null,
-            onPressed: () => serverSheet(context, c, p, s),
-            icon: Icon(Icons.more_vert, color: p.sub, size: 20),
-            tooltip: 'Ещё',
-          ),
-        ],
+            PingChip(p: p, text: _pingOf(c, s)),
+            IconButton(
+              key: first ? TourKeys.server : null,
+              onPressed: () => serverSheet(context, c, p, s),
+              visualDensity: VisualDensity.compact,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints.tightFor(width: 32, height: 32),
+              icon: Icon(Icons.more_vert, color: p.sub, size: 18),
+              tooltip: 'Ещё',
+            ),
+          ],
+        ),
       ),
-    ),
-  );
+    );
+  }
 }
 
 class _ServerCard extends StatelessWidget {
@@ -3039,13 +3061,13 @@ class _ServerCard extends StatelessWidget {
     sel: s['id'] == c.selected,
     onTap: () => c.select(s['id']),
     onLong: () => serverSheet(context, c, p, s),
-    padding: const EdgeInsets.all(12),
+    padding: const EdgeInsets.fromLTRB(10, 6, 6, 6),
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
           children: [
-            _flag(p, s),
+            _flag(p, s, size: 26),
             const Spacer(),
             InkWell(
               key: first ? TourKeys.server : null,
@@ -3059,15 +3081,15 @@ class _ServerCard extends StatelessWidget {
           dispName(s['name'] ?? ''),
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
-          style: TextStyle(color: p.txt, fontWeight: FontWeight.w600),
+          style: TextStyle(color: p.txt, fontWeight: FontWeight.w600, height: 1.15),
         ),
         Text(
           _sub(s),
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
-          style: TextStyle(color: p.sub, fontSize: 12),
+          style: TextStyle(color: p.sub, fontSize: 11, height: 1.1),
         ),
-        const SizedBox(height: 6),
+        const SizedBox(height: 4),
         PingChip(p: p, text: _pingOf(c, s)),
       ],
     ),
@@ -5258,7 +5280,7 @@ class _TextPanel extends StatelessWidget {
           InkWell(
             onTap: () => c.call('Select', [s['id']]),
             child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 6),
+              padding: const EdgeInsets.symmetric(vertical: 2),
               child: Row(
                 children: [
                   Expanded(

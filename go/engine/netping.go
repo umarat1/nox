@@ -4,10 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/binary"
-	"encoding/json"
 	"net"
-	"net/http"
-	"net/url"
 	"runtime"
 	"strconv"
 	"sync"
@@ -78,62 +75,7 @@ func isFakeIP(ip net.IP) bool {
 // cache) are skipped. Used for the disconnected URL test, where sing-box's "local" DNS
 // would otherwise get whatever the OS resolver hands out.
 func (p pingNet) resolveDirect(host string) string {
-	if net.ParseIP(host) != nil {
-		return host
-	}
-	dnsCache.Lock()
-	if e, ok := dnsCache.m[host]; ok && time.Now().Before(e.exp) {
-		dnsCache.Unlock()
-		return e.ip
-	}
-	dnsCache.Unlock()
-	ip := ""
-	for _, s := range []string{"77.88.8.8", "1.1.1.1"} {
-		if ip = p.queryA(s, host); ip != "" && !isFakeIP(net.ParseIP(ip)) {
-			break
-		}
-		ip = ""
-	}
-	if ip == "" {
-		ip = p.dohA(host) // UDP/53 filtered on some networks
-	}
-	if ip != "" {
-		dnsCache.Lock()
-		dnsCache.m[host] = dnsEnt{ip, time.Now().Add(5 * time.Minute)}
-		dnsCache.Unlock()
-		return ip
-	}
-	return p.resolve(host)
-}
-
-// dohA: A record over DNS-over-HTTPS to IP-addressed resolvers (no DNS needed to reach them).
-func (p pingNet) dohA(host string) string {
-	tr := &http.Transport{Proxy: nil, DialContext: p.dialer(3 * time.Second).DialContext,
-		TLSHandshakeTimeout: 3 * time.Second}
-	defer tr.CloseIdleConnections()
-	cl := &http.Client{Timeout: 4 * time.Second, Transport: tr}
-	for _, u := range []string{"https://1.1.1.1/dns-query", "https://8.8.8.8/resolve"} {
-		req, _ := http.NewRequest("GET", u+"?type=A&name="+url.QueryEscape(host), nil)
-		req.Header.Set("Accept", "application/dns-json")
-		r, err := cl.Do(req)
-		if err != nil {
-			continue
-		}
-		var d struct {
-			Answer []struct {
-				Type int
-				Data string
-			}
-		}
-		json.NewDecoder(r.Body).Decode(&d)
-		r.Body.Close()
-		for _, a := range d.Answer {
-			if ip := net.ParseIP(a.Data); a.Type == 1 && ip != nil && !isFakeIP(ip) {
-				return a.Data
-			}
-		}
-	}
-	return ""
+	return p.lookup(host)
 }
 
 // pinIP replaces a domain "server" of a sing-box outbound with a resolved IP for the ping
@@ -180,7 +122,7 @@ func pinIP(ob map[string]any, pn pingNet) {
 
 // resolve returns one IP for host. Bound mode first asks public DNS directly over the
 // physical NIC (no VPN round-trip), then falls back to the system resolver.
-func (p pingNet) resolve(host string) string {
+func (p pingNet) lookup(host string) string {
 	if ip := net.ParseIP(host); ip != nil {
 		return host
 	}
@@ -190,42 +132,32 @@ func (p pingNet) resolve(host string) string {
 		return e.ip
 	}
 	dnsCache.Unlock()
-	ip := ""
-	if p.bound && atomic.LoadInt32(&boundDNSDead) == 0 {
-		for _, s := range []string{"77.88.8.8", "1.1.1.1"} {
-			if ip = p.queryA(s, host); ip != "" {
-				break
-			}
-		}
-		if ip == "" {
-			atomic.StoreInt32(&boundDNSDead, 1) // e.g. blocked by strict_route firewall: use system DNS for this run
-		}
-	}
-	if ip == "" {
-		ctx, cancel := context.WithTimeout(context.Background(), 2500*time.Millisecond)
-		ips, _ := net.DefaultResolver.LookupIP(ctx, "ip", host)
-		cancel()
-		for _, x := range ips {
-			if x.To4() != nil && !isFakeIP(x) {
-				ip = x.String()
-				break
-			}
-		}
-		if ip == "" {
-			for _, x := range ips {
-				if !isFakeIP(x) {
-					ip = x.String()
-					break
-				}
-			}
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+	opt := lookupOpt{}
+	if p.bound {
+		// The OS resolver follows the tunnel. Ask DoH and the public servers
+		// through the physical NIC instead.
+		opt.skipSystem = true
+		opt.dial = func(ctx context.Context, network, addr string) (net.Conn, error) {
+			return p.dialer(2*time.Second).DialContext(ctx, network, addr)
 		}
 	}
-	if ip != "" {
-		dnsCache.Lock()
-		dnsCache.m[host] = dnsEnt{ip, time.Now().Add(5 * time.Minute)}
-		dnsCache.Unlock()
+	ip, err := lookupHost(ctx, host, opt)
+	if err != nil || ip == "" {
+		if p.bound {
+			atomic.StoreInt32(&boundDNSDead, 1)
+		}
+		return ""
 	}
+	dnsCache.Lock()
+	dnsCache.m[host] = dnsEnt{ip, time.Now().Add(5 * time.Minute)}
+	dnsCache.Unlock()
 	return ip
+}
+
+func (p pingNet) resolve(host string) string {
+	return p.lookup(host)
 }
 
 // queryA: minimal DNS A lookup over UDP through the (possibly bound) socket.

@@ -73,6 +73,56 @@ func TestFetchSubReplacesList(t *testing.T) {
 	}
 }
 
+func TestFetchFailureKeepsServers(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "down", 500)
+	}))
+	defer srv.Close()
+	a := NewApp(t.TempDir(), t.TempDir())
+	a.mu.Lock()
+	a.p.Subs = []Sub{{ID: "s1", URL: srv.URL, Name: "Panel"}}
+	a.p.Servers = []core.Server{{ID: "keep", SubID: "s1", Name: "Keep", Type: "VLESS", Host: "9.9.9.9", Port: 443}}
+	a.save()
+	a.mu.Unlock()
+	msg := a.RefreshSub("s1")
+	if !strings.Contains(msg, "Ошибка обновления") || strings.Contains(msg, "http://") {
+		t.Fatal(msg)
+	}
+	st := a.GetState()
+	if len(st.Servers) != 1 || st.Servers[0].Name != "Keep" || st.Servers[0].Host != "9.9.9.9" {
+		t.Fatalf("list wiped: %+v", st.Servers)
+	}
+}
+
+func TestProfileUpdateURLIsStored(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasPrefix(r.Header.Get("User-Agent"), "v2rayNG/") {
+			http.Error(w, "ua", 404)
+			return
+		}
+		w.Header().Set("subscription-userinfo", "upload=0; download=0; total=1; expire=0")
+		w.Header().Set("profile-update-url", "https://rus2.example/api/sub/new")
+		_, _ = w.Write([]byte(subNew))
+	}))
+	defer srv.Close()
+	a := NewApp(t.TempDir(), t.TempDir())
+	a.mu.Lock()
+	a.p.Subs = []Sub{{ID: "s1", URL: srv.URL, Name: "Panel"}}
+	a.p.Servers = []core.Server{{ID: "old", SubID: "s1", Name: "Old", Type: "VLESS", Host: "9.9.9.9", Port: 443}}
+	a.save()
+	a.mu.Unlock()
+	if _, _, err := a.fetchSub(&a.p.Subs[0], false); err != nil {
+		t.Fatal(err)
+	}
+	st := a.GetState()
+	if st.Subs[0].URL != "https://rus2.example/api/sub/new" {
+		t.Fatalf("url %q", st.Subs[0].URL)
+	}
+	if len(st.Servers) != 1 || st.Servers[0].Name != "New" {
+		t.Fatalf("servers %+v", st.Servers)
+	}
+}
+
 func TestFetchSubSkipsHTML(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasPrefix(r.Header.Get("User-Agent"), "v2rayNG/") {
