@@ -42,13 +42,22 @@ object NetMonitor {
         })
     }
 
-    /** Non-VPN network that has internet, or null. */
-    fun underlying(cm: ConnectivityManager): Network? =
-        cm.allNetworks.firstOrNull { n ->
-            val caps = cm.getNetworkCapabilities(n) ?: return@firstOrNull false
-            caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
-                !caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN)
+    /** Physical network for sockets and DNS. The VPN itself is never chosen.
+     *  Prefer the system default when it is not the tunnel, then a validated
+     *  network, then any network that claims internet. */
+    fun underlying(cm: ConnectivityManager): Network? {
+        fun ok(n: Network, needValidated: Boolean): Boolean {
+            val caps = cm.getNetworkCapabilities(n) ?: return false
+            if (caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN)) return false
+            if (!caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)) return false
+            if (needValidated && !caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)) return false
+            return true
         }
+        val active = cm.activeNetwork
+        if (active != null && ok(active, false)) return active
+        return cm.allNetworks.firstOrNull { ok(it, true) }
+            ?: cm.allNetworks.firstOrNull { ok(it, false) }
+    }
 
     private fun bindProcess(cm: ConnectivityManager, n: Network?) {
         try { cm.bindProcessToNetwork(n) } catch (_: Exception) {}

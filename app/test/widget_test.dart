@@ -26,6 +26,10 @@ void main() {
     await t.pump();
     expect(find.text('ПОДКЛЮЧЕНО'), findsOneWidget);
     expect(find.text('62 мс'), findsWidgets);
+    // Phone list is grouped by country (Happ-style sections).
+    expect(find.text('Британия · 2'), findsOneWidget);
+    expect(find.text('Антиблок · 1'), findsOneWidget);
+    expect(find.byType(RefreshIndicator), findsOneWidget);
     // dead server hidden by default; dedup/hideDead logic
     expect(c.visible().any((s) => s['ping'] == -1), isFalse);
   });
