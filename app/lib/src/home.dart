@@ -85,12 +85,26 @@ class Home extends StatelessWidget {
   }
 }
 
+Future<void> finishRefresh(BuildContext context, NoxController c, dynamic r) async {
+  await c.refresh();
+  if (!context.mounted) return;
+  if (r is String && r.isNotEmpty) {
+    toast(context, r);
+  } else if (c.fatal != null && c.fatal!.isNotEmpty) {
+    toast(context, c.fatal!);
+  } else if (r == null) {
+    toast(context, 'Не удалось обновить');
+  } else {
+    toast(context, 'Обновлено');
+  }
+}
+
 void toast(BuildContext ctx, String t) {
   ScaffoldMessenger.of(ctx)
     ..hideCurrentSnackBar()
     ..showSnackBar(
       SnackBar(
-        content: Text(t),
+        content: Text(t, maxLines: 3, overflow: TextOverflow.ellipsis),
         behavior: SnackBarBehavior.floating,
         duration: const Duration(seconds: 3),
         backgroundColor: const Color(0xDD000000),
@@ -207,12 +221,18 @@ class _BodyState extends State<_Body> {
     }
     if (c.state == null)
       return const Center(child: CircularProgressIndicator());
+    if (c.pref('panel', '') == 'text') {
+      _scheduleSizeSync(false, false, false);
+      return _TextPanel(c: c, p: p);
+    }
     final view = c.pref('view', 'list');
     final list = c.visible();
     final mobile = !c.isTv;
+    final phone = !wide;
     final hdrCol = mobile && c.flag('hdrCol', false);
     final subCol = mobile && c.flag('subCol', false);
-    final srvCol = mobile && c.flag('srvCol', false);
+    // Phone column stays open: a saved collapse and the chip chevron are desktop-only.
+    final srvCol = !phone && mobile && c.flag('srvCol', false);
     _scheduleSizeSync(hdrCol, subCol, srvCol);
     final head = <Widget>[
       if (!wide && !srvCol)
@@ -280,7 +300,9 @@ class _BodyState extends State<_Body> {
         shown: list.length,
         mobile: mobile,
         collapsed: srvCol,
-        onToggleCollapse: mobile
+        onToggleCollapse: phone
+            ? null
+            : mobile
             ? () => c.setPrefLive('srvCol', srvCol ? '0' : '1')
             : null,
       ),
@@ -552,15 +574,15 @@ class _BodyState extends State<_Body> {
     }
     if (view == 'grid') {
       final ts = MediaQuery.textScalerOf(context);
-      final cardH = math.max(128.0, ts.scale(78) + 50);
+      final cardH = math.max(104.0, ts.scale(64) + 40);
       return [
         SliverPadding(
           padding: h,
           sliver: SliverGrid.builder(
             gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
               maxCrossAxisExtent: 260,
-              mainAxisSpacing: 7,
-              crossAxisSpacing: 7,
+              mainAxisSpacing: 4,
+              crossAxisSpacing: 4,
               mainAxisExtent: cardH,
             ),
             itemCount: list.length,
@@ -583,8 +605,13 @@ class _BodyState extends State<_Body> {
         padding: h,
         sliver: SliverList.builder(
           itemCount: list.length,
-          itemBuilder: (_, i) =>
-              _ServerRow(c: c, p: p, s: list[i], first: i == 0),
+          itemBuilder: (_, i) => _ServerRow(
+            c: c,
+            p: p,
+            s: list[i],
+            first: i == 0,
+            protocol: wide,
+          ),
         ),
       ),
     ];
@@ -615,7 +642,7 @@ class _BodyState extends State<_Body> {
           ),
         ),
         SizedBox(
-          height: 128,
+          height: 108,
           child: ListView.separated(
             padding: const EdgeInsets.symmetric(horizontal: 12),
             scrollDirection: Axis.horizontal,
@@ -1760,12 +1787,7 @@ class _SubBlock extends StatelessWidget {
                 mobile: mobile,
                 onTap: () async {
                   final r = await c.call('RefreshSub', [b['id']]);
-                  await c.refresh();
-                  if (context.mounted)
-                    toast(
-                      context,
-                      (r is String && r.isNotEmpty) ? r : 'Обновлено',
-                    );
+                  if (context.mounted) await finishRefresh(context, c, r);
                 },
               ),
               const SizedBox(width: 6),
@@ -2619,10 +2641,7 @@ class _FilterBarState extends State<_FilterBar> {
                   onTap: () async {
                     toast(context, 'Обновляю подписки…');
                     final r = await c.call('RefreshSubs');
-                    await c.refresh();
-                    if (context.mounted) {
-                      toast(context, (r ?? 'Готово').toString());
-                    }
+                    if (context.mounted) await finishRefresh(context, c, r);
                   },
                 ),
               _IconBtn(
@@ -2966,56 +2985,69 @@ class _ServerRow extends StatelessWidget {
   final Pal p;
   final J s;
   final bool first; // carries the tour target
+  final bool protocol; // desktop keeps the protocol line; the phone column does not
   const _ServerRow({
     required this.c,
     required this.p,
     required this.s,
     this.first = false,
+    this.protocol = true,
   });
   @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.only(bottom: 7),
-    child: _Tap(
-      p: p,
-      sel: s['id'] == c.selected,
-      onTap: () => c.select(s['id']),
-      onLong: () => serverSheet(context, c, p, s),
-      padding: const EdgeInsets.fromLTRB(12, 10, 4, 10),
-      child: Row(
-        children: [
-          _flag(p, s),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  dispName(s['name'] ?? ''),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(color: p.txt, fontWeight: FontWeight.w600),
-                ),
-                if (_sub(s).isNotEmpty)
+  Widget build(BuildContext context) {
+    final sub = _sub(s);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 3),
+      child: _Tap(
+        p: p,
+        sel: s['id'] == c.selected,
+        onTap: () => c.select(s['id']),
+        onLong: () => serverSheet(context, c, p, s),
+        padding: const EdgeInsets.fromLTRB(10, 4, 0, 4),
+        child: Row(
+          children: [
+            _flag(p, s, size: 22),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
                   Text(
-                    _sub(s),
+                    dispName(s['name'] ?? ''),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: TextStyle(color: p.sub, fontSize: 12),
+                    style: TextStyle(
+                      color: p.txt,
+                      fontWeight: FontWeight.w600,
+                      height: 1.15,
+                    ),
                   ),
-              ],
+                  if (protocol && sub.isNotEmpty)
+                    Text(
+                      sub,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(color: p.sub, fontSize: 11, height: 1.1),
+                    ),
+                ],
+              ),
             ),
-          ),
-          PingChip(p: p, text: _pingOf(c, s)),
-          IconButton(
-            key: first ? TourKeys.server : null,
-            onPressed: () => serverSheet(context, c, p, s),
-            icon: Icon(Icons.more_vert, color: p.sub, size: 20),
-            tooltip: 'Ещё',
-          ),
-        ],
+            PingChip(p: p, text: _pingOf(c, s)),
+            IconButton(
+              key: first ? TourKeys.server : null,
+              onPressed: () => serverSheet(context, c, p, s),
+              visualDensity: VisualDensity.compact,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints.tightFor(width: 32, height: 32),
+              icon: Icon(Icons.more_vert, color: p.sub, size: 18),
+              tooltip: 'Ещё',
+            ),
+          ],
+        ),
       ),
-    ),
-  );
+    );
+  }
 }
 
 class _ServerCard extends StatelessWidget {
@@ -3035,13 +3067,13 @@ class _ServerCard extends StatelessWidget {
     sel: s['id'] == c.selected,
     onTap: () => c.select(s['id']),
     onLong: () => serverSheet(context, c, p, s),
-    padding: const EdgeInsets.all(12),
+    padding: const EdgeInsets.fromLTRB(10, 6, 6, 6),
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
           children: [
-            _flag(p, s),
+            _flag(p, s, size: 26),
             const Spacer(),
             InkWell(
               key: first ? TourKeys.server : null,
@@ -3055,15 +3087,15 @@ class _ServerCard extends StatelessWidget {
           dispName(s['name'] ?? ''),
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
-          style: TextStyle(color: p.txt, fontWeight: FontWeight.w600),
+          style: TextStyle(color: p.txt, fontWeight: FontWeight.w600, height: 1.15),
         ),
         Text(
           _sub(s),
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
-          style: TextStyle(color: p.sub, fontSize: 12),
+          style: TextStyle(color: p.sub, fontSize: 11, height: 1.1),
         ),
-        const SizedBox(height: 6),
+        const SizedBox(height: 4),
         PingChip(p: p, text: _pingOf(c, s)),
       ],
     ),
@@ -3545,7 +3577,14 @@ void settingsSheet(BuildContext context, NoxController c, Pal p) {
         }
         await c.saveSettings({k: !(s[k] == true)});
         // routing is part of the running config: reconnect to apply now
-        const live = {'directRu', 'ruApps', 'blockAds', 'ipv6', 'allowLan'};
+        const live = {
+          'directRu',
+          'ruApps',
+          'blockAds',
+          'ipv6',
+          'allowLan',
+          'fastDial',
+        };
         if (live.contains(k) && c.connected) {
           await c.call('Disconnect');
           await c.call('Connect');
@@ -3637,6 +3676,17 @@ void settingsSheet(BuildContext context, NoxController c, Pal p) {
             shareVpnDialog(context, c, p);
           },
         ),
+      Padding(
+        padding: const EdgeInsets.fromLTRB(4, 10, 4, 2),
+        child: Text(
+          'Внешний вид',
+          style: TextStyle(
+            color: p.sub,
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ),
       item(
         p,
         'Тема',
@@ -3671,6 +3721,43 @@ void settingsSheet(BuildContext context, NoxController c, Pal p) {
         onTap: () {
           Navigator.pop(ctx);
           c.setPref('vol3d', vol3dFromUi(c.ui) ? '0' : '1');
+        },
+      ),
+      item(
+        p,
+        'Шаблон',
+        desc: c.pref('panel', '') == 'text' ? 'Текстовый' : 'Стандартный',
+        arrow: true,
+        onTap: () {
+          Navigator.pop(ctx);
+          sheet(
+            context,
+            p,
+            'Шаблон',
+            (c2) => [
+              item(
+                p,
+                'Стандартный',
+                desc: 'Кнопка, график скорости, карточки',
+                checked: c.pref('panel', '') != 'text',
+                onTap: () {
+                  c.setPref('panel', '');
+                  Navigator.pop(c2);
+                },
+              ),
+              item(
+                p,
+                'Текстовый',
+                desc:
+                    'Статус, страна, пинг, протокол и скорости текстом. Без графиков',
+                checked: c.pref('panel', '') == 'text',
+                onTap: () {
+                  c.setPref('panel', 'text');
+                  Navigator.pop(c2);
+                },
+              ),
+            ],
+          );
         },
       ),
       item(
@@ -3790,6 +3877,16 @@ void settingsSheet(BuildContext context, NoxController c, Pal p) {
         },
       ),
       const SizedBox(height: 10),
+      swItem(
+        'autoBest',
+        'Автовыбор самого быстрого',
+        'После пинга, пока нет соединения, выбирается сервер с меньшей задержкой',
+      ),
+      swItem(
+        'fastDial',
+        'Быстрое соединение',
+        'TCP Fast Open и мультиплексирование там, где это безопасно (не VLESS+Vision и не QUIC)',
+      ),
       swItem(
         'autoSwitch',
         'Автопереключение при блокировке',
@@ -4179,9 +4276,7 @@ void subSheet(BuildContext context, NoxController c, Pal p, J b) {
         onTap: () async {
           Navigator.pop(ctx);
           final r = await c.call('RefreshSub', [b['id']]);
-          await c.refresh();
-          if (context.mounted)
-            toast(context, (r is String && r.isNotEmpty) ? r : 'Обновлено');
+          if (context.mounted) await finishRefresh(context, c, r);
         },
       ),
       item(
@@ -4316,6 +4411,75 @@ void serverSheet(BuildContext context, NoxController c, Pal p, J s) {
   );
 }
 
+/// Error line inside the add sheet. The sheet stays open when import fails,
+/// because a toast behind the modal is easy to miss.
+class _ImportButton extends StatefulWidget {
+  final BuildContext host;
+  final BuildContext sheet;
+  final NoxController c;
+  final Pal p;
+  final TextEditingController tc;
+  const _ImportButton({
+    required this.host,
+    required this.sheet,
+    required this.c,
+    required this.p,
+    required this.tc,
+  });
+  @override
+  State<_ImportButton> createState() => _ImportButtonState();
+}
+
+class _ImportButtonState extends State<_ImportButton> {
+  bool busy = false;
+  String? err;
+  @override
+  Widget build(BuildContext context) {
+    final p = widget.p;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (err != null) ...[
+          Text(err!, style: TextStyle(color: p.red, fontSize: 13)),
+          const SizedBox(height: 8),
+        ],
+        _Btn(
+          p: p,
+          label: busy ? 'Добавляю…' : 'Добавить',
+          onTap: () async {
+            if (busy) return;
+            setState(() {
+              busy = true;
+              err = null;
+            });
+            final r = await widget.c.call('Import', [widget.tc.text]);
+            if (!mounted) return;
+            if (r is Map && r['ok'] == true) {
+              if (widget.sheet.mounted) Navigator.pop(widget.sheet);
+              await widget.c.refresh();
+              if (widget.host.mounted) {
+                final errs = (r['errors'] as List?)?.length ?? 0;
+                toast(
+                  widget.host,
+                  '${r['msg']}${errs > 0 ? ' · ошибок: $errs' : ''}',
+                );
+              }
+              return;
+            }
+            final msg = r is Map && '${r['msg'] ?? ''}'.isNotEmpty
+                ? '${r['msg']}'
+                : (widget.c.fatal ?? 'Не удалось добавить');
+            setState(() {
+              busy = false;
+              err = msg;
+            });
+          },
+        ),
+      ],
+    );
+  }
+}
+
 void addSheet(BuildContext context, NoxController c, Pal p) {
   final tc = TextEditingController();
   sheet(
@@ -4368,6 +4532,16 @@ void addSheet(BuildContext context, NoxController c, Pal p) {
             chainSheet(context, c, p);
           },
         ),
+      item(
+        p,
+        'Добавить вручную',
+        desc: 'Форма по протоколу, цифровая клавиатура для адреса и порта',
+        arrow: true,
+        onTap: () {
+          Navigator.pop(ctx);
+          manualSheet(context, c, p);
+        },
+      ),
       const SizedBox(height: 12),
       TextField(
         controller: tc,
@@ -4431,19 +4605,7 @@ void addSheet(BuildContext context, NoxController c, Pal p) {
           ],
         ),
       if (!c.isTv) const SizedBox(height: 10),
-      _Btn(
-        p: p,
-        label: 'Добавить',
-        onTap: () async {
-          final r = await c.call('Import', [tc.text]);
-          if (ctx.mounted) Navigator.pop(ctx);
-          await c.refresh();
-          if (r is Map && context.mounted) {
-            final errs = (r['errors'] as List?)?.length ?? 0;
-            toast(context, '${r['msg']}${errs > 0 ? ' · ошибок: $errs' : ''}');
-          }
-        },
-      ),
+      _ImportButton(host: context, sheet: ctx, c: c, p: p, tc: tc),
     ],
   );
 }
@@ -4955,10 +5117,257 @@ String manualLink(String proto, Map<String, String> v) {
 }
 
 /// «Добавить вручную»: protocol picker + per-protocol form (Exclave-style).
+class _NumPad extends StatelessWidget {
+  final Pal p;
+  final TextEditingController controller;
+  final ValueChanged<String> onChanged;
+  final bool dot;
+  final bool colon;
+  const _NumPad({
+    required this.p,
+    required this.controller,
+    required this.onChanged,
+    this.dot = false,
+    this.colon = false,
+  });
+
+  void _set(String next) {
+    controller.value = TextEditingValue(
+      text: next,
+      selection: TextSelection.collapsed(offset: next.length),
+    );
+    onChanged(next);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final keys = <String>[
+      for (var i = 1; i <= 9; i++) '$i',
+      if (dot) '.',
+      '0',
+      if (colon) ':',
+      '⌫',
+    ];
+    return Padding(
+      padding: const EdgeInsets.only(top: 6),
+      child: Wrap(
+        spacing: 6,
+        runSpacing: 6,
+        children: [
+          for (final k in keys)
+            InkWell(
+              onTap: () {
+                final t = controller.text;
+                if (k == '⌫') {
+                  if (t.isNotEmpty) _set(t.substring(0, t.length - 1));
+                  return;
+                }
+                _set(t + k);
+              },
+              borderRadius: BorderRadius.circular(8),
+              child: Container(
+                width: 36,
+                height: 32,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: p.chip,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: p.line),
+                ),
+                child: Text(k, style: TextStyle(color: p.txt, fontSize: 14)),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+String _countryOf(String name) {
+  final iso = region(name);
+  if (iso == null) return '';
+  return regionName[iso] ?? '';
+}
+
+class _TextPanel extends StatelessWidget {
+  final NoxController c;
+  final Pal p;
+  const _TextPanel({required this.c, required this.p});
+
+  @override
+  Widget build(BuildContext context) {
+    final on = c.connected;
+    final st = c.status;
+    final label = on
+        ? 'Подключено'
+        : st == 'connecting'
+        ? 'Подключение…'
+        : st == 'disconnecting'
+        ? 'Отключение…'
+        : 'Отключено';
+    final cur = c.current;
+    final name = cur == null ? '' : '${cur['name'] ?? ''}';
+    final country = _countryOf(name);
+    final proto = cur == null ? '' : '${cur['type'] ?? ''}';
+    final ping = cur == null ? '—' : pingText(cur['ping'] as int?);
+    final t = c.traffic;
+    final servers = c.servers.where((s) => s['type'] != '_balancer').toList();
+    Text row(String k, String v) => Text(
+      '$k: $v',
+      style: TextStyle(color: p.txt, fontSize: 16, height: 1.4),
+    );
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+      children: [
+        Text(
+          label,
+          style: TextStyle(
+            color: p.txt,
+            fontSize: 28,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        const SizedBox(height: 10),
+        row('Сервер', name.isEmpty ? 'не выбран' : dispName(name)),
+        row('Страна', country.isEmpty ? '—' : country),
+        row('Пинг', ping),
+        row('Протокол', proto.isEmpty ? '—' : proto),
+        row(
+          'Скорость',
+          '↓ ${fmtBytes(t?['Down'] ?? 0)}/с   ↑ ${fmtBytes(t?['Up'] ?? 0)}/с',
+        ),
+        row(
+          'Трафик',
+          '↓ ${fmtBytes(t?['DownTotal'] ?? 0)}   ↑ ${fmtBytes(t?['UpTotal'] ?? 0)}',
+        ),
+        const SizedBox(height: 16),
+        SizedBox(
+          width: double.infinity,
+          height: 64,
+          child: Material(
+            color: p.acc,
+            borderRadius: BorderRadius.circular(8),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(8),
+              onTap: c.busy ? null : c.toggle,
+              child: Center(
+                child: Text(
+                  on ? 'Отключить' : 'Подключить',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 20,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+        Wrap(
+          spacing: 4,
+          children: [
+            TextButton(
+              onPressed: () => settingsSheet(context, c, p),
+              child: Text('Настройки', style: TextStyle(color: p.acc2)),
+            ),
+            TextButton(
+              onPressed: () => addSheet(context, c, p),
+              child: Text('Добавить', style: TextStyle(color: p.acc2)),
+            ),
+            TextButton(
+              onPressed: () => c.ping(const []),
+              child: Text('Пинг', style: TextStyle(color: p.acc2)),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Text(
+              'Подписки',
+              style: TextStyle(
+                color: p.txt,
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const Spacer(),
+            TextButton(
+              onPressed: () async {
+                final r = await c.call('RefreshSubs');
+                if (context.mounted) await finishRefresh(context, c, r);
+              },
+              child: Text('Обновить', style: TextStyle(color: p.acc2)),
+            ),
+          ],
+        ),
+        if (c.subs.isEmpty)
+          Text('Нет подписок', style: TextStyle(color: p.sub))
+        else
+          for (final sub in c.subs)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      '${sub['name'] ?? sub['url'] ?? 'Подписка'}',
+                      style: TextStyle(color: p.txt, fontSize: 14),
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: () async {
+                      final r = await c.call('RefreshSub', [sub['id']]);
+                      if (context.mounted) await finishRefresh(context, c, r);
+                    },
+                    child: Text('Обновить', style: TextStyle(color: p.sub)),
+                  ),
+                ],
+              ),
+            ),
+        const SizedBox(height: 8),
+        Text(
+          'Серверы',
+          style: TextStyle(
+            color: p.txt,
+            fontSize: 16,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        const SizedBox(height: 4),
+        for (final s in servers)
+          InkWell(
+            onTap: () => c.call('Select', [s['id']]),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 2),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      '${s['id'] == c.selected ? '● ' : ''}${dispName('${s['name'] ?? ''}')}'
+                      '${_countryOf('${s['name'] ?? ''}') == '' ? '' : ' · ${_countryOf('${s['name'] ?? ''}')}'}'
+                      ' · ${s['type'] ?? ''}',
+                      style: TextStyle(color: p.txt, fontSize: 15, height: 1.3),
+                    ),
+                  ),
+                  Text(
+                    pingText(s['ping'] as int?),
+                    style: TextStyle(color: p.txt, fontSize: 15),
+                  ),
+                ],
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
 void manualSheet(BuildContext context, NoxController c, Pal p) {
   var proto = 'VLESS';
   final vals = <String, Map<String, String>>{};
   final ctrls = <String, TextEditingController>{};
+  final paste = TextEditingController();
   Map<String, String> cur() => vals.putIfAbsent(
     proto,
     () => {for (final f in _manualProtos[proto]!) f.k: f.def},
@@ -4993,6 +5402,47 @@ void manualSheet(BuildContext context, NoxController c, Pal p) {
           return Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              TextField(
+                controller: paste,
+                minLines: 1,
+                maxLines: 4,
+                style: TextStyle(color: p.txt, fontSize: 14),
+                decoration: deco(
+                  'Вставить ссылку vless://, vmess:// или подписку',
+                ),
+              ),
+              const SizedBox(height: 8),
+              _Btn(
+                p: p,
+                secondary: true,
+                label: 'Добавить из ссылки или буфера',
+                onTap: () async {
+                  var text = paste.text.trim();
+                  if (text.isEmpty) {
+                    final clip = await Clipboard.getData('text/plain');
+                    text = clip?.text?.trim() ?? '';
+                  }
+                  if (!ctx.mounted) return;
+                  if (text.isEmpty) {
+                    toast(ctx, 'Нечего добавить');
+                    return;
+                  }
+                  final r = await c.call('Import', [text]);
+                  await c.refresh();
+                  if (!ctx.mounted) return;
+                  if (r is Map) {
+                    final errs = (r['errors'] as List?)?.length ?? 0;
+                    toast(
+                      ctx,
+                      '${r['msg']}${errs > 0 ? ' · ошибок: $errs' : ''}',
+                    );
+                    if (errs == 0 && '${r['msg']}'.contains('Добавлено')) {
+                      Navigator.pop(ctx);
+                    }
+                  }
+                },
+              ),
+              const SizedBox(height: 12),
               Text('Протокол', style: TextStyle(color: p.sub, fontSize: 12)),
               const SizedBox(height: 6),
               Wrap(
@@ -5066,14 +5516,27 @@ void manualSheet(BuildContext context, NoxController c, Pal p) {
                           ],
                           onChanged: (x) => set(() => v[f.k] = x ?? ''),
                         )
-                      : TextField(
-                          controller: tc(f.k),
-                          onChanged: (x) => v[f.k] = x,
-                          keyboardType: f.k == 'port' || f.k == 'mtu'
-                              ? TextInputType.number
-                              : TextInputType.text,
-                          style: TextStyle(color: p.txt, fontSize: 14),
-                          decoration: deco(f.label),
+                      : Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            TextField(
+                              controller: tc(f.k),
+                              onChanged: (x) => v[f.k] = x,
+                              keyboardType: f.k == 'port' || f.k == 'mtu'
+                                  ? TextInputType.number
+                                  : TextInputType.text,
+                              style: TextStyle(color: p.txt, fontSize: 14),
+                              decoration: deco(f.label),
+                            ),
+                            if (f.k == 'host' || f.k == 'port' || f.k == 'mtu')
+                              _NumPad(
+                                p: p,
+                                controller: tc(f.k),
+                                dot: f.k == 'host',
+                                colon: f.k == 'host',
+                                onChanged: (x) => v[f.k] = x,
+                              ),
+                          ],
                         ),
                 ),
               const SizedBox(height: 6),

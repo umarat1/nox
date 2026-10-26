@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net"
 	"net/url"
-	"os/exec"
 	"strconv"
 	"time"
 
@@ -55,7 +54,7 @@ func (a *App) startNaive(cfg map[string]any) (*extProc, error) {
 	if ip != "" {
 		args = append(args, "--host-resolver-rules=MAP "+host+" "+ip)
 	}
-	cmd := exec.Command(a.bin("naive"), args...)
+	cmd := command(a.bin("naive"), args...)
 	hideWindow(cmd)
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("Naive: движок не найден: %w", err)

@@ -2,6 +2,10 @@ package engine
 
 import "strings"
 
+// ivi packages always bypass the VPN, even when «российские приложения» is off.
+// The prefix is expanded to every installed ru.ivi.* app (phone, TV, lite).
+var iviPkgs = []string{"ru.ivi.client", "ru.ivi.client.tv", "ru.ivi.androidtv", "ru.ivi.lite"}
+
 // RuApp: a Russian app that, when installed, bypasses the VPN on Android (as 0.7.22+ RuApps).
 // Package ids from the 0.7.69 list, checked against Google Play / RuStore (several banks are
 // RuStore-only now, their ids are unchanged). TV apps included (Android TV parity).
@@ -76,9 +80,55 @@ func isRuApp(pkg string) bool {
 // effectiveSplit: user split + Russian apps. RU apps apply in «all apps» and «all except
 // selected» modes (in «only selected» they are simply not in the VPN anyway). Prefix entries
 // ("ru.yandex.*") are expanded to installed packages by the Android service.
+func iviPkg(p string) bool {
+	if p == "ru.ivi.*" || strings.HasPrefix(strings.TrimSuffix(p, "*"), "ru.ivi.") {
+		return true
+	}
+	return false
+}
+
+// withIviBypass forces the ivi app outside the VPN.
+// include-mode: drop ivi from the allow-list (its traffic never enters the tunnel).
+// If that would leave the allow-list empty, switch to exclude so the rest of the
+// device stays in the VPN and only ivi is outside.
+func withIviBypass(mode string, apps []string) (string, []string) {
+	if mode == "include" {
+		var keep []string
+		for _, p := range apps {
+			if !iviPkg(p) {
+				keep = append(keep, p)
+			}
+		}
+		if len(keep) == 0 {
+			return "exclude", iviExcludeList()
+		}
+		return "include", keep
+	}
+	seen := map[string]bool{}
+	var out []string
+	add := func(p string) {
+		if p != "" && !seen[p] {
+			seen[p] = true
+			out = append(out, p)
+		}
+	}
+	for _, p := range apps {
+		add(p)
+	}
+	for _, p := range iviExcludeList() {
+		add(p)
+	}
+	return "exclude", out
+}
+
+func iviExcludeList() []string {
+	out := append([]string{}, iviPkgs...)
+	return append(out, "ru.ivi.*")
+}
+
 func effectiveSplit(mode string, apps []string, ru bool, off []string) (string, []string) {
 	if !ru || mode == "include" {
-		return mode, apps
+		return withIviBypass(mode, apps)
 	}
 	skip := map[string]bool{}
 	for _, p := range off {
@@ -107,5 +157,5 @@ func effectiveSplit(mode string, apps []string, ru bool, off []string) (string, 
 			add(p + "*")
 		}
 	}
-	return "exclude", out
+	return withIviBypass("exclude", out)
 }

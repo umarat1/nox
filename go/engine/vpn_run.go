@@ -31,6 +31,7 @@ func (a *App) connectFullTunnel(ctx context.Context, srv core.Server) error {
 func (a *App) markConnected(name string) {
 	a.mu.Lock()
 	a.status = "connected"
+	noteTunnel(a.status)
 	a.since = time.Now().Unix()
 	a.mu.Unlock()
 	a.log("подключено: " + name)

@@ -9,7 +9,11 @@ import com.lumen.core.noxcore.Noxcore
 import org.json.JSONArray
 import org.json.JSONObject
 import java.net.Inet4Address
+import java.net.InetAddress
 import java.net.NetworkInterface
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
 
 /** Default (physical) network for sing-box's interface monitor, and the system DNS server. */
 object NetMonitor {
@@ -25,15 +29,46 @@ object NetMonitor {
             override fun onLinkPropertiesChanged(network: Network, lp: LinkProperties) = push(cm, network)
             override fun onCapabilitiesChanged(network: Network, caps: NetworkCapabilities) = push(cm, network)
             override fun onLost(network: Network) {
-                if (cm.activeNetwork == null) {
+                val under = underlying(cm)
+                bindProcess(cm, under)
+                if (under == null) {
                     last = ""
                     Noxcore.defaultInterfaceChanged("", -1, false)
+                    Noxcore.underlyingNetworkChanged("")
+                } else {
+                    push(cm, under)
                 }
             }
         })
     }
 
+    /** Non-VPN network that has internet, or null. */
+    fun underlying(cm: ConnectivityManager): Network? =
+        cm.allNetworks.firstOrNull { n ->
+            val caps = cm.getNetworkCapabilities(n) ?: return@firstOrNull false
+            caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+                !caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN)
+        }
+
+    private fun bindProcess(cm: ConnectivityManager, n: Network?) {
+        try { cm.bindProcessToNetwork(n) } catch (_: Exception) {}
+    }
+
+    /** Pin one socket to the current physical network. Reflection: FileDescriptor has no public ctor for an existing int. */
+    fun bindSocket(ctx: Context, fd: Int) {
+        val cm = ctx.getSystemService(ConnectivityManager::class.java) ?: return
+        val n = underlying(cm) ?: return
+        try {
+            val f = java.io.FileDescriptor()
+            val field = java.io.FileDescriptor::class.java.getDeclaredField("descriptor")
+            field.isAccessible = true
+            field.setInt(f, fd)
+            n.bindSocket(f)
+        } catch (_: Exception) {}
+    }
+
     private fun push(cm: ConnectivityManager, n: Network) {
+        bindProcess(cm, underlying(cm))
         val caps = cm.getNetworkCapabilities(n)
         if (caps?.hasTransport(NetworkCapabilities.TRANSPORT_VPN) == true) return
         val lp = cm.getLinkProperties(n) ?: return
@@ -45,6 +80,40 @@ object NetMonitor {
         if (key == last) return
         last = key
         Noxcore.defaultInterfaceChanged(name, idx, metered)
+        Noxcore.underlyingNetworkChanged(name)
+    }
+
+    /** System resolver on a physical network. Empty when it does not answer in time. */
+    fun resolve(ctx: Context, host: String): String {
+        val cm = ctx.getSystemService(ConnectivityManager::class.java) ?: return ""
+        val nets = cm.allNetworks.toList().sortedBy { n ->
+            val caps = cm.getNetworkCapabilities(n)
+            if (caps?.hasTransport(NetworkCapabilities.TRANSPORT_VPN) == true) 1 else 0
+        }
+        val got = AtomicReference("")
+        val done = CountDownLatch(1)
+        Thread {
+            try {
+                for (n in nets) {
+                    val caps = cm.getNetworkCapabilities(n) ?: continue
+                    if (!caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)) continue
+                    try {
+                        val ips = n.getAllByName(host).mapNotNull { a: InetAddress ->
+                            a.hostAddress?.substringBefore('%')
+                        }
+                        if (ips.isNotEmpty()) {
+                            got.set(ips.joinToString(","))
+                            break
+                        }
+                    } catch (_: Exception) {
+                    }
+                }
+            } finally {
+                done.countDown()
+            }
+        }.start()
+        done.await(2, TimeUnit.SECONDS)
+        return got.get()
     }
 
     fun interfaces(ctx: Context): String {

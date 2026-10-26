@@ -54,6 +54,7 @@ func TestQwdttExitReasonAndBackoff(t *testing.T) {
 		t.Fatal("Disconnect kept pending restart")
 	}
 	// retries exhausted → final error, no restart
+	a.stopWanted = false
 	a.qw, a.status, a.qwRetry = cur, "connected", 2
 	a.mu.Unlock()
 	a.qwdttExited(cur, r, false, time.Second)

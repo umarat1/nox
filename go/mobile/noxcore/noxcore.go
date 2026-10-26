@@ -7,7 +7,6 @@
 package noxcore
 
 import (
-	"context"
 	"encoding/json"
 	"net"
 	"os"
@@ -33,6 +32,8 @@ type Host interface {
 	StopNetMonitor()
 	// GetInterfaces returns JSON [{name,index,mtu,flags,type,addrs[],dns[],metered}].
 	GetInterfaces() (string, error)
+	// Resolve looks the name up on a non-VPN network. Comma-separated IPs, or "".
+	Resolve(host string) (string, error)
 	InstallApk(path string) error
 	// OnStatus: status changes for the notification / quick-settings tile.
 	OnStatus(status string, server string)
@@ -88,7 +89,17 @@ func Init(dataDir, libDir, ruleDir string, h Host) error {
 	engine.AndroidStopVpn = stopVpn
 	engine.AndroidTestCore = testCore
 	engine.AndroidInstallApk = func(p string) error { return host.InstallApk(p) }
+	engine.ProtectSocket = func(fd int) bool {
+		mu.Lock()
+		h := host
+		mu.Unlock()
+		if h == nil {
+			return false
+		}
+		return h.Protect(int32(fd))
+	}
 	engine.LanAddrs = lanAddrs
+	engine.PlatformResolve = platformResolve
 	setResolver()
 	app = engine.NewApp(dataDir, libDir)
 	rpc = ipc.New(app)
@@ -136,9 +147,28 @@ func SetDNS(server string) {
 
 // VpnStopped is called by NoxVpnService when it goes down on its own (revoked by the
 // system or another VPN app, killed). msg is shown to the user if non-empty.
+// A non-empty message is an external stop: do not auto-reconnect over it.
 func VpnStopped(msg string) {
+	if msg != "" {
+		mu.Lock()
+		a := app
+		mu.Unlock()
+		if a != nil {
+			a.ExternalStop(msg)
+		}
+	}
 	closeMain()
 	engine.VpnStopped(msg)
+}
+
+// UnderlyingNetworkChanged is the physical network (wifi, mobile). Empty means none.
+func UnderlyingNetworkChanged(name string) {
+	mu.Lock()
+	a := app
+	mu.Unlock()
+	if a != nil {
+		a.UnderlyingNetworkChanged(name)
+	}
 }
 
 // Version of the engine.
@@ -168,19 +198,30 @@ func statusLoop() {
 	}
 }
 
-// Go's pure resolver reads /etc/resolv.conf, which Android does not have.
-func setResolver() {
-	net.DefaultResolver = &net.Resolver{PreferGo: true, Dial: func(ctx context.Context, network, _ string) (net.Conn, error) {
-		mu.Lock()
-		srv := engine.AndroidDNS
-		mu.Unlock()
-		d := net.Dialer{Timeout: 3 * time.Second}
-		c, err := d.DialContext(ctx, network, net.JoinHostPort(srv, "53"))
-		if err != nil && srv != "1.1.1.1" {
-			c, err = d.DialContext(ctx, network, "1.1.1.1:53")
+// Go's pure resolver reads /etc/resolv.conf, which Android does not have, and then
+// asks [::1]:53. A UDP dial to the carrier DNS succeeds even when the query will
+// time out, so the old fallback to 1.1.1.1 never ran. InstallPublicResolver gives
+// each public server its own query deadline and moves on after a timeout.
+func setResolver() { engine.InstallPublicResolver() }
+
+func platformResolve(name string) []net.IP {
+	mu.Lock()
+	h := host
+	mu.Unlock()
+	if h == nil {
+		return nil
+	}
+	s, err := h.Resolve(name)
+	if err != nil || s == "" {
+		return nil
+	}
+	var ips []net.IP
+	for _, p := range strings.Split(s, ",") {
+		if ip := net.ParseIP(strings.TrimSpace(p)); ip != nil {
+			ips = append(ips, ip)
 		}
-		return c, err
-	}}
+	}
+	return ips
 }
 
 // lanAddrs: IPv4 of Wi‑Fi / Ethernet interfaces (net.Interfaces is restricted on Android 11+).

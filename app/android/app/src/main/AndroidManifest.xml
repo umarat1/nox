@@ -4,6 +4,10 @@
          installs over it; component names of the launcher activity, QS tile and boot receiver
          are kept so home-screen shortcuts, the tile and always-on VPN survive the upgrade. -->
     <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- In-app update: system confirm dialog. The app is not a device owner, so this is never silent. -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>
+    <!-- One system dialog asking to ignore battery optimizations. No custom screen. -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"/>
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
     <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
@@ -12,8 +16,6 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
     <uses-permission android:name="android.permission.WAKE_LOCK"/>
-    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>
-
     <!-- Android TV: no touchscreen required, leanback optional (one APK for phone and TV) -->
     <uses-feature android:name="android.software.leanback" android:required="false"/>
     <uses-feature android:name="android.hardware.touchscreen" android:required="false"/>
@@ -30,7 +32,8 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:banner="@drawable/tv_banner"
         android:allowBackup="false"
-        android:extractNativeLibs="true"
+        android:extractNativeLibs="false"
+        tools:replace="android:extractNativeLibs"
         android:supportsRtl="true">
         <activity
             android:name=".CaptchaActivity"
@@ -119,6 +122,14 @@
             </intent-filter>
         </receiver>
 
+        <receiver
+            android:name="com.lumen.vpn.InstallStatusReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.lumen.vpn.INSTALL_STATUS"/>
+            </intent-filter>
+        </receiver>
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="com.lumen.vpn.files"
@@ -146,6 +157,10 @@
         <intent>
             <action android:name="android.intent.action.VIEW"/>
             <data android:scheme="https"/>
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:mimeType="application/vnd.android.package-archive"/>
         </intent>
     </queries>
 </manifest>

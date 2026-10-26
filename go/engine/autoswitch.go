@@ -65,8 +65,8 @@ func nextServer(all []core.Server, cur core.Server) *core.Server {
 // check generate_204 through the tunnel; after 3 failures in a row (while the direct
 // internet works) switch to the next working server, at most once per 60 s.
 func (a *App) autoSwitchLoop(ctx context.Context, srv core.Server, s core.Settings) {
-	if !s.AutoSwitch || srv.Type == core.BalancerLabel {
-		return
+	if !s.AutoSwitch || srv.Type == core.BalancerLabel || srv.Type == "qWDTT" {
+		return // qWDTT is restarted in place (qwdttHealthLoop); switching away looked like a disconnect
 	}
 	port := s.ProxyPort
 	if port == 0 {

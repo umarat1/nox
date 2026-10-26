@@ -39,8 +39,8 @@ At first start, `files/lumen-data.json` from 0.7.x is imported.
   `splitMode`/`splitApps`, applied to the TUN as sing-box `include_package`/`exclude_package`;
   changing it while connected reconnects. Nox itself is always outside the VPN.
 - SSTP on Android: pure-Go MS-SSTP client (TLS → PPP/MS-CHAPv2 → IPCP) bridged into VpnService
-  TUN (same full-tunnel path as Windows RAS). Subscription SSTP links appear when the UA starts
-  with `Nox/` (or is plain `sing-box x.y.z`).
+  TUN (same full-tunnel path as Windows RAS). Subscription requests send `NOX/2.0` plus the
+  OS name (for example `NOX/2.0 Android`). Happ and v2rayNG agents are not used.
 - qWDTT captcha: qWDTT runs with `-captcha-mode auto` (its Go solver first). When it asks for a
   manual WebView solve (`CAPTCHA_SOLVE|manual|<url>|…` on stdout), the engine exposes
   `captcha {id,url}` in GetState; `CaptchaActivity` opens VK's page and sends `success_token`

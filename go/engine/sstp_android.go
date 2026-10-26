@@ -62,8 +62,9 @@ func (a *App) startSSTPAndroid(ctx context.Context, srv core.Server, s core.SSTP
 		dns = []string{"1.1.1.1", "8.8.8.8"}
 	}
 	a.mu.Lock()
-	split, apps := a.p.Settings.SplitMode, a.p.Settings.SplitApps
+	st := a.p.Settings
 	a.mu.Unlock()
+	split, apps := effectiveSplit(st.SplitMode, st.SplitApps, st.RuApps, st.RuAppsOff)
 	opt := map[string]any{
 		"mtu":       sess.MTU,
 		"addr4":     []string{local + "/32"},

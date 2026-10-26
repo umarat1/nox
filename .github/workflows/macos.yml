@@ -4,6 +4,7 @@ name: macos
 
 on:
   workflow_dispatch:
+  pull_request:
   push:
     branches: ["grok/qr-amoled-qwdtt"]
 
@@ -18,7 +19,10 @@ env:
 
 jobs:
   build:
-    runs-on: macos-latest
+    # macos-latest is arm64 and, on 2026-10-26, GitHub cancelled the job twice
+    # before a runner was assigned. Intel still gets a machine; the bundled
+    # noxd/sing-box/xray stay universal (lipo). The Flutter shell is x86_64.
+    runs-on: macos-15-intel
     steps:
       - uses: actions/checkout@v4
 
@@ -98,3 +102,7 @@ jobs:
         with:
           name: nox-macos
           path: out/*.dmg
+          if-no-files-found: error
+          # UDZO is already compressed. Deflate on a ~160 MB DMG pinned the
+          # macos-15-intel runner until it lost contact with GitHub (1.0.29).
+          compression-level: 0

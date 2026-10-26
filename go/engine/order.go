@@ -91,24 +91,45 @@ func (a *App) SetGroupOrder(keys []string) {
 	a.mu.Unlock()
 }
 
-// RefreshSub refreshes one subscription.
+// RefreshSub refreshes one subscription and replaces its server list.
 func (a *App) RefreshSub(id string) string {
 	a.mu.Lock()
 	var sub *Sub
+	var before []string
 	for _, s := range a.p.Subs {
 		if s.ID == id {
 			c := s
 			sub = &c
 		}
 	}
+	if sub != nil {
+		for _, s := range a.p.Servers {
+			if s.SubID == id {
+				before = append(before, serverKey(s))
+			}
+		}
+	}
 	a.mu.Unlock()
 	if sub == nil {
 		return "Подписка не найдена"
 	}
-	if _, _, err := a.fetchSub(sub, false); err != nil {
+	n, _, err := a.fetchSub(sub, false)
+	if err != nil {
 		return "Ошибка обновления: " + err.Error()
 	}
-	return "Подписка обновлена"
+	go a.pingFresh(id)
+	a.mu.Lock()
+	var after []string
+	for _, s := range a.p.Servers {
+		if s.SubID == id {
+			after = append(after, serverKey(s))
+		}
+	}
+	a.mu.Unlock()
+	if sameKeys(before, after) {
+		return fmt.Sprintf("Подписка обновлена, но панель отдала те же %d серверов. Если на панели состав уже другой — сбросьте кэш подписки (заметки 1.0.28).", n)
+	}
+	return fmt.Sprintf("Подписка обновлена: было %d, стало %d", len(before), len(after))
 }
 
 type delEntry struct {
@@ -258,6 +279,7 @@ func (a *App) healthCheck(ctx context.Context, srv core.Server, s core.Settings)
 			if strings.HasPrefix(a.errMsg, "Сервер не отвечает") {
 				a.errMsg = ""
 			}
+			a.coreRetry = 0
 			a.mu.Unlock()
 			return
 		}
@@ -278,6 +300,13 @@ func (a *App) healthCheck(ctx context.Context, srv core.Server, s core.Settings)
 func (a *App) BestServer(tolMs int) string {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	return a.bestIDLocked(tolMs)
+}
+
+// bestIDLocked picks the lowest positive ping. The current server stays when it is
+// within tolMs of the best, so a fresh ping does not flap between similar nodes.
+// a.mu must be held.
+func (a *App) bestIDLocked(tolMs int) string {
 	var cur *core.Server
 	best := -1
 	for i, s := range a.p.Servers {

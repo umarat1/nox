@@ -279,8 +279,12 @@ func WgEndpoint(text string) (map[string]any, error) {
 	if v := peer["presharedkey"]; v != "" {
 		pe["pre_shared_key"] = v
 	}
-	if ka, _ := strconv.Atoi(peer["persistentkeepalive"]); ka > 0 {
-		pe["persistent_keepalive_interval"] = ka
+	ka, _ := strconv.Atoi(peer["persistentkeepalive"])
+	if ka <= 0 {
+		// NAT on the path to VK TURN drops a quiet UDP session in about a minute.
+		// 25s is the usual WireGuard keepalive and is harmless on the local relay.
+		ka = 25
 	}
+	pe["persistent_keepalive_interval"] = ka
 	return map[string]any{"type": "wireguard", "address": addr, "private_key": iface["privatekey"], "mtu": mtu, "peers": []any{pe}}, nil
 }

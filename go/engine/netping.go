@@ -4,10 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/binary"
-	"encoding/json"
 	"net"
-	"net/http"
-	"net/url"
 	"runtime"
 	"strconv"
 	"sync"
@@ -51,6 +48,8 @@ func (p pingNet) dialer(t time.Duration) *net.Dialer {
 	d := &net.Dialer{Timeout: t}
 	if p.bound {
 		d.Control = bindControl(p.nic)
+	} else if vpnCaptures() {
+		d.Control = protectControl
 	}
 	return d
 }
@@ -78,62 +77,7 @@ func isFakeIP(ip net.IP) bool {
 // cache) are skipped. Used for the disconnected URL test, where sing-box's "local" DNS
 // would otherwise get whatever the OS resolver hands out.
 func (p pingNet) resolveDirect(host string) string {
-	if net.ParseIP(host) != nil {
-		return host
-	}
-	dnsCache.Lock()
-	if e, ok := dnsCache.m[host]; ok && time.Now().Before(e.exp) {
-		dnsCache.Unlock()
-		return e.ip
-	}
-	dnsCache.Unlock()
-	ip := ""
-	for _, s := range []string{"77.88.8.8", "1.1.1.1"} {
-		if ip = p.queryA(s, host); ip != "" && !isFakeIP(net.ParseIP(ip)) {
-			break
-		}
-		ip = ""
-	}
-	if ip == "" {
-		ip = p.dohA(host) // UDP/53 filtered on some networks
-	}
-	if ip != "" {
-		dnsCache.Lock()
-		dnsCache.m[host] = dnsEnt{ip, time.Now().Add(5 * time.Minute)}
-		dnsCache.Unlock()
-		return ip
-	}
-	return p.resolve(host)
-}
-
-// dohA: A record over DNS-over-HTTPS to IP-addressed resolvers (no DNS needed to reach them).
-func (p pingNet) dohA(host string) string {
-	tr := &http.Transport{Proxy: nil, DialContext: p.dialer(3 * time.Second).DialContext,
-		TLSHandshakeTimeout: 3 * time.Second}
-	defer tr.CloseIdleConnections()
-	cl := &http.Client{Timeout: 4 * time.Second, Transport: tr}
-	for _, u := range []string{"https://1.1.1.1/dns-query", "https://8.8.8.8/resolve"} {
-		req, _ := http.NewRequest("GET", u+"?type=A&name="+url.QueryEscape(host), nil)
-		req.Header.Set("Accept", "application/dns-json")
-		r, err := cl.Do(req)
-		if err != nil {
-			continue
-		}
-		var d struct {
-			Answer []struct {
-				Type int
-				Data string
-			}
-		}
-		json.NewDecoder(r.Body).Decode(&d)
-		r.Body.Close()
-		for _, a := range d.Answer {
-			if ip := net.ParseIP(a.Data); a.Type == 1 && ip != nil && !isFakeIP(ip) {
-				return a.Data
-			}
-		}
-	}
-	return ""
+	return p.lookup(host)
 }
 
 // pinIP replaces a domain "server" of a sing-box outbound with a resolved IP for the ping
@@ -180,7 +124,7 @@ func pinIP(ob map[string]any, pn pingNet) {
 
 // resolve returns one IP for host. Bound mode first asks public DNS directly over the
 // physical NIC (no VPN round-trip), then falls back to the system resolver.
-func (p pingNet) resolve(host string) string {
+func (p pingNet) lookup(host string) string {
 	if ip := net.ParseIP(host); ip != nil {
 		return host
 	}
@@ -190,42 +134,36 @@ func (p pingNet) resolve(host string) string {
 		return e.ip
 	}
 	dnsCache.Unlock()
-	ip := ""
-	if p.bound && atomic.LoadInt32(&boundDNSDead) == 0 {
-		for _, s := range []string{"77.88.8.8", "1.1.1.1"} {
-			if ip = p.queryA(s, host); ip != "" {
-				break
-			}
-		}
-		if ip == "" {
-			atomic.StoreInt32(&boundDNSDead, 1) // e.g. blocked by strict_route firewall: use system DNS for this run
+	wait := 8 * time.Second
+	if vpnCaptures() {
+		wait = 3 * time.Second
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), wait)
+	defer cancel()
+	opt := lookupOpt{}
+	if p.bound || vpnCaptures() {
+		// The OS resolver follows the tunnel. Ask public DNS on a protected
+		// socket (or the physical NIC, on Windows) instead of waiting it out.
+		opt.skipSystem = true
+		opt.dial = func(ctx context.Context, network, addr string) (net.Conn, error) {
+			return p.dialer(2*time.Second).DialContext(ctx, network, addr)
 		}
 	}
-	if ip == "" {
-		ctx, cancel := context.WithTimeout(context.Background(), 2500*time.Millisecond)
-		ips, _ := net.DefaultResolver.LookupIP(ctx, "ip", host)
-		cancel()
-		for _, x := range ips {
-			if x.To4() != nil && !isFakeIP(x) {
-				ip = x.String()
-				break
-			}
+	ip, err := lookupHost(ctx, host, opt)
+	if err != nil || ip == "" {
+		if p.bound {
+			atomic.StoreInt32(&boundDNSDead, 1)
 		}
-		if ip == "" {
-			for _, x := range ips {
-				if !isFakeIP(x) {
-					ip = x.String()
-					break
-				}
-			}
-		}
+		return ""
 	}
-	if ip != "" {
-		dnsCache.Lock()
-		dnsCache.m[host] = dnsEnt{ip, time.Now().Add(5 * time.Minute)}
-		dnsCache.Unlock()
-	}
+	dnsCache.Lock()
+	dnsCache.m[host] = dnsEnt{ip, time.Now().Add(5 * time.Minute)}
+	dnsCache.Unlock()
 	return ip
+}
+
+func (p pingNet) resolve(host string) string {
+	return p.lookup(host)
 }
 
 // queryA: minimal DNS A lookup over UDP through the (possibly bound) socket.
@@ -315,21 +253,42 @@ func parseA(b []byte, id [2]byte) string {
 	return ""
 }
 
-// tcpPing measures the TCP handshake time to host:port (-1 = timeout / unreachable).
+// tcpPing measures the TCP handshake to host:port (-1 = timeout / unreachable).
+// Two handshakes run together and the faster one is kept, so a single delayed SYN
+// does not decide the latency and a lost first packet still gets a second try.
 func (p pingNet) tcpPing(host string, port int) int {
 	ip := p.resolve(host)
 	if ip == "" {
 		return -1
 	}
-	t0 := time.Now()
-	c, err := p.dialer(2500*time.Millisecond).Dial("tcp", net.JoinHostPort(ip, strconv.Itoa(port)))
-	if err != nil {
-		return -1
+	addr := net.JoinHostPort(ip, strconv.Itoa(port))
+	type res struct {
+		ms int
+		ok bool
 	}
-	c.Close()
-	ms := int(time.Since(t0).Milliseconds())
-	if ms < 1 {
-		ms = 1
+	ch := make(chan res, 2)
+	for i := 0; i < 2; i++ {
+		go func() {
+			t0 := time.Now()
+			c, err := p.dialer(1200*time.Millisecond).Dial("tcp", addr)
+			if err != nil {
+				ch <- res{}
+				return
+			}
+			c.Close()
+			ms := int(time.Since(t0).Milliseconds())
+			if ms < 1 {
+				ms = 1
+			}
+			ch <- res{ms, true}
+		}()
 	}
-	return ms
+	best := -1
+	for i := 0; i < 2; i++ {
+		r := <-ch
+		if r.ok && (best < 0 || r.ms < best) {
+			best = r.ms
+		}
+	}
+	return best
 }

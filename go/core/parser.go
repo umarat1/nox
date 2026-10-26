@@ -112,26 +112,106 @@ func B64(s string) (string, bool) {
 	return "", false
 }
 
-// ParseContent parses a subscription body: base64, plain link list, or sing-box JSON.
+// ParseContent parses a subscription body: base64, plain link list, sing-box JSON,
+// or a Remnawave/Happ JSON object with a "links" array. An empty JSON object is not
+// treated as success — otherwise a panel page with no outbounds would wipe nothing
+// and the caller would keep the previous server list.
 func ParseContent(content string) ParseResult {
 	text := strings.TrimPrefix(strings.TrimSpace(content), "\uFEFF")
-	if strings.HasPrefix(text, "{") || strings.HasPrefix(text, "[") {
-		if r, err := parseSingBoxJSON(text); err == nil {
-			return r
+	if r, ok := parseStructured(text); ok {
+		return r
+	}
+	if !containsShareLink(text) {
+		if d, ok := B64(text); ok {
+			text = strings.TrimSpace(d)
+			if r, ok := parseStructured(text); ok {
+				return r
+			}
 		}
 	}
-	hasLink := false
+	return parseLinkList(text)
+}
+
+func containsShareLink(text string) bool {
 	for _, l := range strings.Split(text, "\n") {
 		if IsShareLink(l) {
-			hasLink = true
-			break
+			return true
 		}
 	}
-	if !hasLink {
-		if d, ok := B64(text); ok {
-			text = d
+	return false
+}
+
+func parseStructured(text string) (ParseResult, bool) {
+	if !strings.HasPrefix(text, "{") && !strings.HasPrefix(text, "[") {
+		return ParseResult{}, false
+	}
+	if r, err := parseSingBoxJSON(text); err == nil && len(r.Servers) > 0 {
+		return r, true
+	}
+	if r, err := parseLinkJSON(text); err == nil && len(r.Servers) > 0 {
+		return r, true
+	}
+	return ParseResult{}, false
+}
+
+// parseLinkJSON reads Remnawave/Happ bodies: {"links":["vless://…"]}, a base64 "subscription"
+// string, or "ssConfLinks". Other fields are ignored so an announce URL is not imported.
+func parseLinkJSON(text string) (ParseResult, error) {
+	var root any
+	if json.Unmarshal([]byte(text), &root) != nil {
+		return ParseResult{}, errors.New("json")
+	}
+	var lines []string
+	collect := func(v any) {}
+	collect = func(v any) {
+		switch t := v.(type) {
+		case string:
+			s := strings.TrimSpace(t)
+			if IsShareLink(s) {
+				lines = append(lines, s)
+				return
+			}
+			if d, ok := B64(s); ok {
+				for _, line := range strings.Split(d, "\n") {
+					line = strings.TrimSpace(line)
+					if IsShareLink(line) {
+						lines = append(lines, line)
+					}
+				}
+			}
+		case []any:
+			for _, x := range t {
+				collect(x)
+			}
+		case map[string]any:
+			for _, x := range t {
+				if _, ok := x.(string); ok {
+					collect(x)
+				}
+			}
 		}
 	}
+	switch t := root.(type) {
+	case []any:
+		collect(t)
+	case map[string]any:
+		for _, k := range []string{"links", "subscription", "ssConfLinks"} {
+			if x, ok := t[k]; ok {
+				collect(x)
+			}
+		}
+	}
+	if len(lines) == 0 {
+		return ParseResult{}, errors.New("no links")
+	}
+	r := parseLinkList(strings.Join(lines, "\n"))
+	if len(r.Servers) == 0 {
+		return r, errors.New("no links")
+	}
+	return r, nil
+}
+
+func parseLinkList(text string) ParseResult {
 	var r ParseResult
 	for _, raw := range strings.Split(text, "\n") {
 		line := strings.TrimSpace(raw)
