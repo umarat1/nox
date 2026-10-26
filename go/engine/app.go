@@ -27,7 +27,7 @@ import (
 	"nox/core"
 )
 
-const Version = "1.0.30"
+const Version = "2.0"
 
 type Sub struct {
 	ID       string `json:"id"`
@@ -109,6 +109,8 @@ type App struct {
 	migrated                     bool   // first run: settings were taken from the old VPS app
 	physHint                     uint32 // physical NIC index remembered before the tunnel came up
 	lastSwitch                   time.Time
+	lastUnder                    string // last physical network name (wifi ↔ mobile reconnect)
+	netGen                       uint64
 }
 
 // NewApp: dataDir holds state.json (service: %ProgramData%\Nox); binDir holds sing-box, qwdtt,
@@ -382,6 +384,7 @@ type ImportResult struct {
 	Added  int      `json:"added"`
 	Errors []string `json:"errors"`
 	Msg    string   `json:"msg"`
+	OK     bool     `json:"ok"`
 }
 
 func looksLikeSubURL(t string) bool {
@@ -397,22 +400,84 @@ func looksLikeSubURL(t string) bool {
 	return !strings.ContainsAny(strings.TrimSpace(t), " \n")
 }
 
+// flattenImport rejoins a subscription URL the text field wrapped onto two lines
+// ("https://host/\nTOKEN"). A paste of several share links is left unchanged.
+func flattenImport(t string) string {
+	t = strings.TrimSpace(t)
+	if t == "" || !strings.ContainsAny(t, " \n\t\r") {
+		return t
+	}
+	parts := strings.Fields(t)
+	if len(parts) < 2 {
+		return t
+	}
+	nURL := 0
+	for _, p := range parts {
+		if core.IsShareLink(p) {
+			return t
+		}
+		if strings.Contains(p, "://") {
+			nURL++
+		}
+	}
+	if nURL != 1 {
+		return t
+	}
+	joined := strings.Join(parts, "")
+	if looksLikeSubURL(joined) {
+		return joined
+	}
+	return t
+}
+
+func canonicalSubURL(u string) string {
+	u = strings.TrimSpace(u)
+	if i := strings.IndexAny(u, "?#"); i >= 0 {
+		u = u[:i]
+	}
+	return strings.ToLower(strings.TrimRight(u, "/"))
+}
+
 func (a *App) Import(text string) ImportResult {
-	t := strings.TrimSpace(text)
+	t := flattenImport(text)
 	if t == "" {
-		return ImportResult{Msg: "Буфер обмена пуст"}
+		return ImportResult{Msg: "Вставьте ссылку на подписку или сервер"}
 	}
 	if looksLikeSubURL(t) {
 		u := t
 		if !strings.Contains(strings.ToLower(u), "://") {
 			u = "https://" + u
 		}
+		key := canonicalSubURL(u)
+		a.mu.Lock()
+		var existing *Sub
+		for i := range a.p.Subs {
+			if canonicalSubURL(a.p.Subs[i].URL) == key {
+				c := a.p.Subs[i]
+				existing = &c
+				break
+			}
+		}
+		a.mu.Unlock()
+		if existing != nil {
+			n, errs, err := a.fetchSub(existing, false)
+			if err != nil {
+				return ImportResult{Errors: errs, Msg: "Не удалось обновить подписку: " + err.Error()}
+			}
+			if n == 0 {
+				return ImportResult{Errors: errs, Msg: "Серверы не найдены. Список не изменён"}
+			}
+			return ImportResult{OK: true, Added: n, Errors: errs, Msg: fmt.Sprintf("Эта подписка уже есть. Список обновлён: %d серверов", n)}
+		}
 		sub := Sub{ID: newID(), URL: u}
 		n, errs, err := a.fetchSub(&sub, true)
 		if err != nil {
-			return ImportResult{Msg: "Не удалось загрузить подписку: " + err.Error()}
+			return ImportResult{Errors: errs, Msg: "Не удалось загрузить подписку: " + err.Error()}
 		}
-		return ImportResult{Added: n, Errors: errs, Msg: fmt.Sprintf("Добавлено серверов: %d", n)}
+		if n == 0 {
+			return ImportResult{Errors: errs, Msg: "Серверы не найдены. Список не изменён"}
+		}
+		return ImportResult{OK: true, Added: n, Errors: errs, Msg: fmt.Sprintf("Добавлено серверов: %d", n)}
 	}
 	r := core.ParseContent(t)
 	if len(r.Servers) == 0 {
@@ -428,7 +493,7 @@ func (a *App) Import(text string) ImportResult {
 	}
 	a.save()
 	a.mu.Unlock()
-	return ImportResult{Added: len(r.Servers), Errors: r.Errors, Msg: fmt.Sprintf("Добавлено серверов: %d", len(r.Servers))}
+	return ImportResult{OK: true, Added: len(r.Servers), Errors: r.Errors, Msg: fmt.Sprintf("Добавлено серверов: %d", len(r.Servers))}
 }
 
 func parseUserInfo(h string, s *Sub) {
@@ -457,6 +522,15 @@ func (a *App) directClient() *http.Client {
 	return &http.Client{Timeout: 25 * time.Second, Transport: directTransport()}
 }
 
+// subClient is the subscription fetch. A shorter cap than the update downloader:
+// one user-agent must not sit on a tunnel DNS timeout for half a minute.
+func (a *App) subClient() *http.Client {
+	tr := directTransport()
+	tr.TLSHandshakeTimeout = 4 * time.Second
+	tr.ResponseHeaderTimeout = 6 * time.Second
+	return &http.Client{Timeout: 12 * time.Second, Transport: tr}
+}
+
 func directTransport() *http.Transport {
 	return &http.Transport{
 		Proxy:               nil,
@@ -481,8 +555,8 @@ func (a *App) fetchDescs(u string) map[string]string {
 	req, _ := http.NewRequest("GET", u, nil)
 	req.Header.Set("User-Agent", "Happ/3.0.0 VPS/"+Version)
 	req.Header.Set("Cache-Control", "no-cache")
-	cl := a.directClient()
-	cl.Timeout = 10 * time.Second
+	cl := a.subClient()
+	cl.Timeout = 4 * time.Second
 	resp, err := cl.Do(req)
 	if err != nil {
 		return nil
@@ -1049,6 +1123,7 @@ func (a *App) Connect() {
 		return
 	}
 	a.status, a.errMsg = "connecting", ""
+	noteTunnel(a.status)
 	if h := bestIfNow(); h != 0 {
 		a.physHint = h
 	}
@@ -1203,11 +1278,13 @@ func (a *App) connect(ctx context.Context, srv core.Server, s core.Settings) err
 	}
 	a.mu.Lock()
 	a.status = "connected"
+	noteTunnel(a.status)
 	a.since = time.Now().Unix()
 	a.mu.Unlock()
 	a.log("подключено: " + srv.Name)
 	go a.trafficLoop(ctx)
 	go a.healthCheck(ctx, srv, s)
+	go a.coreWatch(ctx)
 	go a.autoSwitchLoop(ctx, srv, s)
 	if srv.Type == "qWDTT" {
 		go a.qwdttHealthLoop(ctx, srv, s)
@@ -1403,6 +1480,7 @@ func (a *App) Disconnect() {
 		return
 	}
 	a.status = "disconnecting"
+	noteTunnel(a.status)
 	a.mu.Unlock()
 	a.stopAll()
 }
@@ -1441,6 +1519,7 @@ func (a *App) stopAll() {
 		a.logLocked("отключено")
 	}
 	a.status = "disconnected"
+	noteTunnel(a.status)
 	a.since = 0
 	a.up, a.down = 0, 0
 	a.mu.Unlock()

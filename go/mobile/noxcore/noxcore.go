@@ -89,6 +89,15 @@ func Init(dataDir, libDir, ruleDir string, h Host) error {
 	engine.AndroidStopVpn = stopVpn
 	engine.AndroidTestCore = testCore
 	engine.AndroidInstallApk = func(p string) error { return host.InstallApk(p) }
+	engine.ProtectSocket = func(fd int) bool {
+		mu.Lock()
+		h := host
+		mu.Unlock()
+		if h == nil {
+			return false
+		}
+		return h.Protect(int32(fd))
+	}
 	engine.LanAddrs = lanAddrs
 	engine.PlatformResolve = platformResolve
 	setResolver()
@@ -138,9 +147,28 @@ func SetDNS(server string) {
 
 // VpnStopped is called by NoxVpnService when it goes down on its own (revoked by the
 // system or another VPN app, killed). msg is shown to the user if non-empty.
+// A non-empty message is an external stop: do not auto-reconnect over it.
 func VpnStopped(msg string) {
+	if msg != "" {
+		mu.Lock()
+		a := app
+		mu.Unlock()
+		if a != nil {
+			a.ExternalStop(msg)
+		}
+	}
 	closeMain()
 	engine.VpnStopped(msg)
+}
+
+// UnderlyingNetworkChanged is the physical network (wifi, mobile). Empty means none.
+func UnderlyingNetworkChanged(name string) {
+	mu.Lock()
+	a := app
+	mu.Unlock()
+	if a != nil {
+		a.UnderlyingNetworkChanged(name)
+	}
 }
 
 // Version of the engine.

@@ -48,6 +48,8 @@ func (p pingNet) dialer(t time.Duration) *net.Dialer {
 	d := &net.Dialer{Timeout: t}
 	if p.bound {
 		d.Control = bindControl(p.nic)
+	} else if vpnCaptures() {
+		d.Control = protectControl
 	}
 	return d
 }
@@ -132,12 +134,16 @@ func (p pingNet) lookup(host string) string {
 		return e.ip
 	}
 	dnsCache.Unlock()
-	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	wait := 8 * time.Second
+	if vpnCaptures() {
+		wait = 3 * time.Second
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), wait)
 	defer cancel()
 	opt := lookupOpt{}
-	if p.bound {
-		// The OS resolver follows the tunnel. Ask DoH and the public servers
-		// through the physical NIC instead.
+	if p.bound || vpnCaptures() {
+		// The OS resolver follows the tunnel. Ask public DNS on a protected
+		// socket (or the physical NIC, on Windows) instead of waiting it out.
 		opt.skipSystem = true
 		opt.dial = func(ctx context.Context, network, addr string) (net.Conn, error) {
 			return p.dialer(2*time.Second).DialContext(ctx, network, addr)

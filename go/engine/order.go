@@ -117,6 +117,7 @@ func (a *App) RefreshSub(id string) string {
 	if err != nil {
 		return "Ошибка обновления: " + err.Error()
 	}
+	go a.pingFresh(id)
 	a.mu.Lock()
 	var after []string
 	for _, s := range a.p.Servers {

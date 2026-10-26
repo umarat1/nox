@@ -8,6 +8,8 @@ import android.content.res.Configuration
 import android.net.Uri
 import android.net.VpnService
 import android.os.Build
+import android.os.PowerManager
+import android.provider.Settings
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -75,12 +77,33 @@ class MainActivity : FlutterActivity() {
 
     override fun onCreate(savedInstanceState: android.os.Bundle?) {
         super.onCreate(savedInstanceState)
+        ApkInstall.attach(this)
         handleShare(intent)
     }
 
     override fun onResume() {
         super.onResume()
-        NoxHost.resumePending(this) // update APK waiting for «Install unknown apps»
+        ApkInstall.attach(this)
+        exec.execute { ApkInstall.resumePending(this) }
+        maybeBattery()
+    }
+
+    override fun onDestroy() {
+        ApkInstall.detach(this)
+        super.onDestroy()
+    }
+
+    /** System dialog only, once per install. Skipped when already exempt. */
+    private fun maybeBattery() {
+        if (Build.VERSION.SDK_INT < 23) return
+        val pm = getSystemService(PowerManager::class.java) ?: return
+        if (pm.isIgnoringBatteryOptimizations(packageName)) return
+        val prefs = getSharedPreferences("nox", MODE_PRIVATE)
+        if (prefs.getBoolean("bat_asked", false)) return
+        prefs.edit().putBoolean("bat_asked", true).apply()
+        try {
+            startActivity(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:$packageName")))
+        } catch (_: Exception) {}
     }
 
     override fun onNewIntent(intent: Intent) {

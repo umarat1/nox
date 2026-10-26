@@ -5,6 +5,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"nox/core"
 )
@@ -150,5 +151,116 @@ func TestFetchSubSkipsHTML(t *testing.T) {
 	st := a.GetState()
 	if len(st.Servers) != 1 || st.Servers[0].Name != "New" || st.Servers[0].Host != "1.2.3.4" {
 		t.Fatalf("%+v", st.Servers)
+	}
+}
+
+func TestFlattenWrappedSubURL(t *testing.T) {
+	got := flattenImport("https://panel.example/\nAbCdEf")
+	if got != "https://panel.example/AbCdEf" {
+		t.Fatal(got)
+	}
+	links := "vless://11111111-2222-3333-4444-555555555555@1.1.1.1:443#A\nvless://11111111-2222-3333-4444-555555555555@2.2.2.2:443#B"
+	if flattenImport(links) != strings.TrimSpace(links) {
+		t.Fatal(flattenImport(links))
+	}
+}
+
+func TestImportWrappedURLAndExisting(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.Header.Get("User-Agent"), "Happ/3") {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("subscription-userinfo", "upload=0; download=0; total=1; expire=0")
+		w.Header().Set("profile-title", "Panel")
+		_, _ = w.Write([]byte(subNew))
+	}))
+	defer srv.Close()
+	raw := srv.URL + "/sub"
+	i := strings.LastIndex(raw, "/")
+	wrapped := raw[:i+1] + "\n" + raw[i+1:]
+	a := NewApp(t.TempDir(), t.TempDir())
+	r := a.Import(wrapped)
+	if !r.OK || r.Added != 1 {
+		t.Fatalf("%+v", r)
+	}
+	if len(a.GetState().Subs) != 1 || a.GetState().Subs[0].URL != raw {
+		t.Fatalf("url %q", a.GetState().Subs[0].URL)
+	}
+	again := a.Import(raw + "/")
+	if !again.OK || !strings.Contains(again.Msg, "уже есть") {
+		t.Fatalf("%+v", again)
+	}
+	if len(a.GetState().Subs) != 1 {
+		t.Fatalf("dup %+v", a.GetState().Subs)
+	}
+}
+
+func TestProfileWebPageDoesNotReplaceURL(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.Header.Get("User-Agent"), "Happ/3") {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("subscription-userinfo", "upload=0; download=0; total=1; expire=0")
+		w.Header().Set("profile-web-page-url", "https://panel.example/page")
+		w.Header().Set("profile-title", "base64:UGFuZWw")
+		_, _ = w.Write([]byte(subNew))
+	}))
+	defer srv.Close()
+	a := NewApp(t.TempDir(), t.TempDir())
+	r := a.Import(srv.URL)
+	if !r.OK {
+		t.Fatal(r)
+	}
+	st := a.GetState()
+	if st.Subs[0].URL != srv.URL {
+		t.Fatalf("url replaced: %s", st.Subs[0].URL)
+	}
+	if len(st.Servers) != 1 || st.Servers[0].Name != "New" {
+		t.Fatalf("%+v", st.Servers)
+	}
+}
+
+func TestImportNoServersIsNotOK(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain")
+		_, _ = w.Write([]byte("not a subscription"))
+	}))
+	defer srv.Close()
+	a := NewApp(t.TempDir(), t.TempDir())
+	r := a.Import(srv.URL)
+	if r.OK || len(a.GetState().Subs) != 0 || r.Msg == "" {
+		t.Fatalf("%+v subs %d", r, len(a.GetState().Subs))
+	}
+}
+
+func TestFetchSubReturnsBeforeDescFetch(t *testing.T) {
+	release := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.Header.Get("User-Agent"), "Happ/3") {
+			<-release
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("subscription-userinfo", "upload=0; download=0; total=1; expire=0")
+		_, _ = w.Write([]byte(subNew))
+	}))
+	defer srv.Close()
+	defer close(release)
+	a := NewApp(t.TempDir(), t.TempDir())
+	a.mu.Lock()
+	a.p.Subs = []Sub{{ID: "s1", URL: srv.URL, Name: "Panel"}}
+	a.save()
+	a.mu.Unlock()
+	done := make(chan string, 1)
+	go func() { done <- a.RefreshSub("s1") }()
+	select {
+	case msg := <-done:
+		if strings.Contains(msg, "Ошибка") {
+			t.Fatal(msg)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("refresh blocked on the description request")
 	}
 }

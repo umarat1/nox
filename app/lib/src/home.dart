@@ -85,6 +85,20 @@ class Home extends StatelessWidget {
   }
 }
 
+Future<void> finishRefresh(BuildContext context, NoxController c, dynamic r) async {
+  await c.refresh();
+  if (!context.mounted) return;
+  if (r is String && r.isNotEmpty) {
+    toast(context, r);
+  } else if (c.fatal != null && c.fatal!.isNotEmpty) {
+    toast(context, c.fatal!);
+  } else if (r == null) {
+    toast(context, 'Не удалось обновить');
+  } else {
+    toast(context, 'Обновлено');
+  }
+}
+
 void toast(BuildContext ctx, String t) {
   ScaffoldMessenger.of(ctx)
     ..hideCurrentSnackBar()
@@ -1773,12 +1787,7 @@ class _SubBlock extends StatelessWidget {
                 mobile: mobile,
                 onTap: () async {
                   final r = await c.call('RefreshSub', [b['id']]);
-                  await c.refresh();
-                  if (context.mounted)
-                    toast(
-                      context,
-                      (r is String && r.isNotEmpty) ? r : 'Обновлено',
-                    );
+                  if (context.mounted) await finishRefresh(context, c, r);
                 },
               ),
               const SizedBox(width: 6),
@@ -2632,10 +2641,7 @@ class _FilterBarState extends State<_FilterBar> {
                   onTap: () async {
                     toast(context, 'Обновляю подписки…');
                     final r = await c.call('RefreshSubs');
-                    await c.refresh();
-                    if (context.mounted) {
-                      toast(context, (r ?? 'Готово').toString());
-                    }
+                    if (context.mounted) await finishRefresh(context, c, r);
                   },
                 ),
               _IconBtn(
@@ -4270,9 +4276,7 @@ void subSheet(BuildContext context, NoxController c, Pal p, J b) {
         onTap: () async {
           Navigator.pop(ctx);
           final r = await c.call('RefreshSub', [b['id']]);
-          await c.refresh();
-          if (context.mounted)
-            toast(context, (r is String && r.isNotEmpty) ? r : 'Обновлено');
+          if (context.mounted) await finishRefresh(context, c, r);
         },
       ),
       item(
@@ -4407,6 +4411,75 @@ void serverSheet(BuildContext context, NoxController c, Pal p, J s) {
   );
 }
 
+/// Error line inside the add sheet. The sheet stays open when import fails,
+/// because a toast behind the modal is easy to miss.
+class _ImportButton extends StatefulWidget {
+  final BuildContext host;
+  final BuildContext sheet;
+  final NoxController c;
+  final Pal p;
+  final TextEditingController tc;
+  const _ImportButton({
+    required this.host,
+    required this.sheet,
+    required this.c,
+    required this.p,
+    required this.tc,
+  });
+  @override
+  State<_ImportButton> createState() => _ImportButtonState();
+}
+
+class _ImportButtonState extends State<_ImportButton> {
+  bool busy = false;
+  String? err;
+  @override
+  Widget build(BuildContext context) {
+    final p = widget.p;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (err != null) ...[
+          Text(err!, style: TextStyle(color: p.red, fontSize: 13)),
+          const SizedBox(height: 8),
+        ],
+        _Btn(
+          p: p,
+          label: busy ? 'Добавляю…' : 'Добавить',
+          onTap: () async {
+            if (busy) return;
+            setState(() {
+              busy = true;
+              err = null;
+            });
+            final r = await widget.c.call('Import', [widget.tc.text]);
+            if (!mounted) return;
+            if (r is Map && r['ok'] == true) {
+              if (widget.sheet.mounted) Navigator.pop(widget.sheet);
+              await widget.c.refresh();
+              if (widget.host.mounted) {
+                final errs = (r['errors'] as List?)?.length ?? 0;
+                toast(
+                  widget.host,
+                  '${r['msg']}${errs > 0 ? ' · ошибок: $errs' : ''}',
+                );
+              }
+              return;
+            }
+            final msg = r is Map && '${r['msg'] ?? ''}'.isNotEmpty
+                ? '${r['msg']}'
+                : (widget.c.fatal ?? 'Не удалось добавить');
+            setState(() {
+              busy = false;
+              err = msg;
+            });
+          },
+        ),
+      ],
+    );
+  }
+}
+
 void addSheet(BuildContext context, NoxController c, Pal p) {
   final tc = TextEditingController();
   sheet(
@@ -4532,19 +4605,7 @@ void addSheet(BuildContext context, NoxController c, Pal p) {
           ],
         ),
       if (!c.isTv) const SizedBox(height: 10),
-      _Btn(
-        p: p,
-        label: 'Добавить',
-        onTap: () async {
-          final r = await c.call('Import', [tc.text]);
-          if (ctx.mounted) Navigator.pop(ctx);
-          await c.refresh();
-          if (r is Map && context.mounted) {
-            final errs = (r['errors'] as List?)?.length ?? 0;
-            toast(context, '${r['msg']}${errs > 0 ? ' · ошибок: $errs' : ''}');
-          }
-        },
-      ),
+      _ImportButton(host: context, sheet: ctx, c: c, p: p, tc: tc),
     ],
   );
 }
@@ -5234,8 +5295,7 @@ class _TextPanel extends StatelessWidget {
             TextButton(
               onPressed: () async {
                 final r = await c.call('RefreshSubs');
-                await c.refresh();
-                if (context.mounted) toast(context, '$r');
+                if (context.mounted) await finishRefresh(context, c, r);
               },
               child: Text('Обновить', style: TextStyle(color: p.acc2)),
             ),
@@ -5258,8 +5318,7 @@ class _TextPanel extends StatelessWidget {
                   TextButton(
                     onPressed: () async {
                       final r = await c.call('RefreshSub', [sub['id']]);
-                      await c.refresh();
-                      if (context.mounted) toast(context, '$r');
+                      if (context.mounted) await finishRefresh(context, c, r);
                     },
                     child: Text('Обновить', style: TextStyle(color: p.sub)),
                   ),

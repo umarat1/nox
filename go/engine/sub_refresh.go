@@ -146,7 +146,7 @@ func (a *App) readSub(cl *http.Client, raw, ua string) (*http.Response, []byte, 
 func (a *App) fetchSub(sub *Sub, isNew bool) (int, []string, error) {
 	a.subFetchMu.Lock()
 	defer a.subFetchMu.Unlock()
-	cl := a.directClient()
+	cl := a.subClient()
 	defer cl.CloseIdleConnections()
 	var lastErr error
 	var fallback *subHit
@@ -216,16 +216,36 @@ func (a *App) fetchSub(sub *Sub, isNew bool) (int, []string, error) {
 		}
 	}
 	sub.Updated = time.Now().Unix()
-	if descs := a.fetchDescs(sub.URL); descs != nil {
-		for i := range chosen.servers {
-			if d, ok := descs[chosen.servers[i].Name]; ok && chosen.servers[i].Desc == "" {
-				chosen.servers[i].Desc = d
-			}
-		}
-	}
 	n := a.applySubServers(sub, chosen.servers, isNew)
 	a.log(fmt.Sprintf("подписка %s: список заменён, %d серверов (UA %s)", sub.Name, n, chosen.ua))
+	// Descriptions are a second panel request. The list is already saved; don't hold the
+	// refresh button on that round trip (it used to add another full timeout while VPN DNS hung).
+	go a.fillDescs(sub.ID, sub.URL)
 	return n, chosen.errs, nil
+}
+
+func (a *App) fillDescs(subID, raw string) {
+	defer func() { _ = recover() }()
+	descs := a.fetchDescs(raw)
+	if len(descs) == 0 {
+		return
+	}
+	a.mu.Lock()
+	changed := false
+	for i := range a.p.Servers {
+		s := &a.p.Servers[i]
+		if s.SubID != subID || s.Desc != "" {
+			continue
+		}
+		if d, ok := descs[s.Name]; ok && d != "" {
+			s.Desc = d
+			changed = true
+		}
+	}
+	if changed {
+		a.save()
+	}
+	a.mu.Unlock()
 }
 
 // nextSubURL is the panel telling the client where the subscription moved.
@@ -366,6 +386,7 @@ func (a *App) RefreshSubs() string {
 	if len(fails) > 0 {
 		return "Ошибка обновления: " + strings.Join(fails, "; ")
 	}
+	go a.pingFresh("")
 	return "Подписки обновлены"
 }
 

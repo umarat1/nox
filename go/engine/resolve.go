@@ -14,8 +14,44 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
+	"syscall"
 	"time"
 )
+
+// ProtectSocket is VpnService.protect plus a bind onto the current non-VPN network.
+// Nil off Android. tunnelUp is set while our VPN is connecting or up, so subscription
+// dials and DNS do not follow the tunnel.
+var (
+	ProtectSocket func(fd int) bool
+	tunnelUp      atomic.Bool
+)
+
+func noteTunnel(status string) {
+	switch status {
+	case "connecting", "connected", "disconnecting":
+		tunnelUp.Store(true)
+	case "disconnected":
+		tunnelUp.Store(false)
+	}
+}
+
+func vpnCaptures() bool { return tunnelUp.Load() && ProtectSocket != nil }
+
+func protectControl(network, address string, c syscall.RawConn) error {
+	if ProtectSocket == nil {
+		return nil
+	}
+	var fail error
+	if err := c.Control(func(fd uintptr) {
+		if fd > 1<<31-1 || !ProtectSocket(int(fd)) {
+			fail = errors.New("protect")
+		}
+	}); err != nil {
+		return err
+	}
+	return fail
+}
 
 // PlatformResolve is the OS resolver (Android: ConnectivityManager on a non-VPN
 // network). Nil on desktop, where the cgo resolver is tried instead.
@@ -148,7 +184,11 @@ func (r *rotatingDNS) sendLocked() error {
 			r.cur.Close()
 			r.cur = nil
 		}
-		c, err := (&net.Dialer{Timeout: 2 * time.Second}).DialContext(r.ctx, a.network, a.server)
+		d := &net.Dialer{Timeout: 2 * time.Second}
+		if vpnCaptures() {
+			d.Control = protectControl
+		}
+		c, err := d.DialContext(r.ctx, a.network, a.server)
 		if err != nil {
 			last = err
 			r.step++
@@ -535,15 +575,61 @@ func dialResolved(ctx context.Context, network, addr string) (net.Conn, error) {
 	if err != nil {
 		return nil, err
 	}
-	d := &net.Dialer{Timeout: 10 * time.Second}
-	if net.ParseIP(host) != nil {
-		return d.DialContext(ctx, network, addr)
+	if net.ParseIP(host) == nil {
+		ip, err := lookupForDial(ctx, host)
+		if err != nil {
+			return nil, err
+		}
+		addr = net.JoinHostPort(ip, port)
 	}
-	ip, err := LookupHost(ctx, host)
-	if err != nil {
-		return nil, err
+	return dialBypass(ctx, network, addr)
+}
+
+// lookupForDial resolves a subscription host. While the VPN is up the platform
+// resolver follows the tunnel and can sit until its own timeout, so public DNS
+// on a protected socket is used instead, with a hard 3s budget.
+func lookupForDial(ctx context.Context, host string) (string, error) {
+	if !vpnCaptures() {
+		return LookupHost(ctx, host)
 	}
-	return d.DialContext(ctx, network, net.JoinHostPort(ip, port))
+	cctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	dial := func(ctx context.Context, network, addr string) (net.Conn, error) {
+		return dialBypass(ctx, network, addr)
+	}
+	ip, err := lookupHost(cctx, host, lookupOpt{skipSystem: true, skipDoH: true, dial: dial})
+	if ip == "" {
+		ip, err = lookupHost(cctx, host, lookupOpt{skipSystem: true, dial: dial})
+	}
+	if ip != "" {
+		dnsCache.Lock()
+		dnsCache.m[host] = dnsEnt{ip, time.Now().Add(5 * time.Minute)}
+		dnsCache.Unlock()
+		return ip, nil
+	}
+	if err == nil {
+		err = fmt.Errorf("не удалось найти %s", host)
+	}
+	return "", err
+}
+
+func dialBypass(ctx context.Context, network, addr string) (net.Conn, error) {
+	if vpnCaptures() {
+		c, err := dialTO(ctx, network, addr, 3*time.Second, protectControl)
+		if err == nil {
+			return c, nil
+		}
+		return dialTO(ctx, network, addr, 3*time.Second, nil)
+	}
+	return dialTO(ctx, network, addr, 8*time.Second, nil)
+}
+
+func dialTO(ctx context.Context, network, addr string, timeout time.Duration, ctrl func(string, string, syscall.RawConn) error) (net.Conn, error) {
+	d := &net.Dialer{Timeout: timeout}
+	if ctrl != nil {
+		d.Control = ctrl
+	}
+	return d.DialContext(ctx, network, addr)
 }
 
 // friendlyNetErr is what the refresh toast shows. The raw error carries the

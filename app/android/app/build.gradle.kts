@@ -23,9 +23,10 @@ android {
         applicationId = "com.lumen.vpn"
         minSdk = 24
         targetSdk = flutter.targetSdkVersion
-        // pubspec 1.0.0+100: above Nox 0.7.71 (versionCode 99)
+        // pubspec build 2000. Split APKs become abi*1000+2000 (v7a 3000, arm64 4000),
+        // both above 1.0.30. versionName stays "2.0" (pubspec's 2.0.0 is only the semver triple).
         versionCode = flutter.versionCode
-        versionName = flutter.versionName
+        versionName = "2.0"
         // ABIs come from `flutter build apk --split-per-abi --target-platform android-arm,android-arm64`.
         // Setting ndk.abiFilters here conflicts with those splits on AGP 9.
     }

@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"net"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -172,6 +173,72 @@ func TestPublicDialUsesTCPWhenUDPIsSilent(t *testing.T) {
 	}
 	if ip := parseA(buf[:n], id); ip != "8.8.4.4" {
 		t.Fatalf("ip %s", ip)
+	}
+}
+
+func TestDialBypassProtectsWhenTunnelUp(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	go func() {
+		c, err := ln.Accept()
+		if err == nil {
+			c.Close()
+		}
+	}()
+	var n int32
+	old := ProtectSocket
+	ProtectSocket = func(int) bool {
+		atomic.AddInt32(&n, 1)
+		return true
+	}
+	tunnelUp.Store(true)
+	t.Cleanup(func() {
+		ProtectSocket = old
+		tunnelUp.Store(false)
+	})
+	c, err := dialResolved(context.Background(), "tcp", ln.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.Close()
+	if atomic.LoadInt32(&n) == 0 {
+		t.Fatal("socket was not protected")
+	}
+}
+
+func TestLookupSkipsHangingSystemWhenTunnelUp(t *testing.T) {
+	oldP := PlatformResolve
+	PlatformResolve = func(string) []net.IP {
+		time.Sleep(5 * time.Second)
+		return []net.IP{net.ParseIP("1.2.3.4")}
+	}
+	good := serveA(t, net.ParseIP("9.9.9.9"))
+	oldDNS := publicDNS
+	publicDNS = []string{good}
+	oldS := ProtectSocket
+	ProtectSocket = func(int) bool { return true }
+	tunnelUp.Store(true)
+	t.Cleanup(func() {
+		PlatformResolve = oldP
+		publicDNS = oldDNS
+		ProtectSocket = oldS
+		tunnelUp.Store(false)
+	})
+	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
+	defer cancel()
+	start := time.Now()
+	ip, err := lookupForDial(ctx, "panel-bypass.example")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ip != "9.9.9.9" {
+		t.Fatal(ip)
+	}
+	if time.Since(start) > 3*time.Second {
+		t.Fatalf("lookup waited %s on the system resolver", time.Since(start))
 	}
 }
 

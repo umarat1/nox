@@ -52,13 +52,14 @@ class NoxVpnService : VpnService() {
                 startFg()
                 instance = this
                 ready?.countDown()
-                return START_NOT_STICKY
+                // Crash of the process brings the service back; a null intent reconnects.
+                return START_STICKY
             }
-            else -> { // always-on VPN / system restart
+            else -> { // always-on VPN / system restart after the process was killed
                 startFg()
                 instance = this
                 thread { Core.call("Connect") }
-                return START_NOT_STICKY
+                return START_STICKY
             }
         }
     }
@@ -149,8 +150,9 @@ class NoxVpnService : VpnService() {
             }
         }
         val p = b.establish() ?: throw Exception("Система не дала создать VPN (нет разрешения)")
-        pfd?.close()
+        val old = pfd
         pfd = p
+        try { old?.close() } catch (_: Exception) {}
         return p.fd
     }
 

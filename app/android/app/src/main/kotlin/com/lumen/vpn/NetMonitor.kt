@@ -29,15 +29,46 @@ object NetMonitor {
             override fun onLinkPropertiesChanged(network: Network, lp: LinkProperties) = push(cm, network)
             override fun onCapabilitiesChanged(network: Network, caps: NetworkCapabilities) = push(cm, network)
             override fun onLost(network: Network) {
-                if (cm.activeNetwork == null) {
+                val under = underlying(cm)
+                bindProcess(cm, under)
+                if (under == null) {
                     last = ""
                     Noxcore.defaultInterfaceChanged("", -1, false)
+                    Noxcore.underlyingNetworkChanged("")
+                } else {
+                    push(cm, under)
                 }
             }
         })
     }
 
+    /** Non-VPN network that has internet, or null. */
+    fun underlying(cm: ConnectivityManager): Network? =
+        cm.allNetworks.firstOrNull { n ->
+            val caps = cm.getNetworkCapabilities(n) ?: return@firstOrNull false
+            caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+                !caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN)
+        }
+
+    private fun bindProcess(cm: ConnectivityManager, n: Network?) {
+        try { cm.bindProcessToNetwork(n) } catch (_: Exception) {}
+    }
+
+    /** Pin one socket to the current physical network. Reflection: FileDescriptor has no public ctor for an existing int. */
+    fun bindSocket(ctx: Context, fd: Int) {
+        val cm = ctx.getSystemService(ConnectivityManager::class.java) ?: return
+        val n = underlying(cm) ?: return
+        try {
+            val f = java.io.FileDescriptor()
+            val field = java.io.FileDescriptor::class.java.getDeclaredField("descriptor")
+            field.isAccessible = true
+            field.setInt(f, fd)
+            n.bindSocket(f)
+        } catch (_: Exception) {}
+    }
+
     private fun push(cm: ConnectivityManager, n: Network) {
+        bindProcess(cm, underlying(cm))
         val caps = cm.getNetworkCapabilities(n)
         if (caps?.hasTransport(NetworkCapabilities.TRANSPORT_VPN) == true) return
         val lp = cm.getLinkProperties(n) ?: return
@@ -49,6 +80,7 @@ object NetMonitor {
         if (key == last) return
         last = key
         Noxcore.defaultInterfaceChanged(name, idx, metered)
+        Noxcore.underlyingNetworkChanged(name)
     }
 
     /** System resolver on a physical network. Empty when it does not answer in time. */
