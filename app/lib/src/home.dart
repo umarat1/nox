@@ -517,8 +517,6 @@ class _BodyState extends State<_Body> {
       for (final wdg in head)
         if (wdg is! _TopBar && wdg is! _Hero) wdg,
     ];
-    // Phone: the connect toggle stays on screen. Pulling the list refreshes
-    // subscriptions on the physical network (the engine does not use the tunnel).
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -530,35 +528,26 @@ class _BodyState extends State<_Body> {
           ),
         ),
         Expanded(
-          child: RefreshIndicator(
-            color: p.acc,
-            backgroundColor: p.card,
-            onRefresh: () async {
-              final r = await c.call('RefreshSubs');
-              if (context.mounted) await finishRefresh(context, c, r);
-            },
-            child: CustomScrollView(
-              physics: const AlwaysScrollableScrollPhysics(),
-              slivers: [
-                SliverPadding(
-                  padding: const EdgeInsets.fromLTRB(12, 0, 12, 0),
-                  sliver: SliverList.list(children: scrollHead),
-                ),
-                PinnedHeaderSliver(
-                  child: ColoredBox(
-                    color: p.bg,
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(12, 0, 12, 0),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: listHead,
-                      ),
+          child: CustomScrollView(
+            slivers: [
+              SliverPadding(
+                padding: const EdgeInsets.fromLTRB(12, 0, 12, 0),
+                sliver: SliverList.list(children: scrollHead),
+              ),
+              PinnedHeaderSliver( // 1.0.20: category tabs stay pinned while the list scrolls
+                child: ColoredBox(
+                  color: p.bg,
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 0, 12, 0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: listHead,
                     ),
                   ),
                 ),
-                ...servers,
-              ],
-            ),
+              ),
+              ...servers,
+            ],
           ),
         ),
       ],
@@ -611,7 +600,6 @@ class _BodyState extends State<_Body> {
         ),
       ];
     }
-    if (!wide) return _groupedSlivers(list);
     return [
       SliverPadding(
         padding: h,
@@ -624,42 +612,6 @@ class _BodyState extends State<_Body> {
             first: i == 0,
             protocol: wide,
           ),
-        ),
-      ),
-    ];
-  }
-
-  /// Phone list: one section per country, with the flag and a live ping on each row.
-  List<Widget> _groupedSlivers(List<J> list) {
-    final groups = groupServers(list);
-    final firstId = groups.isEmpty ? null : groups.first.items.first['id'];
-    return [
-      SliverPadding(
-        padding: const EdgeInsets.fromLTRB(12, 0, 12, 40),
-        sliver: SliverMainAxisGroup(
-          slivers: [
-            for (final g in groups) ...[
-              SliverToBoxAdapter(
-                child: _GroupHead(
-                  p: p,
-                  title: g.title,
-                  iso: g.iso,
-                  count: g.items.length,
-                ),
-              ),
-              SliverList.builder(
-                itemCount: g.items.length,
-                itemBuilder: (_, i) => _ServerRow(
-                  c: c,
-                  p: p,
-                  s: g.items[i],
-                  first: g.items[i]['id'] == firstId,
-                  protocol: false,
-                  live: true,
-                ),
-              ),
-            ],
-          ],
         ),
       ),
     ];
@@ -1815,12 +1767,7 @@ class _SubBlock extends StatelessWidget {
                   behavior: HitTestBehavior.opaque,
                   onTap: onToggleCollapse,
                   child: Text(
-                    () {
-                      final name = ((b['name'] ?? '') as String).trim();
-                      return name.isEmpty
-                          ? 'Подписка · $n серв.'
-                          : '$name · $n';
-                    }(),
+                    'Подписка · $n серв.',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
@@ -2673,28 +2620,6 @@ class _FilterBarState extends State<_FilterBar> {
                 child: SizedBox(key: TourKeys.tabs, height: h, child: strip),
               ),
               const SizedBox(width: 4),
-              if (widget.mobile)
-                _IconBtn(
-                  p: p,
-                  small: true,
-                  icon: Icons.speed_rounded,
-                  tip: 'Лучший сервер',
-                  onTap: () async {
-                    final id = await c.call('BestServer', [40]);
-                    if (!context.mounted) return;
-                    if (id is String && id.isNotEmpty) {
-                      await c.select(id);
-                      if (context.mounted) {
-                        toast(context, 'Выбран сервер с меньшим пингом');
-                      }
-                      return;
-                    }
-                    c.ping(c.visible().map((e) => e['id'] as String).toList());
-                    if (context.mounted) {
-                      toast(context, 'Измеряю пинг и выберу лучший сервер');
-                    }
-                  },
-                ),
               _IconBtn(
                 key: TourKeys.ping,
                 p: p,
@@ -2930,91 +2855,6 @@ class _Tab extends StatelessWidget {
 
 // ------------------------------------------------------------------ servers
 
-class SrvGroup {
-  final String title;
-  final String? iso;
-  final List<J> items;
-  const SrvGroup(this.title, this.iso, this.items);
-}
-
-/// Sections for the phone list: auto and qWDTT first, then countries, then the rest.
-List<SrvGroup> groupServers(List<J> list) {
-  final auto = <J>[];
-  final qw = <J>[];
-  final byIso = <String, List<J>>{};
-  final other = <J>[];
-  for (final s in list) {
-    if (NoxController.isBal(s)) {
-      auto.add(s);
-    } else if (NoxController.isQw(s)) {
-      qw.add(s);
-    } else {
-      final iso = region(s['name'] ?? '');
-      if (iso == null) {
-        other.add(s);
-      } else {
-        byIso.putIfAbsent(iso, () => []).add(s);
-      }
-    }
-  }
-  final isos = byIso.keys.toList()
-    ..sort((a, b) => (regionName[a] ?? a).compareTo(regionName[b] ?? b));
-  return [
-    if (auto.isNotEmpty) SrvGroup('Автовыбор', null, auto),
-    if (qw.isNotEmpty) SrvGroup('Антиблок', null, qw),
-    for (final iso in isos) SrvGroup(regionName[iso] ?? iso, iso, byIso[iso]!),
-    if (other.isNotEmpty) SrvGroup('Другие', null, other),
-  ];
-}
-
-class _GroupHead extends StatelessWidget {
-  final Pal p;
-  final String title;
-  final String? iso;
-  final int count;
-  const _GroupHead({
-    required this.p,
-    required this.title,
-    required this.iso,
-    required this.count,
-  });
-  @override
-  Widget build(BuildContext context) {
-    final iso = this.iso;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(4, 12, 4, 6),
-      child: Row(
-        children: [
-          if (iso != null && hasFlag(iso))
-            ClipOval(
-              child: SvgPicture.asset(
-                'assets/flags/${iso.toLowerCase()}.svg',
-                width: 18,
-                height: 18,
-                fit: BoxFit.cover,
-              ),
-            )
-          else
-            Icon(
-              title == 'Автовыбор' ? Icons.bolt_rounded : Icons.public_rounded,
-              size: 16,
-              color: p.acc2,
-            ),
-          const SizedBox(width: 8),
-          Text(
-            '$title · $count',
-            style: TextStyle(
-              color: p.txt,
-              fontSize: 13,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 Widget _flag(Pal p, J s, {double size = 36}) {
   Widget inner;
   if (NoxController.isBal(s)) {
@@ -3055,13 +2895,11 @@ Widget _flag(Pal p, J s, {double size = 36}) {
   );
 }
 
-/// Ping chip. [tone] colors a live measurement (green / amber / red).
-/// Without it the chip stays neutral ink.
+/// White (light theme: ink) ping chip — no green/yellow/red; «таймаут» marks dead servers.
 class PingChip extends StatelessWidget {
   final Pal p;
   final String text;
-  final Color? tone;
-  const PingChip({super.key, required this.p, required this.text, this.tone});
+  const PingChip({super.key, required this.p, required this.text});
   @override
   Widget build(BuildContext context) => Container(
     constraints: const BoxConstraints(minWidth: 54),
@@ -3074,22 +2912,12 @@ class PingChip extends StatelessWidget {
       text,
       textAlign: TextAlign.center,
       style: TextStyle(
-        color: tone ?? p.pingFg,
+        color: p.pingFg,
         fontSize: 12.5,
         fontWeight: FontWeight.w600,
       ),
     ),
   );
-}
-
-/// Live ping: under 150 ms green, under 400 ms amber, slower or dead red.
-Color? pingTone(Pal p, int ping, {required bool waiting}) {
-  if (waiting && ping == 0) return p.sub;
-  if (ping < 0) return p.red;
-  if (ping <= 0) return p.ter;
-  if (ping < 150) return p.grn;
-  if (ping < 400) return p.amb;
-  return p.red;
 }
 
 String _pingOf(NoxController c, J s) {
@@ -3158,20 +2986,16 @@ class _ServerRow extends StatelessWidget {
   final J s;
   final bool first; // carries the tour target
   final bool protocol; // desktop keeps the protocol line; the phone column does not
-  final bool live; // color the ping from the last measurement
   const _ServerRow({
     required this.c,
     required this.p,
     required this.s,
     this.first = false,
     this.protocol = true,
-    this.live = false,
   });
   @override
   Widget build(BuildContext context) {
     final sub = _sub(s);
-    final ping = (s['ping'] ?? 0) as int;
-    final waiting = c.s['pinging'] == true && c.pingWait.contains(s['id']);
     return Padding(
       padding: const EdgeInsets.only(bottom: 3),
       child: _Tap(
@@ -3209,11 +3033,7 @@ class _ServerRow extends StatelessWidget {
                 ],
               ),
             ),
-            PingChip(
-              p: p,
-              text: _pingOf(c, s),
-              tone: live ? pingTone(p, ping, waiting: waiting) : null,
-            ),
+            PingChip(p: p, text: _pingOf(c, s)),
             IconButton(
               key: first ? TourKeys.server : null,
               onPressed: () => serverSheet(context, c, p, s),
