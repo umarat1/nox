@@ -7,7 +7,6 @@
 package noxcore
 
 import (
-	"context"
 	"encoding/json"
 	"net"
 	"os"
