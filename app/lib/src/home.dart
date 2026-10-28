@@ -3624,11 +3624,13 @@ void settingsSheet(BuildContext context, NoxController c, Pal p) {
       },
     );
     return [
-      swItem(
-        'mtsProxy',
-        'МТС прокси',
-        'Все серверы через прокси оператора 192.168.192.192:80 (APN wap.mts.ru). Hysteria2, TUIC, WireGuard, qWDTT и другие UDP-протоколы так не работают',
-      ),
+      // «МТС прокси» is Android-only (mobile APN wap.mts.ru); desktop never shows it
+      if (isAndroid)
+        swItem(
+          'mtsProxy',
+          'МТС прокси',
+          'Все серверы через прокси оператора 192.168.192.192:80 (APN wap.mts.ru). Hysteria2, TUIC, WireGuard, qWDTT и другие UDP-протоколы так не работают',
+        ),
       item(
         p,
         'Режим',
