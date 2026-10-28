@@ -28,10 +28,72 @@ class NoxController extends ChangeNotifier {
   J get settings => (s['settings'] as Map?)?.cast<String, dynamic>() ?? {};
   Map<String, String> get ui =>
       ((settings['ui'] as Map?) ?? {}).map((k, v) => MapEntry('$k', '$v'));
-  List<J> get servers => ((s['servers'] as List?) ?? [])
+  /// Every server the engine knows (ignores the «МТС прокси» filter).
+  List<J> get allServers => ((s['servers'] as List?) ?? [])
       .cast<Map>()
       .map((e) => e.cast<String, dynamic>())
       .toList();
+
+  /// What the UI lists: with «МТС прокси» on only AnyTLS, mieru, VLESS and proxy servers.
+  List<J> get servers {
+    final a = allServers;
+    return mtsOn ? a.where(mtsAllowed).toList() : a;
+  }
+
+  /// «МТС прокси» (Android only).
+  bool get mtsOn => isAndroid && settings['mtsProxy'] == true;
+
+  /// Protocols kept while «МТС прокси» is on: AnyTLS, mieru, VLESS (incl. Reality/XHTTP)
+  /// and plain proxies (HTTP/HTTPS, SOCKS, Naive). Matches the outbound type first,
+  /// then the label, case-insensitive. «Автовыбор» stays: the engine drops UDP members.
+  static const _mtsKinds = {'vless', 'anytls', 'mieru', 'http', 'https', 'socks', 'socks5', 'naive'};
+  static bool mtsAllowed(J s) {
+    if (isBal(s)) return true;
+    final ob = s['outbound'];
+    final o = ob is Map ? ob.cast<String, dynamic>() : const <String, dynamic>{};
+    String lo(Object? v) => '${v ?? ''}'.toLowerCase().trim();
+    final tr = o['transport'];
+    if (tr is Map && lo(tr['type']) == 'quic') return false;
+    if (lo(o['network']) == 'udp') return false;
+    var t = lo(o['type']);
+    if (t == '_xray') {
+      final x = o['xray'];
+      t = x is Map ? lo(x['protocol']) : '';
+    } else if (t == '_ext') {
+      final k = lo(o['kind']);
+      final cfg = o['cfg'];
+      t = k == 'mihomo' && cfg is Map ? lo(cfg['type']) : k;
+    }
+    if (t.isNotEmpty && !t.startsWith('_')) return _mtsKinds.contains(t);
+    // unknown outbound shape: fall back to the protocol label («VLESS Reality», «Mieru», «SOCKS5»…)
+    final l = lo(s['type']).split(RegExp(r'[\s+/(]')).first;
+    return _mtsKinds.contains(l);
+  }
+
+  /// «МТС прокси» toggle: save, move off a now-hidden server, apply to a live tunnel.
+  Future<void> setMtsProxy(bool on) async {
+    await saveSettings({'mtsProxy': on});
+    if (await _mtsFixSelection()) return; // Select reconnects by itself
+    if (connected) {
+      await call('Disconnect');
+      await call('Connect');
+    }
+    await refresh();
+  }
+
+  /// If the selected server is hidden by «МТС прокси», select the first visible one.
+  Future<bool> _mtsFixSelection() async {
+    if (!mtsOn || selected.isEmpty) return false;
+    final all = allServers;
+    final cur = all.where((x) => x['id'] == selected).firstOrNull;
+    if (cur == null || mtsAllowed(cur)) return false;
+    final vis = all.where(mtsAllowed).toList();
+    if (vis.isEmpty) return false;
+    final first = vis.firstWhere((x) => !isBal(x), orElse: () => vis.first);
+    await api.call('Select', [first['id']]);
+    await refresh();
+    return true;
+  }
   List<J> get subs => ((s['subs'] as List?) ?? [])
       .cast<Map>()
       .map((e) => e.cast<String, dynamic>())
@@ -153,6 +215,8 @@ class NoxController extends ChangeNotifier {
       return null;
     }
     if (m == 'Connect') vpnDenied = false;
+    // never connect to a server hidden by «МТС прокси»
+    if (m == 'Connect' && await _mtsFixSelection()) return null;
     try {
       final r = await api.call(m, a);
       fatal = null;

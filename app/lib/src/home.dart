@@ -1069,6 +1069,26 @@ class _TopBar extends StatelessWidget {
                   accent: mobile,
                   onTap: () => addSheet(context, c, p),
                 ),
+                // «МТС прокси» lives next to «+» (Android only)
+                if (isAndroid) ...[
+                  SizedBox(width: mobile ? 6 : 2),
+                  _MtsBtn(
+                    p: p,
+                    on: c.mtsOn,
+                    onTap: () async {
+                      final on = !c.mtsOn;
+                      await c.setMtsProxy(on);
+                      if (!context.mounted) return;
+                      toast(
+                        context,
+                        on
+                            ? 'МТС прокси включён: только AnyTLS, mieru, VLESS и прокси'
+                            : 'МТС прокси выключен',
+                      );
+                      if (on) await mtsApnDialog(context);
+                    },
+                  ),
+                ],
                 SizedBox(width: mobile ? 6 : 2),
                 _GhostBtn(
                   key: TourKeys.theme,
@@ -1157,6 +1177,51 @@ class _TopBar extends StatelessWidget {
 }
 
 /// Flat header button: no fill, circular ripple, accent focus ring for TV D-pad.
+/// «МТС прокси» pill in the top bar: red when on.
+class _MtsBtn extends StatelessWidget {
+  final Pal p;
+  final bool on;
+  final VoidCallback onTap;
+  const _MtsBtn({required this.p, required this.on, required this.onTap});
+  static const _red = Color(0xFFE30611);
+  @override
+  Widget build(BuildContext context) => Tooltip(
+    message: on ? 'МТС прокси: вкл' : 'МТС прокси: выкл',
+    child: Material(
+      type: MaterialType.transparency,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 140),
+          height: 36,
+          padding: const EdgeInsets.symmetric(horizontal: 10),
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: on
+                ? _red
+                : (p.amoled
+                      ? const Color(0xFF101018)
+                      : (p.light ? p.bg : p.chip.withValues(alpha: .80))),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: on ? _red : (p.amoled ? const Color(0xFF222230) : p.line),
+            ),
+          ),
+          child: Text(
+            'МТС',
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w800,
+              color: on ? Colors.white : p.txt.withValues(alpha: .75),
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
 class _GhostBtn extends StatefulWidget {
   final Pal p;
   final IconData icon;
@@ -3625,13 +3690,7 @@ void settingsSheet(BuildContext context, NoxController c, Pal p) {
       },
     );
     return [
-      // «МТС прокси» is Android-only (mobile APN wap.mts.ru); desktop never shows it
-      if (isAndroid)
-        swItem(
-          'mtsProxy',
-          'МТС прокси',
-          'Все серверы через прокси оператора 192.168.192.192:80 (APN wap.mts.ru). Hysteria2, TUIC, WireGuard, qWDTT и другие UDP-протоколы так не работают',
-        ),
+      // «МТС прокси» moved to the top bar next to «+» (_MtsBtn)
       item(
         p,
         'Режим',
