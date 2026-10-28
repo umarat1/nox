@@ -7001,41 +7001,48 @@ class _HeroAlt extends StatelessWidget {
                   children: [
                     Row(
                       children: [
-                        Container(
-                          padding: const EdgeInsets.fromLTRB(8, 4, 10, 4),
-                          decoration: BoxDecoration(
-                            color: Colors.black.withValues(alpha: .22),
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Container(
-                                width: 8,
-                                height: 8,
-                                decoration: BoxDecoration(
-                                  color: stColor,
-                                  shape: BoxShape.circle,
+                        Flexible(
+                          child: Container(
+                            padding: const EdgeInsets.fromLTRB(8, 4, 10, 4),
+                            decoration: BoxDecoration(
+                              color: Colors.black.withValues(alpha: .22),
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Container(
+                                  width: 8,
+                                  height: 8,
+                                  decoration: BoxDecoration(
+                                    color: stColor,
+                                    shape: BoxShape.circle,
+                                  ),
                                 ),
-                              ),
-                              const SizedBox(width: 6),
-                              Text(
-                                label.toUpperCase(),
-                                style: TextStyle(
-                                  color: Colors.white.withValues(alpha: .92),
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w800,
-                                  letterSpacing: 1,
+                                const SizedBox(width: 6),
+                                Flexible(
+                                  child: Text(
+                                    label.toUpperCase(),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      color: Colors.white.withValues(
+                                        alpha: .92,
+                                      ),
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w800,
+                                      letterSpacing: 1,
+                                    ),
+                                  ),
                                 ),
-                              ),
-                            ],
+                              ],
+                            ),
                           ),
                         ),
-                        const Spacer(),
+                        const SizedBox(width: 10),
                         badge(22),
                         const SizedBox(width: 7),
-                        ConstrainedBox(
-                          constraints: const BoxConstraints(maxWidth: 150),
+                        Flexible(
                           child: Text(
                             name,
                             maxLines: 1,
@@ -7054,24 +7061,36 @@ class _HeroAlt extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.end,
                       children: [
                         Expanded(
+                          flex: 2,
                           child: _Side(
                             icon: Icons.south_rounded,
                             value: down,
                             label: 'загрузка',
                           ),
                         ),
-                        Text(
-                          _hms(secs),
-                          style: TextStyle(
-                            color: Colors.white.withValues(alpha: on ? 1 : .55),
-                            fontSize: 40,
-                            fontWeight: FontWeight.w800,
-                            height: 1,
-                            letterSpacing: -.5,
-                            fontFeatures: const [FontFeature.tabularFigures()],
+                        Flexible(
+                          flex: 5,
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Text(
+                              _hms(secs),
+                              style: TextStyle(
+                                color: Colors.white.withValues(
+                                  alpha: on ? 1 : .55,
+                                ),
+                                fontSize: 40,
+                                fontWeight: FontWeight.w800,
+                                height: 1,
+                                letterSpacing: -.5,
+                                fontFeatures: const [
+                                  FontFeature.tabularFigures(),
+                                ],
+                              ),
+                            ),
                           ),
                         ),
                         Expanded(
+                          flex: 2,
                           child: _Side(
                             icon: Icons.north_rounded,
                             value: up,
@@ -7084,6 +7103,8 @@ class _HeroAlt extends StatelessWidget {
                     const SizedBox(height: 4),
                     Text(
                       '$proto · пинг $ping',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         color: Colors.white.withValues(alpha: .7),
                         fontSize: 12,
@@ -7153,18 +7174,22 @@ class _Side extends StatelessWidget {
     crossAxisAlignment: end ? CrossAxisAlignment.end : CrossAxisAlignment.start,
     children: [
       Icon(icon, size: 15, color: Colors.white.withValues(alpha: .85)),
-      Text(
-        value,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: const TextStyle(
-          color: Colors.white,
-          fontSize: 12.5,
-          fontWeight: FontWeight.w800,
+      FittedBox(
+        fit: BoxFit.scaleDown,
+        child: Text(
+          value,
+          maxLines: 1,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 12.5,
+            fontWeight: FontWeight.w800,
+          ),
         ),
       ),
       Text(
         label,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
         style: TextStyle(
           color: Colors.white.withValues(alpha: .6),
           fontSize: 10.5,
@@ -7272,12 +7297,17 @@ class _SlidePill extends StatelessWidget {
           child: Stack(
             alignment: Alignment.center,
             children: [
-              Text(
-                hint,
-                style: TextStyle(
-                  color: Colors.white.withValues(alpha: .85),
-                  fontSize: 13.5,
-                  fontWeight: FontWeight.w700,
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 46),
+                child: Text(
+                  hint,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: .85),
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
               ),
               AnimatedAlign(
