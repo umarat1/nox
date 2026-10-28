@@ -40,10 +40,14 @@ func (a *App) startSSTPAndroid(ctx context.Context, srv core.Server, s core.SSTP
 	if sni == "" {
 		sni = s.Server
 	}
-	sess, err := sstp.Dial(ctx, sstp.Config{
+	cfg := sstp.Config{
 		Server: s.Server, Addr: ip, Port: port, User: s.User, Password: s.Password, SNI: sni, Insecure: s.Insecure,
 		Logf: func(f string, v ...any) { a.log(fmt.Sprintf(f, v...)) },
-	})
+	}
+	if a.mtsOn() {
+		cfg.Dial = mtsDial // «МТС прокси»: TLS to the SSTP server via HTTP CONNECT
+	}
+	sess, err := sstp.Dial(ctx, cfg)
 	if err != nil {
 		if AndroidStopTunService != nil {
 			AndroidStopTunService()

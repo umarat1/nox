@@ -105,6 +105,16 @@ Future<List<AppInfo>> listApps() async {
   ];
 }
 
+/// «МТС прокси»: Android APN screen (falls back to wireless settings). Apps cannot set the APN.
+Future<bool> openApnSettings() async {
+  if (!Platform.isAndroid || _mock) return false;
+  try {
+    return await _ch.invokeMethod<bool>('openApnSettings') ?? false;
+  } catch (_) {
+    return false;
+  }
+}
+
 Future<bool> openUrl(String url) async {
   try {
     if (Platform.isAndroid) {

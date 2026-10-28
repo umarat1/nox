@@ -57,7 +57,7 @@ func (a *App) startXray(name string, obs []json.RawMessage, pn pingNet) (*xrayPr
 		ents = append(ents, core.XrayEntry{Outbound: ob, Port: p, IP: pn.resolveDirect(w.Server)})
 		ports = append(ports, p)
 	}
-	b, err := core.XrayConfig(ents)
+	b, err := core.XrayConfigMts(ents, a.mtsOn())
 	if err != nil {
 		return nil, err
 	}

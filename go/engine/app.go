@@ -27,7 +27,7 @@ import (
 	"nox/core"
 )
 
-const Version = "2.0"
+const Version = "2.1"
 
 type Sub struct {
 	ID       string `json:"id"`
@@ -519,7 +519,9 @@ func parseUserInfo(h string, s *Sub) {
 // directClient never uses the local proxy. Subscription fetches must hit the panel
 // itself: going through the tunnel can keep a cached or filtered copy.
 func (a *App) directClient() *http.Client {
-	return &http.Client{Timeout: 25 * time.Second, Transport: directTransport()}
+	tr := directTransport()
+	a.mtsTransport(tr)
+	return &http.Client{Timeout: 25 * time.Second, Transport: tr}
 }
 
 // subClient is the subscription fetch. A shorter cap than the update downloader:
@@ -528,6 +530,13 @@ func (a *App) subClient() *http.Client {
 	tr := directTransport()
 	tr.TLSHandshakeTimeout = 4 * time.Second
 	tr.ResponseHeaderTimeout = 6 * time.Second
+	if a.mtsOn() {
+		// «МТС прокси»: the panel is reached through the operator HTTP proxy
+		a.mtsTransport(tr)
+		tr.TLSHandshakeTimeout = 10 * time.Second
+		tr.ResponseHeaderTimeout = 12 * time.Second
+		return &http.Client{Timeout: 25 * time.Second, Transport: tr}
+	}
 	return &http.Client{Timeout: 12 * time.Second, Transport: tr}
 }
 
@@ -678,10 +687,25 @@ func (a *App) ping(list []core.Server, mode string) map[string]int {
 	var urlList []core.Server
 	sem := make(chan struct{}, 32)
 	var bals []core.Server
+	mts := a.mtsOn()
 	for _, s := range list {
 		s := s
 		if s.Type == core.BalancerLabel {
 			bals = append(bals, s)
+			continue
+		}
+		if mts {
+			// «МТС прокси»: direct probes say nothing; servers that cannot be chained get -2
+			if mtsUnsupported(s) != "" {
+				set(s.ID, -4)
+				continue
+			}
+			if core.IsFullTunnel(s.Outbound) {
+				wg.Add(1)
+				go func() { defer wg.Done(); set(s.ID, mtsTCPPing(s.Host, s.Port)) }()
+				continue
+			}
+			urlList = append(urlList, s)
 			continue
 		}
 		if core.IsFullTunnel(s.Outbound) {
@@ -715,7 +739,7 @@ func (a *App) ping(list []core.Server, mode string) map[string]int {
 	}
 	if len(urlList) > 0 {
 		for _, s := range urlList {
-			if isUDPServer(s) {
+			if mts || isUDPServer(s) {
 				continue
 			}
 			s := s
@@ -822,8 +846,13 @@ func (a *App) urlTest(list []core.Server, set func(string, int), pn pingNet) {
 			}
 		}
 	}
+	mts := a.mtsOn()
 	extPort := map[int]int{}
 	for i, s := range list {
+		if mts && (core.IsExt(s.Outbound) || s.Type == "qWDTT") {
+			set(s.ID, -1) // cannot go through the MTS HTTP proxy
+			continue
+		}
 		if core.IsExt(s.Outbound) {
 			e, err := a.startExt(s.Outbound)
 			if err != nil {
@@ -861,6 +890,12 @@ func (a *App) urlTest(list []core.Server, set func(string, int), pn pingNet) {
 		tag := "s" + strconv.Itoa(i)
 		ob["tag"] = tag
 		pinIP(ob, pn)
+		if mts && ob["type"] != core.ChainType && ob["type"] != core.BalancerType {
+			if core.ApplyMts([]map[string]any{ob}) != nil {
+				set(s.ID, -1)
+				continue
+			}
+		}
 		tags[tag] = s.ID
 		if ob["type"] == "wireguard" {
 			eps = append(eps, ob)
@@ -871,6 +906,9 @@ func (a *App) urlTest(list []core.Server, set func(string, int), pn pingNet) {
 		sport[tag] = sp
 		ins = append(ins, map[string]any{"type": "socks", "tag": "in-" + tag, "listen": "127.0.0.1", "listen_port": sp})
 		rules = append(rules, map[string]any{"inbound": []string{"in-" + tag}, "outbound": tag})
+	}
+	if mts {
+		outs = append(outs, core.MtsOutbound())
 	}
 	outs = append(outs, map[string]any{"type": "direct", "tag": "direct"})
 	route := map[string]any{"final": "direct", "default_domain_resolver": "local", "auto_detect_interface": true, "rules": rules}
@@ -1154,6 +1192,12 @@ func (a *App) Connect() {
 }
 
 func (a *App) connect(ctx context.Context, srv core.Server, s core.Settings) error {
+	if s.MtsProxy {
+		if r := mtsUnsupported(srv); r != "" {
+			return errors.New("МТС прокси: " + r + ". Выключите «МТС прокси» или выберите VLESS/Trojan/VMess/Shadowsocks")
+		}
+		a.log("МТС прокси: соединение через " + core.MtsProxyHost)
+	}
 	if core.IsFullTunnel(srv.Outbound) {
 		return a.connectFullTunnel(ctx, srv)
 	}

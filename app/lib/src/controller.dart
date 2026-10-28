@@ -357,6 +357,8 @@ class NoxController extends ChangeNotifier {
           ? 1000000
           : p == -2 || p == -3
           ? 2000000
+          : p == -4
+          ? 4000000
           : 3000000;
     }
 

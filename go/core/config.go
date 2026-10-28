@@ -50,6 +50,8 @@ type Settings struct {
 	AutoBest bool `json:"autoBest"`
 	// TCP Fast Open, and multiplex only for VMess/Shadowsocks (not VLESS+Vision, not QUIC).
 	FastDial bool `json:"fastDial"`
+	// 2.1: «МТС прокси» — all servers via the operator HTTP proxy 192.168.192.192:80
+	MtsProxy bool `json:"mtsProxy"`
 }
 
 func DefaultSettings() Settings {
@@ -150,6 +152,23 @@ func BuildConfig(proxy map[string]any, s Settings, clashAddr string, ruleDir str
 				tags = append(tags, t)
 				extraOuts = append(extraOuts, m)
 			}
+		}
+		if s.MtsProxy {
+			var keep []string
+			var outs2 []any
+			for _, x := range extraOuts {
+				m, _ := x.(map[string]any)
+				if m != nil && MtsBlocked(m) != "" {
+					continue
+				}
+				outs2 = append(outs2, x)
+				if m != nil {
+					if t, _ := m["tag"].(string); t != "" {
+						keep = append(keep, t)
+					}
+				}
+			}
+			extraOuts, tags = outs2, keep
 		}
 		if len(tags) == 0 {
 			return nil, fmt.Errorf("автовыбор: нет серверов")
@@ -283,6 +302,21 @@ func BuildConfig(proxy map[string]any, s Settings, clashAddr string, ruleDir str
 				tuneOutbound(m)
 			}
 		}
+	}
+	if s.MtsProxy {
+		all := []map[string]any{proxy}
+		for _, o := range extraOuts {
+			if m, ok := o.(map[string]any); ok {
+				all = append(all, m)
+			}
+		}
+		if err := ApplyMts(all); err != nil {
+			return nil, err
+		}
+		extraOuts = append(extraOuts, MtsOutbound())
+		// the operator proxy itself is reached directly (it is only inside the MTS network)
+		rules = append([]any{map[string]any{"ip_cidr": []string{MtsProxyHost + "/32"}, "outbound": "direct"}}, rules...)
+		route["rules"] = rules
 	}
 	if isEndpoint {
 		cfg["endpoints"] = []any{proxy}

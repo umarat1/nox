@@ -20,6 +20,7 @@ bool get isAndroid => false;
 Future<bool> prepareVpn() async => true;
 Future<bool> isTvDevice() async => const bool.fromEnvironment('NOX_MOCK_TV');
 Future<bool> openUrl(String url) async => false;
+Future<bool> openApnSettings() async => false;
 Future<void> legacyImported() async {}
 final windowShown = ValueNotifier<bool>(true);
 bool get canFullScreen => const bool.fromEnvironment('NOX_MOCK_DESKTOP');

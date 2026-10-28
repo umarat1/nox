@@ -52,6 +52,7 @@ class MainActivity : FlutterActivity() {
                 }
                 "solveCaptcha" -> solveCaptcha(call.argument<String>("url") ?: "", res)
                 "openUrl" -> res.success(openUrl(call.argument<String>("url") ?: ""))
+                "openApnSettings" -> res.success(openApnSettings())
                 "legacyState" -> exec.execute {
                     // Nox 0.7.x kept subscriptions/servers here (same package, same files dir)
                     val f = File(filesDir, "lumen-data.json")
@@ -245,6 +246,19 @@ class MainActivity : FlutterActivity() {
         val ui = getSystemService(UiModeManager::class.java)
         return ui?.currentModeType == Configuration.UI_MODE_TYPE_TELEVISION ||
             packageManager.hasSystemFeature(PackageManager.FEATURE_LEANBACK)
+    }
+
+    // «МТС прокси»: the APN list (wap.mts.ru). Many OEMs hide it: fall back to wireless/mobile network.
+    private fun openApnSettings(): Boolean {
+        for (a in listOf(Settings.ACTION_APN_SETTINGS, Settings.ACTION_NETWORK_OPERATOR_SETTINGS,
+            Settings.ACTION_WIRELESS_SETTINGS, Settings.ACTION_SETTINGS)) {
+            try {
+                startActivity(Intent(a).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                return true
+            } catch (_: Exception) {
+            }
+        }
+        return false
     }
 
     private fun openUrl(url: String): Boolean = try {

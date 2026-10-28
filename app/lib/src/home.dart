@@ -3558,6 +3558,33 @@ void scaleSheet(
   ).whenComplete(live.dispose);
 }
 
+/// «МТС прокси» on: the phone must use the MTS WAP access point; apps cannot switch the APN.
+Future<void> mtsApnDialog(BuildContext context) => showDialog<void>(
+  context: context,
+  builder: (d) => AlertDialog(
+    title: const Text('МТС прокси включён'),
+    content: const Text(
+      'Для работы МТС прокси включите точку доступа (APN) wap.mts.ru в настройках мобильной сети.\n\n'
+      'Прокси 192.168.192.192:80 доступен только в сети МТС. Серверы на UDP '
+      '(Hysteria2, TUIC, WireGuard, qWDTT) через него не работают и помечены «не через МТС».',
+    ),
+    actions: [
+      if (isAndroid)
+        TextButton(
+          onPressed: () async {
+            Navigator.pop(d);
+            await openApnSettings();
+          },
+          child: const Text('Открыть настройки APN'),
+        ),
+      TextButton(
+        onPressed: () => Navigator.pop(d),
+        child: const Text('Понятно'),
+      ),
+    ],
+  ),
+);
+
 void settingsSheet(BuildContext context, NoxController c, Pal p) {
   sheet(context, p, 'Настройки', (ctx) {
     final s = c.settings;
@@ -3575,9 +3602,14 @@ void settingsSheet(BuildContext context, NoxController c, Pal p) {
           await c.saveSettings({'noSysProxy': !(s['noSysProxy'] == true)});
           return;
         }
-        await c.saveSettings({k: !(s[k] == true)});
+        final on = !(s[k] == true);
+        await c.saveSettings({k: on});
+        if (k == 'mtsProxy' && on && context.mounted) {
+          await mtsApnDialog(context);
+        }
         // routing is part of the running config: reconnect to apply now
         const live = {
+          'mtsProxy',
           'directRu',
           'ruApps',
           'blockAds',
@@ -3592,6 +3624,11 @@ void settingsSheet(BuildContext context, NoxController c, Pal p) {
       },
     );
     return [
+      swItem(
+        'mtsProxy',
+        'МТС прокси',
+        'Все серверы через прокси оператора 192.168.192.192:80 (APN wap.mts.ru). Hysteria2, TUIC, WireGuard, qWDTT и другие UDP-протоколы так не работают',
+      ),
       item(
         p,
         'Режим',

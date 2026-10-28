@@ -125,7 +125,10 @@ type XrayEntry struct {
 
 // XrayConfig builds an Xray-core config: one SOCKS5 inbound (127.0.0.1:Port, UDP on) per
 // entry, routed to that entry's outbound.
-func XrayConfig(entries []XrayEntry) ([]byte, error) {
+func XrayConfig(entries []XrayEntry) ([]byte, error) { return XrayConfigMts(entries, false) }
+
+// XrayConfigMts: mts=true chains every outbound through the MTS HTTP proxy.
+func XrayConfigMts(entries []XrayEntry, mts bool) ([]byte, error) {
 	var ins, outs, rules []any
 	for i, e := range entries {
 		var w struct {
@@ -149,10 +152,16 @@ func XrayConfig(entries []XrayEntry) ([]byte, error) {
 		}
 		in, out := fmt.Sprintf("in%d", i), fmt.Sprintf("out%d", i)
 		ob["tag"] = out
+		if mts {
+			ApplyMtsXray(ob)
+		}
 		ins = append(ins, map[string]any{"tag": in, "listen": "127.0.0.1", "port": e.Port, "protocol": "socks",
 			"settings": map[string]any{"auth": "noauth", "udp": true, "ip": "127.0.0.1"}})
 		outs = append(outs, ob)
 		rules = append(rules, map[string]any{"type": "field", "inboundTag": []string{in}, "outboundTag": out})
+	}
+	if mts {
+		outs = append(outs, MtsXrayOutbound())
 	}
 	outs = append(outs, map[string]any{"tag": "block", "protocol": "blackhole"})
 	cfg := map[string]any{"log": map[string]any{"loglevel": "warning", "access": "none"}, "inbounds": ins, "outbounds": outs,
