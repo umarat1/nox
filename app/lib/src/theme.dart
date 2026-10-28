@@ -21,6 +21,9 @@ class Pal {
 
   /// AMOLED: every surface is pure #000000; depth comes from edges and glow, not grey fills.
   final bool amoled;
+
+  /// Monochrome: black/white/greys only, country flags replaced by letter badges.
+  final bool mono;
   const Pal({
     required this.bg,
     required this.hero,
@@ -38,6 +41,7 @@ class Pal {
     required this.sel,
     this.light = false,
     this.amoled = false,
+    this.mono = false,
   });
 
   /// Ping text: white on dark/AMOLED, normal ink on light (white would be unreadable there).
@@ -95,12 +99,238 @@ class Pal {
     light: true,
   );
 
-  static Pal of(String? key) => switch (key) {
-    'black' => black,
-    'light' => lightP,
-    _ => dark,
-  };
+  static const monoP = Pal(
+    bg: Color(0xFF0A0A0B),
+    hero: Color(0xFF141415),
+    card: Color(0xFF161617),
+    line: Color(0xFF2E2E31),
+    chip: Color(0xFF1F1F21),
+    txt: Color(0xFFF2F2F2),
+    sub: Color(0xFF9C9CA0),
+    ter: Color(0xFF68686C),
+    acc: Color(0xFF8E8E93),
+    acc2: Color(0xFFD8D8DA),
+    grn: Color(0xFFEDEDED),
+    amb: Color(0xFFB4B4B8),
+    red: Color(0xFF8A8A8E),
+    sel: Color(0xFF2B2B2E),
+    mono: true,
+  );
+
+  static const monoBlack = Pal(
+    bg: Color(0xFF000000),
+    hero: Color(0xFF000000),
+    card: Color(0xFF000000),
+    line: Color(0xFF242426),
+    chip: Color(0xFF000000),
+    txt: Color(0xFFF2F2F2),
+    sub: Color(0xFF9C9CA0),
+    ter: Color(0xFF68686C),
+    acc: Color(0xFF8E8E93),
+    acc2: Color(0xFFD8D8DA),
+    grn: Color(0xFFEDEDED),
+    amb: Color(0xFFB4B4B8),
+    red: Color(0xFF8A8A8E),
+    sel: Color(0xFF1C1C1E),
+    amoled: true,
+    mono: true,
+  );
+  static const monoLight = Pal(
+    bg: Color(0xFFF2F2F3),
+    hero: Color(0xFFFFFFFF),
+    card: Color(0xFFFFFFFF),
+    line: Color(0xFFE0E0E2),
+    chip: Color(0xFFEFEFF0),
+    txt: Color(0xFF121212),
+    sub: Color(0xFF5E5E62),
+    ter: Color(0xFF8C8C90),
+    acc: Color(0xFF3A3A3C),
+    acc2: Color(0xFF1F1F21),
+    grn: Color(0xFF2A2A2C),
+    amb: Color(0xFF6B6B6E),
+    red: Color(0xFF4A4A4C),
+    sel: Color(0xFFE6E6E8),
+    light: true,
+    mono: true,
+  );
+
+  Pal copyWith({
+    Color? bg,
+    Color? hero,
+    Color? card,
+    Color? line,
+    Color? chip,
+    Color? acc,
+    Color? acc2,
+    Color? sel,
+  }) => Pal(
+    bg: bg ?? this.bg,
+    hero: hero ?? this.hero,
+    card: card ?? this.card,
+    line: line ?? this.line,
+    chip: chip ?? this.chip,
+    txt: txt,
+    sub: sub,
+    ter: ter,
+    acc: acc ?? this.acc,
+    acc2: acc2 ?? this.acc2,
+    grn: grn,
+    amb: amb,
+    red: red,
+    sel: sel ?? this.sel,
+    light: light,
+    amoled: amoled,
+    mono: mono,
+  );
+
+  /// [key] = base theme (black/dark/light), [tpl] = design template (glass/ocean/…/mono).
+  static Pal of(String? key, [String? tpl]) {
+    if (key == 'mono') return of('dark', 'mono'); // pre-release 2.1.4 builds
+    final base = switch (key) {
+      'black' => black,
+      'light' => lightP,
+      _ => dark,
+    };
+    final t = templateOf(tpl);
+    if (t.key == 'mono') {
+      return base.light ? monoLight : (base.amoled ? monoBlack : monoP);
+    }
+    if (t.key == 'glass') return base;
+    if (base.light)
+      return base.copyWith(acc: t.lAcc, acc2: t.lAcc2, sel: t.lSel);
+    if (base.amoled)
+      return base.copyWith(acc: t.acc, acc2: t.acc2, sel: t.oSel);
+    return base.copyWith(
+      bg: t.bg,
+      hero: t.hero,
+      card: t.card,
+      line: t.line,
+      chip: t.chip,
+      acc: t.acc,
+      acc2: t.acc2,
+      sel: t.sel,
+    );
+  }
 }
+
+/// Design template: accent pair + tinted dark surfaces; light/AMOLED bases take the accents only.
+class Tpl {
+  final String key, name;
+  final Color acc,
+      acc2,
+      bg,
+      hero,
+      card,
+      line,
+      chip,
+      sel,
+      oSel,
+      lAcc,
+      lAcc2,
+      lSel;
+  const Tpl(
+    this.key,
+    this.name, {
+    required this.acc,
+    required this.acc2,
+    required this.bg,
+    required this.hero,
+    required this.card,
+    required this.line,
+    required this.chip,
+    required this.sel,
+    required this.oSel,
+    required this.lAcc,
+    required this.lAcc2,
+    required this.lSel,
+  });
+}
+
+const templates = <Tpl>[
+  Tpl(
+    'glass',
+    'Стекло',
+    acc: Color(0xFF7C5CFF),
+    acc2: Color(0xFF8B6CFF),
+    bg: Color(0xFF0D1020),
+    hero: Color(0xFF181C3A),
+    card: Color(0xFF1A1E3D),
+    line: Color(0xFF2A3060),
+    chip: Color(0xFF22274A),
+    sel: Color(0xFF2A2366),
+    oSel: Color(0xFF15113A),
+    lAcc: Color(0xFF6C4CF1),
+    lAcc2: Color(0xFF6C4CF1),
+    lSel: Color(0xFFECE8FD),
+  ),
+  Tpl(
+    'ocean',
+    'Океан',
+    acc: Color(0xFF0EA5E9),
+    acc2: Color(0xFF22D3EE),
+    bg: Color(0xFF08121E),
+    hero: Color(0xFF0F1D30),
+    card: Color(0xFF102236),
+    line: Color(0xFF1E3B57),
+    chip: Color(0xFF162C45),
+    sel: Color(0xFF0C3550),
+    oSel: Color(0xFF06222F),
+    lAcc: Color(0xFF0284C7),
+    lAcc2: Color(0xFF0891B2),
+    lSel: Color(0xFFE0F2FE),
+  ),
+  Tpl(
+    'emerald',
+    'Изумруд',
+    acc: Color(0xFF10B981),
+    acc2: Color(0xFF34D399),
+    bg: Color(0xFF07120E),
+    hero: Color(0xFF0E1F18),
+    card: Color(0xFF0F221A),
+    line: Color(0xFF1E3D30),
+    chip: Color(0xFF152C22),
+    sel: Color(0xFF0D3B2B),
+    oSel: Color(0xFF062419),
+    lAcc: Color(0xFF059669),
+    lAcc2: Color(0xFF047857),
+    lSel: Color(0xFFD1FAE5),
+  ),
+  Tpl(
+    'sunset',
+    'Закат',
+    acc: Color(0xFFF97316),
+    acc2: Color(0xFFF472B6),
+    bg: Color(0xFF140B12),
+    hero: Color(0xFF22121E),
+    card: Color(0xFF24131F),
+    line: Color(0xFF40213A),
+    chip: Color(0xFF2D1828),
+    sel: Color(0xFF4A1D35),
+    oSel: Color(0xFF2A0E1C),
+    lAcc: Color(0xFFEA580C),
+    lAcc2: Color(0xFFDB2777),
+    lSel: Color(0xFFFFEDD5),
+  ),
+  Tpl(
+    'mono',
+    'Монохром',
+    acc: Color(0xFF8E8E93),
+    acc2: Color(0xFFD8D8DA),
+    bg: Color(0xFF0A0A0B),
+    hero: Color(0xFF141415),
+    card: Color(0xFF161617),
+    line: Color(0xFF2E2E31),
+    chip: Color(0xFF1F1F21),
+    sel: Color(0xFF2B2B2E),
+    oSel: Color(0xFF1C1C1E),
+    lAcc: Color(0xFF3A3A3C),
+    lAcc2: Color(0xFF1F1F21),
+    lSel: Color(0xFFE6E6E8),
+  ),
+];
+
+Tpl templateOf(String? k) =>
+    templates.firstWhere((t) => t.key == k, orElse: () => templates[0]);
 
 const themeNames = [
   ('black', 'AMOLED (чёрная)'),
@@ -116,6 +346,9 @@ ThemeData materialTheme(Pal p) {
     seedColor: p.acc,
     brightness: b,
     surface: p.hero,
+    dynamicSchemeVariant: p.mono
+        ? DynamicSchemeVariant.monochrome
+        : DynamicSchemeVariant.tonalSpot,
   );
   if (p.amoled) {
     const k = Color(0xFF000000);

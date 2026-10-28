@@ -24,7 +24,7 @@ Future<void> openSend(BuildContext context, NoxController c, {String? uri}) =>
       ),
     );
 
-Pal _pal(NoxController c) => Pal.of(c.settings['theme'] as String?);
+Pal _pal(NoxController c) => Pal.of(c.settings['theme'] as String?, c.pref('tpl', 'glass'));
 
 // ------------------------------------------------------------------ shared bits
 

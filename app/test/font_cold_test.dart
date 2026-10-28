@@ -15,7 +15,7 @@ void main() {
     await t.pumpWidget(NoxApp(c: c)); // like main(): runApp before state loads
     await c.refresh();
     await t.pump();
-    final el = t.element(find.text('Все').first);
+    final el = t.element(find.text('Все', skipOffstage: false).first);
     expect(MediaQuery.textScalerOf(el).scale(10), closeTo(13, .01));
   });
 }

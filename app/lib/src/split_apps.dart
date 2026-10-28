@@ -98,7 +98,7 @@ class _SplitAppsPageState extends State<SplitAppsPage> {
   @override
   Widget build(BuildContext context) {
     final c = widget.c;
-    final p = Pal.of(c.settings['theme'] as String?);
+    final p = Pal.of(c.settings['theme'] as String?, c.pref('tpl', 'glass'));
     final all = apps;
     final ql = q.toLowerCase();
     final shown = all

@@ -55,15 +55,16 @@ void main() {
     for (final fs in ['1.00', '1.30']) {
       testWidgets('filter bar one row $name font=$fs', (t) async {
         await _app(t, size, fs: fs);
-        expect(find.text('Все'), findsOneWidget);
-        expect(find.byTooltip('Пинг'), findsOneWidget);
-        expect(find.byTooltip('Обновить'), findsOneWidget);
+        // 2.1.4: two glass subscription cards can push the bar below the fold on 360dp@1.3
+        expect(find.text('Все', skipOffstage: false), findsOneWidget);
+        expect(find.byTooltip('Пинг', skipOffstage: false), findsOneWidget);
+        expect(find.byTooltip('Обновить', skipOffstage: false), findsOneWidget);
         expect(find.byTooltip('Обновить подписки'), findsNothing);
         // «N из M · пинг» moved off the main screen
-        expect(find.textContaining(' из '), findsNothing);
+        expect(find.textContaining(RegExp(r'\d+ из \d+')), findsNothing);
         // tabs and the three buttons share one row
-        final tabY = t.getCenter(find.text('Все')).dy;
-        final btnY = t.getCenter(find.byTooltip('Пинг')).dy;
+        final tabY = t.getCenter(find.text('Все', skipOffstage: false)).dy;
+        final btnY = t.getCenter(find.byTooltip('Пинг', skipOffstage: false)).dy;
         expect((tabY - btnY).abs(), lessThan(8));
         final e = t.takeException();
         if (e != null) dumpOverflow(t);

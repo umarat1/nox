@@ -84,6 +84,10 @@ class LiveGraph extends StatefulWidget {
   final bool active;
   final int span; // samples across the width
   final bool labels;
+
+  /// Calm mode (connection card sparkline): single-sample spikes are clipped to the local
+  /// median and the curve is averaged, the scale follows the calmed curve.
+  final bool calm;
   const LiveGraph({
     super.key,
     required this.series,
@@ -91,6 +95,7 @@ class LiveGraph extends StatefulWidget {
     required this.active,
     this.span = 60,
     this.labels = false,
+    this.calm = false,
   });
   @override
   State<LiveGraph> createState() => _LiveGraphState();
@@ -240,12 +245,33 @@ class _LivePainter extends CustomPainter {
     }
     final span = g.widget.span;
     final step = w / (span - 1);
-    double y(double v) => bottom - (v / g.mx).clamp(0.0, 1.0) * (bottom - top);
+    final calm = g.widget.calm;
+    final cDown = calm ? calmSeries(s.down) : s.down;
+    final cUp = calm ? calmSeries(s.up) : s.up;
+    var mx = g.mx;
+    if (calm) {
+      final first = math.max(s.base, (g.pos - span).floor() - 1);
+      var m = 0.0;
+      for (var i = first; i <= s.seq - 1; i++) {
+        final k = i - s.base;
+        if (k >= 0 && k < cDown.length)
+          m = math.max(m, math.max(cDown[k], cUp[k]));
+      }
+      if (m > 0) mx = m * 1.25;
+    }
+    double y(double v) => bottom - (v / mx).clamp(0.0, 1.0) * (bottom - top);
     List<Offset> pts(List<double> v) {
+      final src = !calm
+          ? v
+          : identical(v, s.down)
+          ? cDown
+          : identical(v, s.up)
+          ? cUp
+          : v;
       final out = <Offset>[];
       final first = math.max(s.base, (g.pos - span).floor() - 1);
       for (var i = first; i <= s.seq - 1; i++) {
-        out.add(Offset(w - (g.pos - i) * step, y(v[i - s.base])));
+        out.add(Offset(w - (g.pos - i) * step, y(src[i - s.base])));
       }
       return out;
     }
@@ -279,7 +305,9 @@ class _LivePainter extends CustomPainter {
     canvas.drawPath(
       _spline(upP, top, bottom),
       Paint()
-        ..color = _upColor.withValues(alpha: .85)
+        ..color = (p.mono ? const Color(0xFF8E8E93) : _upColor).withValues(
+          alpha: .85,
+        )
         ..style = PaintingStyle.stroke
         ..strokeWidth = labels ? 1.6 : 1.2
         ..strokeJoin = StrokeJoin.round,
@@ -319,7 +347,7 @@ class _LivePainter extends CustomPainter {
         canvas,
         '↑ ${fmtBytes(g.curUp)}/с',
         const Offset(120, 0),
-        _upColor,
+        p.mono ? const Color(0xFF8E8E93) : _upColor,
         13.5,
         bold: true,
       );
@@ -410,7 +438,9 @@ class _LivePainter extends CustomPainter {
     );
     if (matrix) _matrixRain(canvas, size);
     final dCol = matrix ? _mGreen : p.acc2;
-    final uCol = matrix ? const Color(0xFF7DFFA0) : _upColor;
+    final uCol = matrix
+        ? const Color(0xFF7DFFA0)
+        : (p.mono ? const Color(0xFF8E8E93) : _upColor);
     final dn = _smooth(_smooth(pts(s.down))), upP = _smooth(_smooth(pts(s.up)));
     void layer(List<Offset> q, Color col, double fillA, double stroke) {
       if (q.length < 2) return;
@@ -612,4 +642,32 @@ class _LivePainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_LivePainter o) => true;
+}
+
+/// Clip lone spikes to 2× the local median (window 5), then a 5-tap weighted average.
+List<double> calmSeries(List<double> v) {
+  final n = v.length;
+  if (n < 3) return v;
+  final clip = List<double>.filled(n, 0);
+  for (var i = 0; i < n; i++) {
+    final w = <double>[
+      for (var k = math.max(0, i - 2); k <= math.min(n - 1, i + 2); k++) v[k],
+    ]..sort();
+    final med = w[w.length ~/ 2];
+    clip[i] = math.min(v[i], med * 2 + 1024);
+  }
+  const wt = [1.0, 2.0, 3.0, 2.0, 1.0];
+  return [
+    for (var i = 0; i < n; i++)
+      () {
+        var sum = 0.0, ws = 0.0;
+        for (var d = -2; d <= 2; d++) {
+          final k = i + d;
+          if (k < 0 || k >= n) continue;
+          sum += clip[k] * wt[d + 2];
+          ws += wt[d + 2];
+        }
+        return sum / ws;
+      }(),
+  ];
 }

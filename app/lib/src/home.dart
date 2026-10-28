@@ -30,7 +30,10 @@ class Home extends StatelessWidget {
     return ListenableBuilder(
       listenable: c,
       builder: (context, _) {
-        final p = Pal.of(c.settings['theme'] as String?);
+        final p = Pal.of(
+          c.settings['theme'] as String?,
+          c.pref('tpl', 'glass'),
+        );
         vol3d = vol3dFromUi(c.ui);
         graphStyle = graphFromUi(c.ui);
         return Theme(
@@ -87,7 +90,11 @@ class Home extends StatelessWidget {
   }
 }
 
-Future<void> finishRefresh(BuildContext context, NoxController c, dynamic r) async {
+Future<void> finishRefresh(
+  BuildContext context,
+  NoxController c,
+  dynamic r,
+) async {
   await c.refresh();
   if (!context.mounted) return;
   if (r is String && r.isNotEmpty) {
@@ -152,7 +159,8 @@ class _BodyState extends State<_Body> {
       final anyCol = hdrCol || subCol || srvCol;
       if (_baseViewHeight == null ||
           (!anyCol && _appliedViewHeight == null) ||
-          ((_appliedViewHeight == null || (curH - _appliedViewHeight!).abs() > 2.0) &&
+          ((_appliedViewHeight == null ||
+                  (curH - _appliedViewHeight!).abs() > 2.0) &&
               curH > (_baseViewHeight ?? 0))) {
         _baseViewHeight = curH;
       }
@@ -167,29 +175,32 @@ class _BodyState extends State<_Body> {
         }
       } else if (hdrCol || subCol) {
         final subCount = c.subs.isEmpty ? 1 : c.subs.length;
-        final saved = ((hdrCol ? 36.0 : 0.0) + (subCol ? 148.0 * subCount : 0.0)) * c.uiScale;
+        final saved =
+            ((hdrCol ? 36.0 : 0.0) + (subCol ? 148.0 * subCount : 0.0)) *
+            c.uiScale;
         targetH = (baseH - saved).clamp(320.0, baseH);
       }
 
       final desiredViewH = targetH ?? baseH;
       if ((desiredViewH - curH).abs() > 1.0 &&
-          (_appliedViewHeight == null || (_appliedViewHeight! - desiredViewH).abs() > 1.0 || targetH == null)) {
+          (_appliedViewHeight == null ||
+              (_appliedViewHeight! - desiredViewH).abs() > 1.0 ||
+              targetH == null)) {
         _appliedViewHeight = targetH;
         final dpr = rv.configuration.devicePixelRatio;
         final curW = rv.size.width;
         rv.configuration = ViewConfiguration(
           logicalConstraints: BoxConstraints.tight(Size(curW, desiredViewH)),
-          physicalConstraints: BoxConstraints.tight(Size(curW * dpr, desiredViewH * dpr)),
+          physicalConstraints: BoxConstraints.tight(
+            Size(curW * dpr, desiredViewH * dpr),
+          ),
           devicePixelRatio: dpr,
         );
         WidgetsBinding.instance.scheduleFrame();
       } else if (targetH == null) {
         _appliedViewHeight = null;
       }
-      syncWindowCollapse(
-        compactHeight: targetH,
-        viewportHeight: baseH,
-      );
+      syncWindowCollapse(compactHeight: targetH, viewportHeight: baseH);
     });
   }
 
@@ -389,7 +400,8 @@ class _BodyState extends State<_Body> {
                       padding: const EdgeInsets.symmetric(horizontal: 2),
                       sliver: SliverList.list(children: rest),
                     ),
-                    PinnedHeaderSliver( // 1.0.20: category tabs stay pinned while the list scrolls
+                    PinnedHeaderSliver(
+                      // 1.0.20: category tabs stay pinned while the list scrolls
                       child: ColoredBox(
                         color: p.bg,
                         child: Column(
@@ -415,7 +427,7 @@ class _BodyState extends State<_Body> {
       final leftW = (w * .34).clamp(390.0, 540.0);
       final graph = _GraphCard(c: c, p: p);
       final banners = head.length - 2 - c.subs.length; // between hero and graph
-      final need = 140 + 230 + 60.0 * banners + 170.0 * c.subs.length;
+      final need = 140 + 230 + 60.0 * banners + 225.0 * c.subs.length;
       final avail = h - pad * 2 - 56;
       Widget left;
       if (avail >= need) {
@@ -536,7 +548,8 @@ class _BodyState extends State<_Body> {
                 padding: const EdgeInsets.fromLTRB(12, 0, 12, 0),
                 sliver: SliverList.list(children: scrollHead),
               ),
-              PinnedHeaderSliver( // 1.0.20: category tabs stay pinned while the list scrolls
+              PinnedHeaderSliver(
+                // 1.0.20: category tabs stay pinned while the list scrolls
                 child: ColoredBox(
                   color: p.bg,
                   child: Padding(
@@ -608,13 +621,8 @@ class _BodyState extends State<_Body> {
         padding: h,
         sliver: SliverList.builder(
           itemCount: list.length,
-          itemBuilder: (_, i) => _ServerRow(
-            c: c,
-            p: p,
-            s: list[i],
-            first: i == 0,
-            protocol: wide,
-          ),
+          itemBuilder: (_, i) =>
+              _ServerRow(c: c, p: p, s: list[i], first: i == 0, protocol: wide),
         ),
       ),
     ];
@@ -627,9 +635,28 @@ class _BodyState extends State<_Body> {
     final open = c.accOpen;
     var first = true;
     final kids = <Widget>[
-      for (final s in tree.auto)
-        _ServerRow(c: c, p: p, s: s, first: (first, first = false).$1, protocol: false),
-      if (tree.auto.isNotEmpty) const SizedBox(height: 4),
+      if (tree.auto.isNotEmpty)
+        Container(
+          margin: const EdgeInsets.only(top: 2, bottom: 8),
+          padding: const EdgeInsets.fromLTRB(6, 6, 6, 1),
+          decoration: glassBox(p, r: 20, strength: .55),
+          child: Column(
+            children: [
+              for (final (i, s) in tree.auto.indexed)
+                _ServerRow(
+                  c: c,
+                  p: p,
+                  s: s,
+                  first: (first, first = false).$1,
+                  protocol: false,
+                  flat: true,
+                  listMenu: i == 0 && c.subs.isNotEmpty
+                      ? listCaption(c, list.length)
+                      : null,
+                ),
+            ],
+          ),
+        ),
       for (final g in tree.groups)
         _CountryCard(
           key: ValueKey('cc-${g.key}'),
@@ -642,7 +669,10 @@ class _BodyState extends State<_Body> {
         ),
     ];
     return [
-      SliverPadding(padding: pad, sliver: SliverList.list(children: kids)),
+      SliverPadding(
+        padding: pad,
+        sliver: SliverList.list(children: kids),
+      ),
     ];
   }
 
@@ -1123,12 +1153,14 @@ class _TopBar extends StatelessWidget {
                   p: p,
                   icon: th == 'light'
                       ? Icons.light_mode_outlined
+                      : th == 'mono'
+                      ? Icons.contrast_rounded
                       : Icons.dark_mode_outlined,
                   tip: 'Тема',
                   mobile: mobile,
                   onTap: () {
                     final i = themeNames.indexWhere((e) => e.$1 == th);
-                    final n = themeNames[(i + 1) % 3].$1;
+                    final n = themeNames[(i + 1) % themeNames.length].$1;
                     c.saveSettings({'theme': n});
                     toast(context, 'Тема: ${themeName(n)}');
                   },
@@ -1197,10 +1229,7 @@ class _TopBar extends StatelessWidget {
         child: row,
       );
     }
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(0, 2, 0, 8),
-      child: row,
-    );
+    return Padding(padding: const EdgeInsets.fromLTRB(0, 2, 0, 8), child: row);
   }
 }
 
@@ -1392,6 +1421,122 @@ class _GhostBtnState extends State<_GhostBtn> {
   }
 }
 
+/// Power knob shared by every connection-card layout (TourKeys.power, D-pad Enter toggles).
+Widget _powerKnob(NoxController c, Pal p, {double size = 84}) {
+  final on = c.connected, wait = c.busy;
+  return Focus(
+    key: TourKeys.power,
+    autofocus: c.isTv,
+    child: Builder(
+      builder: (ctx) {
+        final f = Focus.of(ctx).hasFocus;
+        return GestureDetector(
+          onTap: c.toggle,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            width: size,
+            height: size,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: on
+                  ? p.acc
+                  : wait
+                  ? p.amb
+                  : p.chip,
+              // volumetric knob: lit from the top-left, deeper at the bottom-right
+              gradient: !vol3d
+                  ? null
+                  : RadialGradient(
+                      center: const Alignment(-.35, -.45),
+                      radius: 1.05,
+                      colors: on
+                          ? [
+                              Color.lerp(p.acc2, Colors.white, .28)!,
+                              p.acc,
+                              Color.lerp(p.acc, Colors.black, .35)!,
+                            ]
+                          : wait
+                          ? [
+                              Color.lerp(p.amb, Colors.white, .3)!,
+                              p.amb,
+                              Color.lerp(p.amb, Colors.black, .3)!,
+                            ]
+                          : [
+                              Color.alphaBlend(
+                                Colors.white.withValues(
+                                  alpha: p.light ? .9 : .10,
+                                ),
+                                p.chip,
+                              ),
+                              Color.alphaBlend(
+                                Colors.white.withValues(
+                                  alpha: p.light ? .2 : .03,
+                                ),
+                                p.chip,
+                              ),
+                              p.light
+                                  ? Color.lerp(p.chip, Colors.black, .06)!
+                                  : p.chip,
+                            ],
+                      stops: const [0, .55, 1],
+                    ),
+              border: f
+                  ? Border.all(color: p.acc2, width: 3)
+                  : Border.all(
+                      color: on ? Colors.white.withValues(alpha: .18) : p.line,
+                    ),
+              boxShadow: !vol3d
+                  ? const []
+                  : [
+                      // halo ring + glow (stronger when connected)
+                      BoxShadow(
+                        color: p.acc.withValues(alpha: on ? .28 : .08),
+                        spreadRadius: on ? 8 : 6,
+                      ),
+                      BoxShadow(
+                        color: (wait && !on ? p.amb : p.acc).withValues(
+                          alpha: on
+                              ? .6
+                              : wait
+                              ? .35
+                              : .12,
+                        ),
+                        blurRadius: on ? 40 : 22,
+                        spreadRadius: on ? 2 : 0,
+                      ),
+                      if (!p.amoled)
+                        const BoxShadow(
+                          color: Color(0x55000000),
+                          blurRadius: 14,
+                          offset: Offset(0, 6),
+                        ),
+                    ],
+            ),
+            child: Icon(
+              Icons.power_settings_new,
+              size: size * .40,
+              color: on
+                  ? Colors.white
+                  : wait
+                  ? const Color(0xFF111111)
+                  : p.sub,
+            ),
+          ),
+        );
+      },
+    ),
+    onKeyEvent: (n, e) {
+      if (e is KeyDownEvent &&
+          (e.logicalKey == LogicalKeyboardKey.select ||
+              e.logicalKey == LogicalKeyboardKey.enter)) {
+        c.toggle();
+        return KeyEventResult.handled;
+      }
+      return KeyEventResult.ignored;
+    },
+  );
+}
+
 class _Hero extends StatelessWidget {
   final NoxController c;
   final Pal p;
@@ -1399,6 +1544,10 @@ class _Hero extends StatelessWidget {
   const _Hero({required this.c, required this.p, this.wide = false});
   @override
   Widget build(BuildContext context) {
+    // 2.1.4: «Таймер» card is the default on phone and desktop; TV keeps the D-pad knob card.
+    if (!c.isTv && heroStyle != 'classic') {
+      return _HeroAlt(c: c, p: p, style: heroStyle, wide: wide);
+    }
     final on = c.connected, wait = c.busy, st = c.status, cur = c.current;
     final since = (c.s['since'] ?? 0) as int;
     final t = c.traffic;
@@ -1410,127 +1559,11 @@ class _Hero extends StatelessWidget {
         ? 'ОТКЛЮЧЕНИЕ…'
         : 'ОТКЛЮЧЕНО';
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: EdgeInsets.all(wide ? 16 : 14),
       decoration: _box(p, color: p.hero, r: 22),
       child: Row(
         children: [
-          Focus(
-            key: TourKeys.power,
-            autofocus: c.isTv,
-            child: Builder(
-              builder: (ctx) {
-                final f = Focus.of(ctx).hasFocus;
-                return GestureDetector(
-                  onTap: c.toggle,
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 200),
-                    width: 84,
-                    height: 84,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: on
-                          ? p.acc
-                          : wait
-                          ? p.amb
-                          : p.chip,
-                      // volumetric knob: lit from the top-left, deeper at the bottom-right
-                      gradient: !vol3d
-                          ? null
-                          : RadialGradient(
-                              center: const Alignment(-.35, -.45),
-                              radius: 1.05,
-                              colors: on
-                                  ? [
-                                      Color.lerp(p.acc2, Colors.white, .28)!,
-                                      p.acc,
-                                      Color.lerp(p.acc, Colors.black, .35)!,
-                                    ]
-                                  : wait
-                                  ? [
-                                      Color.lerp(p.amb, Colors.white, .3)!,
-                                      p.amb,
-                                      Color.lerp(p.amb, Colors.black, .3)!,
-                                    ]
-                                  : [
-                                      Color.alphaBlend(
-                                        Colors.white.withValues(
-                                          alpha: p.light ? .9 : .10,
-                                        ),
-                                        p.chip,
-                                      ),
-                                      Color.alphaBlend(
-                                        Colors.white.withValues(
-                                          alpha: p.light ? .2 : .03,
-                                        ),
-                                        p.chip,
-                                      ),
-                                      p.light
-                                          ? Color.lerp(
-                                              p.chip,
-                                              Colors.black,
-                                              .06,
-                                            )!
-                                          : p.chip,
-                                    ],
-                              stops: const [0, .55, 1],
-                            ),
-                      border: f
-                          ? Border.all(color: p.acc2, width: 3)
-                          : Border.all(
-                              color: on
-                                  ? Colors.white.withValues(alpha: .18)
-                                  : p.line,
-                            ),
-                      boxShadow: !vol3d
-                          ? const []
-                          : [
-                              // halo ring + glow (stronger when connected)
-                              BoxShadow(
-                                color: p.acc.withValues(alpha: on ? .28 : .08),
-                                spreadRadius: on ? 8 : 6,
-                              ),
-                              BoxShadow(
-                                color: (wait && !on ? p.amb : p.acc).withValues(
-                                  alpha: on
-                                      ? .6
-                                      : wait
-                                      ? .35
-                                      : .12,
-                                ),
-                                blurRadius: on ? 40 : 22,
-                                spreadRadius: on ? 2 : 0,
-                              ),
-                              if (!p.amoled)
-                                const BoxShadow(
-                                  color: Color(0x55000000),
-                                  blurRadius: 14,
-                                  offset: Offset(0, 6),
-                                ),
-                            ],
-                    ),
-                    child: Icon(
-                      Icons.power_settings_new,
-                      size: 34,
-                      color: on
-                          ? Colors.white
-                          : wait
-                          ? const Color(0xFF111111)
-                          : p.sub,
-                    ),
-                  ),
-                );
-              },
-            ),
-            onKeyEvent: (n, e) {
-              if (e is KeyDownEvent &&
-                  (e.logicalKey == LogicalKeyboardKey.select ||
-                      e.logicalKey == LogicalKeyboardKey.enter)) {
-                c.toggle();
-                return KeyEventResult.handled;
-              }
-              return KeyEventResult.ignored;
-            },
-          ),
+          _powerKnob(c, p),
           const SizedBox(width: 14),
           Expanded(
             child: Column(
@@ -1575,8 +1608,16 @@ class _Hero extends StatelessWidget {
                   spacing: 10,
                   runSpacing: 6,
                   children: [
-                    _Pill(p: p, text: '↓ ${fmtBytes(t?['Down'] ?? 0)}/с'),
-                    _Pill(p: p, text: '↑ ${fmtBytes(t?['Up'] ?? 0)}/с'),
+                    _Pill(
+                      p: p,
+                      icon: Icons.south_rounded,
+                      text: '${fmtBytes(t?['Down'] ?? 0)}/с',
+                    ),
+                    _Pill(
+                      p: p,
+                      icon: Icons.north_rounded,
+                      text: '${fmtBytes(t?['Up'] ?? 0)}/с',
+                    ),
                   ],
                 ),
                 // Always reserve the graph when connected so the card never looks empty.
@@ -1590,6 +1631,7 @@ class _Hero extends StatelessWidget {
                         series: c.speed,
                         p: p,
                         active: c.animSmooth,
+                        calm: true,
                       ),
                     ),
                   ),
@@ -1605,7 +1647,8 @@ class _Hero extends StatelessWidget {
 class _Pill extends StatelessWidget {
   final Pal p;
   final String text;
-  const _Pill({required this.p, required this.text});
+  final IconData? icon;
+  const _Pill({required this.p, required this.text, this.icon});
   @override
   Widget build(BuildContext context) => Container(
     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
@@ -1613,7 +1656,24 @@ class _Pill extends StatelessWidget {
       color: p.chip,
       borderRadius: BorderRadius.circular(10),
     ),
-    child: Text(text, style: TextStyle(color: p.txt, fontSize: 12)),
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (icon != null) ...[
+          Icon(icon, size: 13, color: p.acc2),
+          const SizedBox(width: 3),
+        ],
+        Flexible(
+          child: Text(
+            text,
+            maxLines: 1,
+            overflow: TextOverflow.fade,
+            softWrap: false,
+            style: TextStyle(color: p.txt, fontSize: 12),
+          ),
+        ),
+      ],
+    ),
   );
 }
 
@@ -1815,6 +1875,60 @@ class _SubBlock extends StatelessWidget {
     this.collapsed = false,
     this.onToggleCollapse,
   });
+
+  /// Refresh / ••• / collapse, shared by every card style.
+  Widget _subActions(BuildContext context) => Row(
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      if (first && c.accordion) ...[
+        _OrbBtn(
+          key: TourKeys.ping,
+          p: p,
+          icon: Icons.bolt_rounded,
+          tip: 'Пинг',
+          mobile: mobile,
+          onTap: () async {
+            c.ping(c.visible().map((e) => e['id'] as String).toList());
+            toast(context, 'Проверяю пинг…');
+          },
+        ),
+        const SizedBox(width: 6),
+      ],
+      _OrbBtn(
+        key: first && mobile ? TourKeys.refresh : null,
+        p: p,
+        icon: Icons.refresh_rounded,
+        tip: 'Обновить',
+        spinWhileBusy: true,
+        mobile: mobile,
+        onTap: () async {
+          final r = await c.call('RefreshSub', [b['id']]);
+          if (context.mounted) await finishRefresh(context, c, r);
+        },
+      ),
+      const SizedBox(width: 6),
+      _OrbBtn(
+        p: p,
+        icon: Icons.more_horiz_rounded,
+        tip: 'Действия с подпиской',
+        mobile: mobile,
+        onTap: () async => subSheet(context, c, p, b),
+      ),
+      if (mobile && onToggleCollapse != null) ...[
+        const SizedBox(width: 6),
+        _OrbBtn(
+          p: p,
+          icon: collapsed
+              ? Icons.keyboard_arrow_down_rounded
+              : Icons.keyboard_arrow_up_rounded,
+          tip: collapsed ? 'Развернуть подписку' : 'Свернуть подписку',
+          mobile: true,
+          onTap: () async => onToggleCollapse!(),
+        ),
+      ],
+    ],
+  );
+
   @override
   Widget build(BuildContext context) {
     final n = c.servers.where((s) => s['subId'] == b['id']).length;
@@ -1823,216 +1937,320 @@ class _SubBlock extends StatelessWidget {
     final expire = (b['expire'] ?? 0) as int;
     final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
     final left = expire > 0 ? (expire - now) / 86400 : null;
-    final days = left == null ? null : math.max(0, left.ceil());
     final ann = (b['announce'] ?? '') as String;
-    final expireTxt = left == null
-        ? 'Бессрочно'
-        : left <= 0
-        ? 'Истекла'
-        : '$days ${plural(days!, 'день', 'дня', 'дней')}';
-    final trafficLeft = total > 0 ? math.max(0, total - used) : null;
-    final trafficTxt = trafficLeft == null
-        ? 'Без лимита'
-        : fmtBytes(trafficLeft);
-    final tFrac = total > 0 ? (1 - used / total).clamp(0.0, 1.0) : 1.0;
-    // days ring: 30-day scale (typical period)
-    final dFrac = left == null ? 1.0 : (left / 30).clamp(0.0, 1.0);
     final dt = expire > 0
         ? DateTime.fromMillisecondsSinceEpoch(expire * 1000)
         : null;
-    final dateTxt = dt == null
-        ? 'без срока'
-        : 'до ${dt.day.toString().padLeft(2, '0')}.${dt.month.toString().padLeft(2, '0')}.${dt.year}';
+    return _SubStyled(
+      c: c,
+      p: p,
+      b: b,
+      d: _SubData(n: n, used: used, total: total, left: left, dt: dt),
+      ann: ann,
+      actions: _subActions(context),
+      mobile: mobile,
+      collapsed: mobile && collapsed,
+    );
+  }
+}
+
+/// Subscription card (2.1.4): gradient glass, big traffic number, thin line, icon links.
+
+class _SubData {
+  final int n;
+  final num used, total;
+  final double? left;
+  final DateTime? dt;
+  const _SubData({
+    required this.n,
+    required this.used,
+    required this.total,
+    required this.left,
+    required this.dt,
+  });
+  bool get unlimited => total <= 0;
+  bool get forever => left == null;
+  int get days => left == null ? 0 : math.max(0, left!.ceil());
+  String get expShort => forever
+      ? 'Бессрочно'
+      : left! <= 0
+      ? 'Истекла'
+      : '$days ${plural(days, 'день', 'дня', 'дней')}';
+  String get dateTxt => dt == null
+      ? 'без срока'
+      : 'до ${dt!.day.toString().padLeft(2, '0')}.${dt!.month.toString().padLeft(2, '0')}.${dt!.year}';
+  num get trafficLeft => math.max(0, total - used);
+  double get tFrac => unlimited ? 1.0 : (1 - used / total).clamp(0.0, 1.0);
+  double get dFrac => forever ? 1.0 : (left! / 30).clamp(0.0, 1.0);
+  String get usedTxt => fmtBytes(used);
+  String get servTxt => '$n ${plural(n, 'сервер', 'сервера', 'серверов')}';
+}
+
+class _SubStyled extends StatelessWidget {
+  final NoxController c;
+  final Pal p;
+  final J b;
+  final _SubData d;
+  final String ann;
+  final Widget actions;
+  final bool mobile, collapsed;
+  const _SubStyled({
+    required this.c,
+    required this.p,
+    required this.b,
+    required this.d,
+    required this.ann,
+    required this.actions,
+    required this.mobile,
+    required this.collapsed,
+  });
+
+  static const _links = _SubLinksBar._items;
+  static const _donate = _SubLinksBar._donateUrl;
+  static const _linkIcons = <IconData>[
+    Icons.send_rounded,
+    Icons.language_rounded,
+    Icons.live_tv_rounded,
+    Icons.public_rounded,
+  ];
+
+  @override
+  Widget build(BuildContext context) => _glass(context);
+
+  // ── B: gradient glass — big traffic number, thin line, icon links ──
+  Widget _glass(BuildContext context) {
+    final tCol = levelColor(p, d.tFrac);
+    final a = p.light ? .55 : 1.0;
     return Container(
-      margin: const EdgeInsets.only(top: 8),
-      padding: mobile
-          ? EdgeInsets.fromLTRB(12, 10, 10, collapsed ? 10 : 8)
-          : const EdgeInsets.fromLTRB(12, 10, 6, 8),
-      decoration: _box(p),
+      margin: const EdgeInsets.only(top: 6),
+      padding: EdgeInsets.fromLTRB(14, 8, 8, collapsed ? 8 : 9),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(22),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            Color.alphaBlend(p.acc.withValues(alpha: .30 * a), p.card),
+            Color.alphaBlend(p.acc2.withValues(alpha: .10 * a), p.card),
+            p.card,
+          ],
+          stops: const [0, .55, 1],
+        ),
+        border: Border.all(color: p.acc2.withValues(alpha: .32)),
+        boxShadow: [
+          BoxShadow(
+            color: p.acc.withValues(alpha: p.light ? .10 : .22),
+            blurRadius: 26,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Icon(Icons.workspace_premium_rounded, size: 18, color: p.acc2),
-              const SizedBox(width: 6),
               Expanded(
-                child: GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onTap: onToggleCollapse,
-                  child: Text(
-                    'Подписка · $n серв.',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: p.txt,
-                      fontWeight: FontWeight.w700,
-                      fontSize: 13,
-                    ),
+                child: Text.rich(
+                  TextSpan(
+                    children: [
+                      TextSpan(
+                        text: 'ПОДПИСКА',
+                        style: TextStyle(
+                          color: p.acc2,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 1.4,
+                        ),
+                      ),
+                      TextSpan(
+                        text: '   ${d.servTxt}',
+                        style: TextStyle(color: p.sub),
+                      ),
+                    ],
                   ),
+                  maxLines: 1,
+                  style: const TextStyle(fontSize: 11.5),
                 ),
               ),
-              _OrbBtn(
-                key: first && mobile ? TourKeys.refresh : null,
-                p: p,
-                icon: Icons.refresh_rounded,
-                tip: 'Обновить',
-                spinWhileBusy: true,
-                mobile: mobile,
-                onTap: () async {
-                  final r = await c.call('RefreshSub', [b['id']]);
-                  if (context.mounted) await finishRefresh(context, c, r);
-                },
-              ),
-              const SizedBox(width: 6),
-              _OrbBtn(
-                p: p,
-                icon: Icons.more_horiz_rounded,
-                tip: 'Действия с подпиской',
-                mobile: mobile,
-                onTap: () async => subSheet(context, c, p, b),
-              ),
-              if (mobile && onToggleCollapse != null) ...[
-                const SizedBox(width: 6),
-                _OrbBtn(
-                  p: p,
-                  icon: collapsed
-                      ? Icons.keyboard_arrow_down_rounded
-                      : Icons.keyboard_arrow_up_rounded,
-                  tip: collapsed ? 'Развернуть подписку' : 'Свернуть подписку',
-                  mobile: true,
-                  onTap: () async => onToggleCollapse!(),
-                ),
-              ],
+              actions,
             ],
           ),
-          if (!mobile || !collapsed) ...[
-            const SizedBox(height: 6),
-            Row(
-              children: [
-                Expanded(
-                  child: _Meter(
-                    p: p,
-                    frac: dFrac,
-                    icon: Icons.event_rounded,
-                    label: '',
-                    value: expireTxt,
-                    sub: dateTxt,
+          if (!collapsed) ...[
+            const SizedBox(height: 4),
+            Padding(
+              padding: const EdgeInsets.only(right: 6),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          d.unlimited ? d.usedTxt : fmtBytes(d.trafficLeft),
+                          style: TextStyle(
+                            color: p.txt,
+                            fontSize: 32,
+                            height: 1.1,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: -.5,
+                          ),
+                        ),
+                        Text(
+                          d.unlimited
+                              ? 'израсходовано · трафик без лимита'
+                              : 'осталось из ${fmtBytes(d.total)}',
+                          style: TextStyle(color: p.sub, fontSize: 12),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            d.forever
+                                ? Icons.all_inclusive_rounded
+                                : Icons.event_rounded,
+                            size: 16,
+                            color: levelColor(p, d.dFrac),
+                          ),
+                          const SizedBox(width: 5),
+                          Text(
+                            d.expShort,
+                            style: TextStyle(
+                              color: p.txt,
+                              fontSize: 15,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
+                      ),
+                      Text(
+                        d.dateTxt,
+                        style: TextStyle(color: p.sub, fontSize: 12),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 10),
+            Padding(
+              padding: const EdgeInsets.only(right: 6),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(3),
+                child: SizedBox(
+                  height: 4,
+                  child: Stack(
+                    children: [
+                      Container(color: p.line.withValues(alpha: .8)),
+                      FractionallySizedBox(
+                        widthFactor: d.unlimited ? 1 : d.tFrac,
+                        child: Container(
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              colors: d.unlimited
+                                  ? [p.acc, p.acc2, p.grn]
+                                  : [tCol.withValues(alpha: .7), tCol],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: _Meter(
-                    p: p,
-                    frac: tFrac,
-                    icon: Icons.data_usage_rounded,
-                    label: '',
-                    value: trafficTxt,
-                    sub: total > 0
-                        ? 'из ${fmtBytes(total)}'
-                        : 'израсходовано ${fmtBytes(used)}',
-                  ),
-                ),
-                const SizedBox(width: 6),
-              ],
+              ),
             ),
             if (ann.isNotEmpty) _Announce(c: c, p: p, text: ann),
+            const SizedBox(height: 12),
             Padding(
-              padding: const EdgeInsets.only(top: 8),
-              child: _SubLinksBar(p: p, mobile: mobile),
+              padding: const EdgeInsets.only(right: 6),
+              child: Row(
+                children: [
+                  for (final (i, l) in _links.indexed)
+                    Expanded(
+                      child: _iconLink(
+                        context,
+                        _linkIcons[i],
+                        l.$1,
+                        l.$2,
+                        l.$4,
+                      ),
+                    ),
+                  Expanded(
+                    child: Column(
+                      children: [
+                        _CoinDonateBtn(p: p, url: _donate, size: 40),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Донат',
+                          style: TextStyle(color: p.sub, fontSize: 10.5),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
             ),
           ],
         ],
       ),
     );
   }
-}
 
-/// Ring meter for days/traffic left; colour shifts green → amber → red as it runs low.
-class _Meter extends StatelessWidget {
-  final Pal p;
-  final double frac;
-  final IconData icon;
-  final String label, value, sub;
-  const _Meter({
-    required this.p,
-    required this.frac,
-    required this.icon,
-    required this.label,
-    required this.value,
-    required this.sub,
-  });
-  @override
-  Widget build(BuildContext context) {
-    final col = levelColor(p, frac);
-    return Container(
-      padding: const EdgeInsets.all(8),
-      decoration: BoxDecoration(
-        color: p.amoled ? const Color(0xFF000000) : p.chip,
-        gradient: vol3d && !p.amoled ? raisedGradient(p, p.chip) : null,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: vol3d ? col.withValues(alpha: .35) : p.line),
-        boxShadow: vol3d
-            ? [BoxShadow(color: col.withValues(alpha: .18), blurRadius: 14)]
-            : const [],
-      ),
-      child: Row(
+  Widget _iconLink(
+    BuildContext context,
+    IconData icon,
+    String text,
+    String url,
+    bool primary,
+  ) => Tooltip(
+    message: url,
+    child: InkWell(
+      onTap: () => _openSubUrl(context, url),
+      borderRadius: BorderRadius.circular(12),
+      child: Column(
         children: [
-          SizedBox(
+          Container(
             width: 40,
             height: 40,
-            child: Stack(
-              alignment: Alignment.center,
-              children: [
-                CircularProgressIndicator(
-                  value: frac,
-                  strokeWidth: 4,
-                  strokeCap: StrokeCap.round,
-                  backgroundColor: p.line,
-                  color: col,
-                ),
-                Icon(icon, size: 17, color: col),
-              ],
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: primary
+                  ? p.acc.withValues(alpha: .28)
+                  : (p.light
+                        ? Colors.white
+                        : Colors.white.withValues(alpha: .05)),
+              border: Border.all(
+                color: primary
+                    ? p.acc2.withValues(alpha: .6)
+                    : p.acc2.withValues(alpha: .22),
+              ),
             ),
+            child: Icon(icon, size: 18, color: primary ? p.txt : p.acc2),
           ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (label.isNotEmpty)
-                  Text(
-                    label,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(color: p.sub, fontSize: 10.5),
-                  ),
-                FittedBox(
-                  fit: BoxFit.scaleDown,
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    value,
-                    maxLines: 1,
-                    style: TextStyle(
-                      color: frac < .15 ? col : p.txt,
-                      fontWeight: FontWeight.w800,
-                      fontSize: 15,
-                    ),
-                  ),
-                ),
-                Text(
-                  sub,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(color: p.ter, fontSize: 10),
-                ),
-              ],
+          const SizedBox(height: 4),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text(
+              text,
+              maxLines: 1,
+              style: TextStyle(
+                color: primary ? p.acc2 : p.sub,
+                fontSize: 10.5,
+                fontWeight: primary ? FontWeight.w700 : FontWeight.w500,
+              ),
             ),
           ),
         ],
       ),
-    );
-  }
+    ),
+  );
 }
 
 /// Provider announcement: icon + title, collapsible text, dismiss (remembered per text).
@@ -2363,11 +2581,8 @@ Future<void> _openSubUrl(BuildContext context, String url) async {
   if (context.mounted) toast(context, 'Ссылка скопирована: $url');
 }
 
-class _SubLinksBar extends StatelessWidget {
-  final Pal p;
-  final bool mobile;
-  const _SubLinksBar({required this.p, this.mobile = false});
-
+/// Provider links + donate target shown on the subscription card.
+abstract final class _SubLinksBar {
   static const _items = <(String, String, IconData?, bool)>[
     ('Поддержка', 'https://t.me/sessiatop', Icons.send_rounded, true),
     ('sessia.top', 'https://sessia.top', null, false),
@@ -2376,136 +2591,13 @@ class _SubLinksBar extends StatelessWidget {
   ];
   static const _donateUrl =
       'https://t.tb.ru/c2c-qr-choose-bank?requisiteNumber=+79111112787&bankCode=100000000004';
-
-  @override
-  Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final compactRow = mobile || constraints.maxWidth < 560;
-        if (compactRow) {
-          return Row(
-            children: [
-              for (var i = 0; i < _items.length; i++) ...[
-                if (i > 0) const SizedBox(width: 6),
-                Expanded(
-                  child: _SubLinkBtn(
-                    p: p,
-                    text: _items[i].$1,
-                    url: _items[i].$2,
-                    icon: _items[i].$3,
-                    primary: _items[i].$4,
-                    compact: true,
-                  ),
-                ),
-              ],
-              const SizedBox(width: 6),
-              _CoinDonateBtn(p: p, url: _donateUrl, size: 30),
-            ],
-          );
-        }
-        return Row(
-          children: [
-            for (var i = 0; i < _items.length; i++) ...[
-              if (i > 0) const SizedBox(width: 8),
-              _SubLinkBtn(
-                p: p,
-                text: _items[i].$1,
-                url: _items[i].$2,
-                icon: _items[i].$3,
-                primary: _items[i].$4,
-                compact: false,
-              ),
-            ],
-            const SizedBox(width: 10),
-            _CoinDonateBtn(p: p, url: _donateUrl, size: 32),
-          ],
-        );
-      },
-    );
-  }
-}
-
-class _SubLinkBtn extends StatelessWidget {
-  final Pal p;
-  final String text, url;
-  final IconData? icon;
-  final bool primary;
-  final bool compact;
-  const _SubLinkBtn({
-    required this.p,
-    required this.text,
-    required this.url,
-    this.icon,
-    this.primary = false,
-    this.compact = false,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final bg = primary
-        ? p.acc.withValues(alpha: p.light ? .13 : .20)
-        : (p.amoled
-              ? const Color(0xFF0B0B14)
-              : (p.light ? p.card : p.chip.withValues(alpha: .85)));
-    final borderCol = primary
-        ? p.acc.withValues(alpha: p.light ? .35 : .48)
-        : (p.amoled
-              ? const Color(0xFF232334)
-              : p.acc.withValues(alpha: p.light ? .18 : .24));
-    final txtCol = primary ? p.acc2 : p.txt.withValues(alpha: .92);
-    final r = BorderRadius.circular(10);
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: () => _openSubUrl(context, url),
-        borderRadius: r,
-        child: Container(
-          height: compact ? 30 : 32,
-          padding: EdgeInsets.symmetric(horizontal: compact ? 6 : 14),
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            color: bg,
-            borderRadius: r,
-            border: Border.all(color: borderCol, width: 1),
-          ),
-          child: FittedBox(
-            fit: BoxFit.scaleDown,
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (icon != null) ...[
-                  Icon(icon, size: 12.5, color: p.acc2),
-                  const SizedBox(width: 4),
-                ],
-                Text(
-                  text,
-                  maxLines: 1,
-                  softWrap: false,
-                  style: TextStyle(
-                    color: txtCol,
-                    fontSize: compact ? 11.5 : 12.5,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: .1,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
 }
 
 class _CoinDonateBtn extends StatelessWidget {
   final Pal p;
   final String url;
   final double size;
-  const _CoinDonateBtn({
-    required this.p,
-    required this.url,
-    this.size = 30,
-  });
+  const _CoinDonateBtn({required this.p, required this.url, this.size = 30});
 
   @override
   Widget build(BuildContext context) {
@@ -2513,25 +2605,11 @@ class _CoinDonateBtn extends StatelessWidget {
         ? const Color(0xFF0B0B14)
         : (p.light ? p.card : p.chip);
     final rimGrad = p.light
-        ? [
-            p.acc2.withValues(alpha: .30),
-            p.acc.withValues(alpha: .16),
-          ]
-        : [
-            p.acc2.withValues(alpha: .42),
-            p.acc.withValues(alpha: .24),
-            baseBg,
-          ];
+        ? [p.acc2.withValues(alpha: .30), p.acc.withValues(alpha: .16)]
+        : [p.acc2.withValues(alpha: .42), p.acc.withValues(alpha: .24), baseBg];
     final faceGrad = p.light
-        ? [
-            Colors.white,
-            p.acc.withValues(alpha: .14),
-          ]
-        : [
-            p.acc2.withValues(alpha: .28),
-            p.acc.withValues(alpha: .16),
-            baseBg,
-          ];
+        ? [Colors.white, p.acc.withValues(alpha: .14)]
+        : [p.acc2.withValues(alpha: .28), p.acc.withValues(alpha: .16), baseBg];
     final symColor = p.light ? p.acc : p.acc2;
     return Tooltip(
       message: 'Пожертвование',
@@ -2659,6 +2737,24 @@ class _FilterBarState extends State<_FilterBar> {
     final cs = c.chips(), cat = c.category;
     final s = c.s;
     final pinging = s['pinging'] == true;
+    // 2.1.4 phone accordion: no header row — ⚡ lives on the subscription card, ⋮ on «Автовыбор»
+    if (c.accordion &&
+        c.subs.isNotEmpty &&
+        c.visible().any(NoxController.isBal)) {
+      return pinging
+          ? Padding(
+              padding: const EdgeInsets.fromLTRB(6, 6, 6, 2),
+              child: Text(
+                'Пинг ${s['pingDone']}/${s['pingAll']}…',
+                style: TextStyle(
+                  color: p.txt.withValues(alpha: .85),
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            )
+          : const SizedBox(height: 6);
+    }
     final ts = MediaQuery.textScalerOf(context);
     final h = widget.mobile ? ts.scale(14) + 22 : ts.scale(13) + 24;
     WidgetsBinding.instance.addPostFrameCallback((_) => _edges());
@@ -2718,14 +2814,22 @@ class _FilterBarState extends State<_FilterBar> {
                       ? Align(
                           alignment: Alignment.centerLeft,
                           child: Padding(
-                            padding: const EdgeInsets.only(left: 4),
-                            child: Text(
-                              'Серверы · ${widget.shown}',
-                              style: TextStyle(
-                                color: p.txt,
-                                fontSize: 15,
-                                fontWeight: FontWeight.w700,
-                              ),
+                            padding: const EdgeInsets.only(left: 6),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  'СЕРВЕРЫ',
+                                  style: TextStyle(
+                                    color: p.acc2,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w800,
+                                    letterSpacing: 1.4,
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                _CountPill(p: p, n: widget.shown, strong: true),
+                              ],
                             ),
                           ),
                         )
@@ -2874,7 +2978,7 @@ class _Tab extends StatelessWidget {
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      if (iso != null && hasFlag(iso!)) ...[
+                      if (iso != null && hasFlag(iso!) && !p.mono) ...[
                         ClipOval(
                           child: SvgPicture.asset(
                             'assets/flags/${iso!.toLowerCase()}.svg',
@@ -2907,62 +3011,62 @@ class _Tab extends StatelessWidget {
       );
     }
     return Semantics(
-    selected: on,
-    button: true,
-    child: InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(8),
-      focusColor: p.acc.withValues(alpha: .22),
-      hoverColor: p.acc.withValues(alpha: .10),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 10),
-        child: IntrinsicWidth(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const Spacer(),
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (iso != null && hasFlag(iso!)) ...[
-                    ClipOval(
-                      child: SvgPicture.asset(
-                        'assets/flags/${iso!.toLowerCase()}.svg',
-                        width: 14,
-                        height: 14,
-                        fit: BoxFit.cover,
+      selected: on,
+      button: true,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(8),
+        focusColor: p.acc.withValues(alpha: .22),
+        hoverColor: p.acc.withValues(alpha: .10),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 10),
+          child: IntrinsicWidth(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Spacer(),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (iso != null && hasFlag(iso!) && !p.mono) ...[
+                      ClipOval(
+                        child: SvgPicture.asset(
+                          'assets/flags/${iso!.toLowerCase()}.svg',
+                          width: 14,
+                          height: 14,
+                          fit: BoxFit.cover,
+                        ),
+                      ),
+                      const SizedBox(width: 5),
+                    ],
+                    Text(
+                      text,
+                      maxLines: 1,
+                      softWrap: false,
+                      style: TextStyle(
+                        color: on ? p.acc2 : p.sub,
+                        fontSize: 13,
+                        fontWeight: on ? FontWeight.w700 : FontWeight.w500,
                       ),
                     ),
-                    const SizedBox(width: 5),
                   ],
-                  Text(
-                    text,
-                    maxLines: 1,
-                    softWrap: false,
-                    style: TextStyle(
-                      color: on ? p.acc2 : p.sub,
-                      fontSize: 13,
-                      fontWeight: on ? FontWeight.w700 : FontWeight.w500,
-                    ),
-                  ),
-                ],
-              ),
-              const Spacer(),
-              AnimatedContainer(
-                duration: const Duration(milliseconds: 180),
-                height: 2.5,
-                decoration: BoxDecoration(
-                  color: on ? p.acc2 : Colors.transparent,
-                  borderRadius: BorderRadius.circular(2),
                 ),
-              ),
-            ],
+                const Spacer(),
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 180),
+                  height: 2.5,
+                  decoration: BoxDecoration(
+                    color: on ? p.acc2 : Colors.transparent,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
-    ),
-  );
+    );
   }
 }
 
@@ -2971,7 +3075,7 @@ class _Tab extends StatelessWidget {
 Widget _flag(Pal p, J s, {double size = 36}) {
   Widget inner;
   if (NoxController.isBal(s)) {
-    inner = const Text('⚡', style: TextStyle(fontSize: 15));
+    inner = Icon(Icons.bolt_rounded, size: size * .62, color: p.acc2);
   } else if (NoxController.isQw(s)) {
     inner = Text(
       'qW',
@@ -2983,16 +3087,7 @@ Widget _flag(Pal p, J s, {double size = 36}) {
     );
   } else {
     final r = region(s['name'] ?? '');
-    if (r != null && hasFlag(r)) {
-      return ClipOval(
-        child: SvgPicture.asset(
-          'assets/flags/${r.toLowerCase()}.svg',
-          width: size,
-          height: size,
-          fit: BoxFit.cover,
-        ),
-      );
-    }
+    if (r != null && (hasFlag(r) || p.mono)) return countryBadge(p, r, size);
     final t = r ?? NoxController.proto(s);
     inner = Text(
       t.length > 2 ? t.substring(0, 2).toUpperCase() : t.toUpperCase(),
@@ -3009,6 +3104,214 @@ Widget _flag(Pal p, J s, {double size = 36}) {
 }
 
 /// White (light theme: ink) ping chip — no green/yellow/red; «таймаут» marks dead servers.
+/// Glass surface of the 2.1.4 look: accent tint top-left fading into the card colour.
+BoxDecoration glassBox(
+  Pal p, {
+  double r = 20,
+  double strength = 1,
+  Color? border,
+}) {
+  final a = (p.light ? .55 : 1.0) * strength;
+  return BoxDecoration(
+    borderRadius: BorderRadius.circular(r),
+    gradient: LinearGradient(
+      begin: Alignment.topLeft,
+      end: Alignment.bottomRight,
+      colors: [
+        Color.alphaBlend(p.acc.withValues(alpha: .26 * a), p.card),
+        Color.alphaBlend(p.acc2.withValues(alpha: .08 * a), p.card),
+        p.card,
+      ],
+      stops: const [0, .55, 1],
+    ),
+    border: Border.all(
+      color: border ?? p.acc2.withValues(alpha: .14 + .14 * strength),
+    ),
+    boxShadow: [
+      BoxShadow(
+        color: p.acc.withValues(alpha: (p.light ? .06 : .14) * strength),
+        blurRadius: 20,
+        offset: const Offset(0, 6),
+      ),
+    ],
+  );
+}
+
+/// Flag, or in the monochrome theme a neutral circle with the 2-letter code.
+Widget countryBadge(Pal p, String iso, double size) {
+  if (!p.mono && hasFlag(iso)) {
+    return ClipOval(
+      child: SvgPicture.asset(
+        'assets/flags/${iso.toLowerCase()}.svg',
+        width: size,
+        height: size,
+        fit: BoxFit.cover,
+      ),
+    );
+  }
+  return Container(
+    width: size,
+    height: size,
+    alignment: Alignment.center,
+    decoration: BoxDecoration(
+      shape: BoxShape.circle,
+      gradient: LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [p.chip, p.card],
+      ),
+      border: Border.all(color: p.txt.withValues(alpha: .28)),
+    ),
+    child: Text(
+      iso.toUpperCase(),
+      style: TextStyle(
+        color: p.txt,
+        fontSize: size * .38,
+        fontWeight: FontWeight.w800,
+        letterSpacing: .4,
+        height: 1,
+      ),
+    ),
+  );
+}
+
+/// Category tint for the accordion chips and protocol badges (greys in mono).
+Color catColor(Pal p, String cat) {
+  if (p.mono) return p.acc2;
+  final k = cat.toLowerCase();
+  if (k.startsWith('qwdtt')) return const Color(0xFF34D399);
+  if (k.contains('xhttp')) return const Color(0xFF60A5FA);
+  if (k.startsWith('vless')) return const Color(0xFFA78BFA);
+  if (k.startsWith('anytls')) return const Color(0xFF2DD4BF);
+  if (k.startsWith('hysteria')) return const Color(0xFFFBBF24);
+  if (k.startsWith('tuic')) return const Color(0xFFFB923C);
+  if (k.startsWith('mieru')) return const Color(0xFFF472B6);
+  if (k.startsWith('naive')) return const Color(0xFF38BDF8);
+  if (k.startsWith('trojan')) return const Color(0xFFF87171);
+  if (k.startsWith('vmess')) return const Color(0xFFC084FC);
+  if (k.startsWith('ss') || k.startsWith('shadowsocks'))
+    return const Color(0xFF4ADE80);
+  return p.acc2;
+}
+
+class _CatChip extends StatelessWidget {
+  final Pal p;
+  final String text;
+  final int n;
+  final Color color;
+  const _CatChip({
+    required this.p,
+    required this.text,
+    required this.n,
+    required this.color,
+  });
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.fromLTRB(8, 4, 9, 4),
+    decoration: BoxDecoration(
+      color: color.withValues(alpha: p.light ? .12 : .14),
+      borderRadius: BorderRadius.circular(9),
+      border: Border.all(color: color.withValues(alpha: .38)),
+    ),
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 6,
+          height: 6,
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+        ),
+        const SizedBox(width: 6),
+        Text(
+          text,
+          style: TextStyle(
+            color: p.light ? p.txt : color,
+            fontSize: 11.5,
+            fontWeight: FontWeight.w700,
+            letterSpacing: .2,
+          ),
+        ),
+        const SizedBox(width: 6),
+        Text(
+          '$n',
+          style: TextStyle(
+            color: p.sub,
+            fontSize: 11.5,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+class _CountPill extends StatelessWidget {
+  final Pal p;
+  final int n;
+  final bool strong;
+  const _CountPill({required this.p, required this.n, this.strong = false});
+  @override
+  Widget build(BuildContext context) => Container(
+    constraints: const BoxConstraints(minWidth: 28),
+    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+    decoration: BoxDecoration(
+      color: strong
+          ? p.acc.withValues(alpha: p.light ? .12 : .22)
+          : (p.light ? const Color(0x0A000000) : const Color(0x0DFFFFFF)),
+      borderRadius: BorderRadius.circular(10),
+      border: Border.all(color: p.acc2.withValues(alpha: strong ? .40 : .18)),
+    ),
+    child: Text(
+      '$n',
+      textAlign: TextAlign.center,
+      style: TextStyle(
+        color: strong ? p.txt : p.sub,
+        fontSize: 12,
+        fontWeight: FontWeight.w700,
+      ),
+    ),
+  );
+}
+
+/// Two-letter protocol badge used on rows inside a country card.
+class _ProtoGlyph extends StatelessWidget {
+  final Pal p;
+  final J s;
+  final Color color;
+  const _ProtoGlyph({required this.p, required this.s, required this.color});
+  @override
+  Widget build(BuildContext context) {
+    final t = NoxController.isQw(s)
+        ? 'qW'
+        : (() {
+            final pr = NoxController.proto(
+              s,
+            ).replaceAll(RegExp(r'[^A-Za-z0-9]'), '');
+            return pr.isEmpty
+                ? '•'
+                : pr.substring(0, math.min(2, pr.length)).toUpperCase();
+          })();
+    return Container(
+      width: 26,
+      height: 26,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: p.light ? .14 : .16),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.withValues(alpha: .35)),
+      ),
+      child: Text(
+        t,
+        style: TextStyle(
+          color: p.light ? p.txt : color,
+          fontSize: 10.5,
+          fontWeight: FontWeight.w800,
+        ),
+      ),
+    );
+  }
+}
+
 class PingChip extends StatelessWidget {
   final Pal p;
   final String text;
@@ -3053,9 +3356,11 @@ class _Tap extends StatefulWidget {
   final Widget child;
   final VoidCallback onTap, onLong;
   final EdgeInsets padding;
+  final bool flat;
   const _Tap({
     required this.p,
     required this.sel,
+    this.flat = false,
     required this.child,
     required this.onTap,
     required this.onLong,
@@ -3070,18 +3375,29 @@ class _TapState extends State<_Tap> {
   @override
   Widget build(BuildContext context) {
     final w = widget, p = w.p;
+    final rad = w.flat ? 14.0 : 16.0;
     return Material(
-      color: w.sel ? p.sel : p.card,
+      color: w.flat
+          ? (w.sel
+                ? p.acc.withValues(alpha: p.light ? .14 : .24)
+                : (p.light ? const Color(0x08000000) : const Color(0x0AFFFFFF)))
+          : (w.sel ? p.sel : p.card),
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(rad),
         // D-pad / keyboard focus: a clear ring, not only the ink overlay (TV)
         side: BorderSide(
-          color: focused ? p.acc2 : (w.sel ? p.acc : p.line),
+          color: focused
+              ? p.acc2
+              : w.flat
+              ? (w.sel
+                    ? p.acc2.withValues(alpha: .60)
+                    : p.line.withValues(alpha: .55))
+              : (w.sel ? p.acc : p.line),
           width: focused ? 2.5 : 1,
         ),
       ),
       child: InkWell(
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(rad),
         focusColor: p.acc.withValues(alpha: .18),
         onFocusChange: (f) => setState(() => focused = f),
         onTap: w.onTap,
@@ -3098,31 +3414,46 @@ class _ServerRow extends StatelessWidget {
   final Pal p;
   final J s;
   final bool first; // carries the tour target
-  final bool protocol; // desktop keeps the protocol line; the phone column does not
+  final bool
+  protocol; // desktop keeps the protocol line; the phone column does not
   final bool inCountry; // accordion: the country card already names the country
+  final Color? glyph; // accordion: protocol badge colour instead of the flag
+  final bool flat; // accordion: light glass row instead of a bordered card
+  final String? listMenu; // first row: ⋮ also opens the list menu (caption)
   const _ServerRow({
+    this.listMenu,
     required this.c,
     required this.p,
     required this.s,
     this.first = false,
     this.protocol = true,
     this.inCountry = false,
+    this.glyph,
+    this.flat = false,
   });
   @override
   Widget build(BuildContext context) {
     final sub = _sub(s);
     return Padding(
-      padding: const EdgeInsets.only(bottom: 3),
+      padding: EdgeInsets.only(bottom: inCountry ? 5 : 3),
       child: _Tap(
         p: p,
         sel: s['id'] == c.selected,
+        flat: flat || inCountry,
         onTap: () => c.select(s['id']),
         onLong: () => serverSheet(context, c, p, s),
-        padding: const EdgeInsets.fromLTRB(10, 4, 0, 4),
+        padding: EdgeInsets.fromLTRB(
+          10,
+          inCountry ? 6 : 4,
+          0,
+          inCountry ? 6 : 4,
+        ),
         child: Row(
           children: [
-            _flag(p, s, size: 22),
-            const SizedBox(width: 8),
+            glyph != null
+                ? _ProtoGlyph(p: p, s: s, color: glyph!)
+                : _flag(p, s, size: 22),
+            const SizedBox(width: 10),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -3151,14 +3482,25 @@ class _ServerRow extends StatelessWidget {
               ),
             ),
             PingChip(p: p, text: _pingOf(c, s)),
-            IconButton(
+            KeyedSubtree(
               key: first ? TourKeys.server : null,
-              onPressed: () => serverSheet(context, c, p, s),
-              visualDensity: VisualDensity.compact,
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints.tightFor(width: 32, height: 32),
-              icon: Icon(Icons.more_vert, color: p.sub, size: 18),
-              tooltip: 'Ещё',
+              child: IconButton(
+                key: listMenu != null ? TourKeys.more : null,
+                onPressed: () =>
+                    serverSheet(context, c, p, s, listCaption: listMenu),
+                visualDensity: VisualDensity.compact,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints.tightFor(
+                  width: 32,
+                  height: 32,
+                ),
+                icon: Icon(
+                  Icons.more_vert,
+                  color: listMenu != null ? p.acc2 : p.sub,
+                  size: 18,
+                ),
+                tooltip: listMenu != null ? 'Сервер и список' : 'Ещё',
+              ),
             ),
           ],
         ),
@@ -3189,38 +3531,38 @@ class _CountryCard extends StatelessWidget {
     final iso = g.iso;
     final best = g.bestPing;
     final sel = g.has(c.selected);
-    final flag = iso != null && hasFlag(iso)
-        ? ClipOval(
-            child: SvgPicture.asset(
-              'assets/flags/${iso.toLowerCase()}.svg',
-              width: 26,
-              height: 26,
-              fit: BoxFit.cover,
+    final flag = Container(
+      padding: const EdgeInsets.all(2),
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        border: Border.all(color: p.acc2.withValues(alpha: .30)),
+      ),
+      child: iso != null && (hasFlag(iso) || p.mono)
+          ? countryBadge(p, iso, 30)
+          : Container(
+              width: 30,
+              height: 30,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(color: p.chip, shape: BoxShape.circle),
+              child: Icon(Icons.public, size: 17, color: p.sub),
             ),
-          )
-        : Container(
-            width: 26,
-            height: 26,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(color: p.chip, shape: BoxShape.circle),
-            child: Icon(Icons.public, size: 16, color: p.sub),
-          );
+    );
     var first = firstRow;
     final body = Padding(
-      padding: const EdgeInsets.fromLTRB(8, 0, 8, 6),
+      padding: const EdgeInsets.fromLTRB(10, 0, 10, 8),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           for (final (cat, items) in g.cats) ...[
             Padding(
-              padding: const EdgeInsets.fromLTRB(6, 6, 6, 4),
-              child: Text(
-                '${cat == 'qWDTT' ? 'Антиблок · qWDTT' : cat} · ${items.length}',
-                style: TextStyle(
-                  color: p.sub,
-                  fontSize: 11.5,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: .3,
+              padding: const EdgeInsets.fromLTRB(2, 8, 2, 6),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: _CatChip(
+                  p: p,
+                  text: cat == 'qWDTT' ? 'Антиблок · qWDTT' : cat,
+                  n: items.length,
+                  color: catColor(p, cat),
                 ),
               ),
             ),
@@ -3232,15 +3574,22 @@ class _CountryCard extends StatelessWidget {
                 first: (first, first = false).$1,
                 protocol: false,
                 inCountry: true,
+                glyph: catColor(p, cat),
               ),
           ],
         ],
       ),
     );
     return Padding(
-      padding: const EdgeInsets.only(bottom: 6),
-      child: Container(
-        decoration: _box(p, r: 18, border: sel ? p.acc.withValues(alpha: .55) : null),
+      padding: const EdgeInsets.only(bottom: 8),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 240),
+        decoration: glassBox(
+          p,
+          r: 20,
+          strength: open || sel ? 1 : .55,
+          border: sel ? p.acc2.withValues(alpha: .55) : null,
+        ),
         clipBehavior: Clip.antiAlias,
         child: Material(
           type: MaterialType.transparency,
@@ -3251,7 +3600,7 @@ class _CountryCard extends StatelessWidget {
                 onTap: () => onToggle(!open),
                 focusColor: p.acc.withValues(alpha: .18),
                 child: Padding(
-                  padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
+                  padding: const EdgeInsets.fromLTRB(10, 10, 10, 10),
                   child: Row(
                     children: [
                       flag,
@@ -3263,32 +3612,41 @@ class _CountryCard extends StatelessWidget {
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
                             color: p.txt,
-                            fontSize: 15,
+                            fontSize: 16,
                             fontWeight: FontWeight.w700,
+                            letterSpacing: -.2,
                           ),
                         ),
                       ),
-                      Text(
-                        '${g.count}',
-                        style: TextStyle(
-                          color: p.sub,
-                          fontSize: 12.5,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
+                      _CountPill(p: p, n: g.count),
                       if (best != null) ...[
-                        const SizedBox(width: 8),
+                        const SizedBox(width: 6),
                         PingChip(p: p, text: pingText(best)),
                       ],
-                      const SizedBox(width: 2),
-                      AnimatedRotation(
-                        turns: open ? .5 : 0,
-                        duration: const Duration(milliseconds: 220),
-                        curve: Curves.easeInOut,
-                        child: Icon(
-                          Icons.keyboard_arrow_down_rounded,
-                          color: p.sub,
-                          size: 24,
+                      const SizedBox(width: 6),
+                      Container(
+                        width: 30,
+                        height: 30,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: open
+                              ? p.acc.withValues(alpha: .22)
+                              : (p.light
+                                    ? const Color(0x0A000000)
+                                    : const Color(0x0DFFFFFF)),
+                          border: Border.all(
+                            color: p.acc2.withValues(alpha: open ? .45 : .18),
+                          ),
+                        ),
+                        child: AnimatedRotation(
+                          turns: open ? .5 : 0,
+                          duration: const Duration(milliseconds: 260),
+                          curve: Curves.easeInOutCubic,
+                          child: Icon(
+                            Icons.keyboard_arrow_down_rounded,
+                            color: open ? p.txt : p.acc2,
+                            size: 20,
+                          ),
                         ),
                       ),
                     ],
@@ -3346,7 +3704,11 @@ class _ServerCard extends StatelessWidget {
           dispName(s['name'] ?? ''),
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
-          style: TextStyle(color: p.txt, fontWeight: FontWeight.w600, height: 1.15),
+          style: TextStyle(
+            color: p.txt,
+            fontWeight: FontWeight.w600,
+            height: 1.15,
+          ),
         ),
         Text(
           _sub(s),
@@ -4017,6 +4379,18 @@ void settingsSheet(BuildContext context, NoxController c, Pal p) {
       ),
       item(
         p,
+        'Цветовой шаблон',
+        desc:
+            templateOf(c.pref('tpl', 'glass')).name +
+            (c.pref('tpl', 'glass') == 'mono' ? ' · без флагов' : ''),
+        arrow: true,
+        onTap: () {
+          Navigator.pop(ctx);
+          templateSheet(context, c, p);
+        },
+      ),
+      item(
+        p,
         'Шаблон',
         desc: c.pref('panel', '') == 'text' ? 'Текстовый' : 'Стандартный',
         arrow: true,
@@ -4314,181 +4688,193 @@ void listSheet(
   NoxController c,
   Pal p, {
   String? caption,
+}) => sheet(
+  context,
+  p,
+  'Список',
+  (ctx) => listItems(context, ctx, c, p, caption: caption),
+);
+
+/// Items of the list menu (sort, view, filters…); also appended to the first server's ⋮.
+List<Widget> listItems(
+  BuildContext context,
+  BuildContext ctx,
+  NoxController c,
+  Pal p, {
+  String? caption,
 }) {
-  sheet(context, p, 'Список', (ctx) {
-    final h = c.flag('hideDead', true),
-        d = c.flag('dedup', true),
-        v = c.pref('view', 'list');
-    final undo = (c.s['canUndo'] ?? 0) as int;
-    return [
-      if (caption != null)
-        Padding(
-          padding: const EdgeInsets.only(bottom: 6),
-          child: Text(caption, style: TextStyle(color: p.sub, fontSize: 12.5)),
-        ),
-      item(
-        p,
-        'Сортировка',
-        desc: _sorts
-            .firstWhere(
-              (e) => e.$1 == (c.s['sort'] ?? ''),
-              orElse: () => _sorts[0],
-            )
-            .$2,
-        arrow: true,
-        onTap: () {
-          Navigator.pop(ctx);
-          sheet(
-            context,
-            p,
-            'Сортировка',
-            (c2) => [
-              for (final (k, n) in _sorts)
-                item(
-                  p,
-                  n,
-                  checked: (c.s['sort'] ?? '') == k,
-                  onTap: () async {
-                    await c.call('SetSort', [k]);
-                    await c.refresh();
-                    if (c2.mounted) Navigator.pop(c2);
-                  },
-                ),
-            ],
-          );
-        },
+  final h = c.flag('hideDead', true),
+      d = c.flag('dedup', true),
+      v = c.pref('view', 'list');
+  final undo = (c.s['canUndo'] ?? 0) as int;
+  return [
+    if (caption != null)
+      Padding(
+        padding: const EdgeInsets.only(bottom: 6),
+        child: Text(caption, style: TextStyle(color: p.sub, fontSize: 12.5)),
       ),
+    item(
+      p,
+      'Сортировка',
+      desc: _sorts
+          .firstWhere(
+            (e) => e.$1 == (c.s['sort'] ?? ''),
+            orElse: () => _sorts[0],
+          )
+          .$2,
+      arrow: true,
+      onTap: () {
+        Navigator.pop(ctx);
+        sheet(
+          context,
+          p,
+          'Сортировка',
+          (c2) => [
+            for (final (k, n) in _sorts)
+              item(
+                p,
+                n,
+                checked: (c.s['sort'] ?? '') == k,
+                onTap: () async {
+                  await c.call('SetSort', [k]);
+                  await c.refresh();
+                  if (c2.mounted) Navigator.pop(c2);
+                },
+              ),
+          ],
+        );
+      },
+    ),
+    item(
+      p,
+      'Вид',
+      desc: _views.firstWhere((e) => e.$1 == v).$2,
+      arrow: true,
+      onTap: () {
+        Navigator.pop(ctx);
+        sheet(
+          context,
+          p,
+          'Вид',
+          (c2) => [
+            for (final (k, n) in _views)
+              item(
+                p,
+                n,
+                checked: v == k,
+                onTap: () {
+                  c.setPref('view', k);
+                  Navigator.pop(c2);
+                },
+              ),
+          ],
+        );
+      },
+    ),
+    item(
+      p,
+      'Скрыть нерабочие',
+      checked: h,
+      onTap: () {
+        c.setPref('hideDead', h ? '0' : '1');
+        Navigator.pop(ctx);
+      },
+    ),
+    item(
+      p,
+      'Скрывать дубликаты',
+      checked: d,
+      onTap: () {
+        c.setPref('dedup', d ? '0' : '1');
+        Navigator.pop(ctx);
+      },
+    ),
+    item(
+      p,
+      'Выбрать самый быстрый',
+      desc: 'Автовыбор по последнему пингу',
+      onTap: () async {
+        Navigator.pop(ctx);
+        final id = await c.call('BestServer', [30]);
+        if (id is String && id.isNotEmpty) {
+          await c.select(id);
+        } else if (context.mounted) {
+          toast(context, 'Сначала проверьте пинг');
+        }
+      },
+    ),
+    item(
+      p,
+      'Удалить нерабочие',
+      onTap: () async {
+        Navigator.pop(ctx);
+        final n = await c.call('DeleteDead', [<String>[]]);
+        await c.refresh();
+        if (context.mounted) toast(context, 'Удалено: $n');
+      },
+    ),
+    if (undo > 0)
       item(
         p,
-        'Вид',
-        desc: _views.firstWhere((e) => e.$1 == v).$2,
-        arrow: true,
-        onTap: () {
-          Navigator.pop(ctx);
-          sheet(
-            context,
-            p,
-            'Вид',
-            (c2) => [
-              for (final (k, n) in _views)
-                item(
-                  p,
-                  n,
-                  checked: v == k,
-                  onTap: () {
-                    c.setPref('view', k);
-                    Navigator.pop(c2);
-                  },
-                ),
-            ],
-          );
-        },
-      ),
-      item(
-        p,
-        'Скрыть нерабочие',
-        checked: h,
-        onTap: () {
-          c.setPref('hideDead', h ? '0' : '1');
-          Navigator.pop(ctx);
-        },
-      ),
-      item(
-        p,
-        'Скрывать дубликаты',
-        checked: d,
-        onTap: () {
-          c.setPref('dedup', d ? '0' : '1');
-          Navigator.pop(ctx);
-        },
-      ),
-      item(
-        p,
-        'Выбрать самый быстрый',
-        desc: 'Автовыбор по последнему пингу',
+        'Вернуть удалённые ($undo)',
         onTap: () async {
           Navigator.pop(ctx);
-          final id = await c.call('BestServer', [30]);
-          if (id is String && id.isNotEmpty) {
-            await c.select(id);
-          } else if (context.mounted) {
-            toast(context, 'Сначала проверьте пинг');
-          }
-        },
-      ),
-      item(
-        p,
-        'Удалить нерабочие',
-        onTap: () async {
-          Navigator.pop(ctx);
-          final n = await c.call('DeleteDead', [<String>[]]);
+          final n = await c.call('UndoDelete');
           await c.refresh();
-          if (context.mounted) toast(context, 'Удалено: $n');
+          if (context.mounted) toast(context, 'Возвращено: $n');
         },
       ),
-      if (undo > 0)
-        item(
-          p,
-          'Вернуть удалённые ($undo)',
-          onTap: () async {
-            Navigator.pop(ctx);
-            final n = await c.call('UndoDelete');
-            await c.refresh();
-            if (context.mounted) toast(context, 'Возвращено: $n');
-          },
-        ),
-      if (c.subs.length > 1)
-        item(
-          p,
-          'Порядок подписок',
-          arrow: true,
-          onTap: () {
-            Navigator.pop(ctx);
-            orderSheet(context, c, p);
-          },
-        ),
+    if (c.subs.length > 1)
       item(
         p,
-        'Тип пинга',
-        desc: c.settings['pingMode'] == 'tcp' ? 'TCP' : 'Через прокси',
+        'Порядок подписок',
+        arrow: true,
         onTap: () {
           Navigator.pop(ctx);
-          pingSheet(context, c, p);
+          orderSheet(context, c, p);
         },
       ),
-      item(
-        p,
-        'Журнал',
-        onTap: () async {
-          Navigator.pop(ctx);
-          final log = await c.call('GetLog');
-          if (!context.mounted) return;
-          sheet(
-            context,
-            p,
-            'Журнал',
-            (_) => [
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: p.chip,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: SelectableText(
-                  '$log',
-                  style: TextStyle(
-                    color: p.txt,
-                    fontSize: 11,
-                    fontFamily: 'monospace',
-                  ),
+    item(
+      p,
+      'Тип пинга',
+      desc: c.settings['pingMode'] == 'tcp' ? 'TCP' : 'Через прокси',
+      onTap: () {
+        Navigator.pop(ctx);
+        pingSheet(context, c, p);
+      },
+    ),
+    item(
+      p,
+      'Журнал',
+      onTap: () async {
+        Navigator.pop(ctx);
+        final log = await c.call('GetLog');
+        if (!context.mounted) return;
+        sheet(
+          context,
+          p,
+          'Журнал',
+          (_) => [
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: p.chip,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: SelectableText(
+                '$log',
+                style: TextStyle(
+                  color: p.txt,
+                  fontSize: 11,
+                  fontFamily: 'monospace',
                 ),
               ),
-            ],
-          );
-        },
-      ),
-    ];
-  });
+            ),
+          ],
+        );
+      },
+    ),
+  ];
 }
 
 void orderSheet(BuildContext context, NoxController c, Pal p) {
@@ -4625,7 +5011,13 @@ void subSheet(BuildContext context, NoxController c, Pal p, J b) {
   );
 }
 
-void serverSheet(BuildContext context, NoxController c, Pal p, J s) {
+void serverSheet(
+  BuildContext context,
+  NoxController c,
+  Pal p,
+  J s, {
+  String? listCaption,
+}) {
   sheet(
     context,
     p,
@@ -4699,6 +5091,22 @@ void serverSheet(BuildContext context, NoxController c, Pal p, J s) {
           c.refresh();
         },
       ),
+      // first server's ⋮ also carries the list menu (the list header is gone on phones)
+      if (listCaption != null) ...[
+        Padding(
+          padding: const EdgeInsets.fromLTRB(4, 14, 4, 6),
+          child: Text(
+            'СПИСОК СЕРВЕРОВ',
+            style: TextStyle(
+              color: p.acc2,
+              fontSize: 11.5,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 1.2,
+            ),
+          ),
+        ),
+        ...listItems(context, ctx, c, p, caption: listCaption),
+      ],
     ],
   );
 }
@@ -4784,7 +5192,8 @@ void addSheet(BuildContext context, NoxController c, Pal p) {
             ? item(
                 p,
                 'Передать на другое устройство',
-                desc: 'ТВ, магнитола и т.п. в этой же Wi‑Fi сети: сканируйте их QR или введите код',
+                desc:
+                    'ТВ, магнитола и т.п. в этой же Wi‑Fi сети: сканируйте их QR или введите код',
                 arrow: true,
                 onTap: () {
                   Navigator.pop(ctx);
@@ -4794,7 +5203,8 @@ void addSheet(BuildContext context, NoxController c, Pal p) {
             : item(
                 p,
                 'Принять с телефона',
-                desc: 'Для устройств без камеры (ТВ, магнитола): покажет QR и код, телефон передаст подписки по Wi‑Fi',
+                desc:
+                    'Для устройств без камеры (ТВ, магнитола): покажет QR и код, телефон передаст подписки по Wi‑Fi',
                 arrow: true,
                 onTap: () {
                   Navigator.pop(ctx);
@@ -5897,7 +6307,11 @@ Future<int?> portDialog(BuildContext context, Pal p, int cur) async {
 
 // ---- 1.0.20 «Раздача VPN» (Android: hotspot / USB tethering) and «Подключиться к телефону» (PC) ----
 
-Future<void> shareVpnDialog(BuildContext context, NoxController c, Pal p) async {
+Future<void> shareVpnDialog(
+  BuildContext context,
+  NoxController c,
+  Pal p,
+) async {
   J info = {};
   Future<void> load() async {
     final r = await c.call('ShareInfo');
@@ -5934,7 +6348,10 @@ Future<void> shareVpnDialog(BuildContext context, NoxController c, Pal p) async 
                   contentPadding: EdgeInsets.zero,
                   value: on,
                   title: Text('Раздавать через прокси', style: st),
-                  subtitle: Text('HTTP и SOCKS5 на всех сетях телефона', style: sub),
+                  subtitle: Text(
+                    'HTTP и SOCKS5 на всех сетях телефона',
+                    style: sub,
+                  ),
                   onChanged: (v) async {
                     await c.saveSettings({
                       'allowLan': v,
@@ -5952,16 +6369,23 @@ Future<void> shareVpnDialog(BuildContext context, NoxController c, Pal p) async 
                 TextField(
                   controller: uc,
                   style: st,
-                  decoration: const InputDecoration(labelText: 'Логин (необязательно)'),
+                  decoration: const InputDecoration(
+                    labelText: 'Логин (необязательно)',
+                  ),
                 ),
                 TextField(
                   controller: pc,
                   style: st,
-                  decoration: const InputDecoration(labelText: 'Пароль (необязательно)'),
+                  decoration: const InputDecoration(
+                    labelText: 'Пароль (необязательно)',
+                  ),
                 ),
                 const SizedBox(height: 12),
                 if (on && ips.isEmpty)
-                  Text('Нет локальных сетей: включите точку доступа или USB-модем', style: sub),
+                  Text(
+                    'Нет локальных сетей: включите точку доступа или USB-модем',
+                    style: sub,
+                  ),
                 if (on)
                   for (final e in ips)
                     ListTile(
@@ -5976,7 +6400,10 @@ Future<void> shareVpnDialog(BuildContext context, NoxController c, Pal p) async 
                       ),
                     ),
                 if (on && info['connected'] != true)
-                  Text('Подключите VPN — прокси работает только при подключении', style: TextStyle(color: p.amb, fontSize: 13)),
+                  Text(
+                    'Подключите VPN — прокси работает только при подключении',
+                    style: TextStyle(color: p.amb, fontSize: 13),
+                  ),
                 const SizedBox(height: 8),
                 Text(
                   'Android не позволяет направить в VPN весь трафик точки доступа без root, '
@@ -5989,7 +6416,10 @@ Future<void> shareVpnDialog(BuildContext context, NoxController c, Pal p) async 
           actions: [
             TextButton(
               onPressed: () async {
-                await c.saveSettings({'shareUser': uc.text.trim(), 'sharePass': pc.text});
+                await c.saveSettings({
+                  'shareUser': uc.text.trim(),
+                  'sharePass': pc.text,
+                });
                 if (on && c.connected) {
                   await c.call('Disconnect');
                   await c.call('Connect');
@@ -6005,7 +6435,11 @@ Future<void> shareVpnDialog(BuildContext context, NoxController c, Pal p) async 
   );
 }
 
-Future<void> connectPhoneDialog(BuildContext context, NoxController c, Pal p) async {
+Future<void> connectPhoneDialog(
+  BuildContext context,
+  NoxController c,
+  Pal p,
+) async {
   final ac = TextEditingController();
   final uc = TextEditingController();
   final pc = TextEditingController();
@@ -6023,13 +6457,30 @@ Future<void> connectPhoneDialog(BuildContext context, NoxController c, Pal p) as
             'или по USB (USB-модем) и введите адрес, показанный на телефоне.',
             style: TextStyle(color: p.sub, fontSize: 13),
           ),
-          TextField(controller: ac, style: st, decoration: const InputDecoration(labelText: 'Адрес, например 192.168.43.1:10808')),
-          TextField(controller: uc, style: st, decoration: const InputDecoration(labelText: 'Логин (если задан)')),
-          TextField(controller: pc, style: st, decoration: const InputDecoration(labelText: 'Пароль (если задан)')),
+          TextField(
+            controller: ac,
+            style: st,
+            decoration: const InputDecoration(
+              labelText: 'Адрес, например 192.168.43.1:10808',
+            ),
+          ),
+          TextField(
+            controller: uc,
+            style: st,
+            decoration: const InputDecoration(labelText: 'Логин (если задан)'),
+          ),
+          TextField(
+            controller: pc,
+            style: st,
+            decoration: const InputDecoration(labelText: 'Пароль (если задан)'),
+          ),
         ],
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Отмена')),
+        TextButton(
+          onPressed: () => Navigator.pop(ctx),
+          child: const Text('Отмена'),
+        ),
         TextButton(
           onPressed: () {
             final a = ac.text.trim();
@@ -6037,7 +6488,10 @@ Future<void> connectPhoneDialog(BuildContext context, NoxController c, Pal p) as
             final auth = uc.text.trim().isEmpty
                 ? ''
                 : '${Uri.encodeComponent(uc.text.trim())}:${Uri.encodeComponent(pc.text)}@';
-            Navigator.pop(ctx, 'socks://$auth$a#${Uri.encodeComponent('📱 Телефон')}');
+            Navigator.pop(
+              ctx,
+              'socks://$auth$a#${Uri.encodeComponent('📱 Телефон')}',
+            );
           },
           child: const Text('Подключить'),
         ),
@@ -6054,4 +6508,900 @@ Future<void> connectPhoneDialog(BuildContext context, NoxController c, Pal p) as
   if (c.connected) await c.call('Disconnect');
   await c.call('Connect');
   c.refresh();
+}
+
+/// Settings → «Цветовой шаблон»: swatch cards for every template.
+Future<void> templateSheet(BuildContext context, NoxController c, Pal p) =>
+    sheet(context, p, 'Цветовой шаблон', (ctx) => [TemplatePicker(c: c)]);
+
+class TemplatePicker extends StatelessWidget {
+  final NoxController c;
+  const TemplatePicker({super.key, required this.c});
+  @override
+  Widget build(BuildContext context) => ListenableBuilder(
+    listenable: c,
+    builder: (context, _) {
+      final theme = c.settings['theme'] as String?;
+      final cur = c.pref('tpl', 'glass');
+      final p = Pal.of(theme, cur);
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: Text(
+              'Цвета акцентов и градиентов. Тёмная/светлая/AMOLED — в «Тема».',
+              style: TextStyle(color: p.sub, fontSize: 12.5),
+            ),
+          ),
+          GridView.count(
+            crossAxisCount: 2,
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            mainAxisSpacing: 10,
+            crossAxisSpacing: 10,
+            childAspectRatio: 1.25,
+            children: [
+              for (final t in templates)
+                _TplCard(
+                  p: p,
+                  t: Pal.of(theme, t.key),
+                  name: t.name,
+                  mono: t.key == 'mono',
+                  on: t.key == cur,
+                  onTap: () => c.setPrefLive('tpl', t.key),
+                ),
+            ],
+          ),
+        ],
+      );
+    },
+  );
+}
+
+class _TplCard extends StatelessWidget {
+  final Pal p, t;
+  final String name;
+  final bool mono, on;
+  final VoidCallback onTap;
+  const _TplCard({
+    required this.p,
+    required this.t,
+    required this.name,
+    required this.mono,
+    required this.on,
+    required this.onTap,
+  });
+  @override
+  Widget build(BuildContext context) => Semantics(
+    selected: on,
+    button: true,
+    label: name,
+    child: InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(18),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: t.bg,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: on ? t.acc2 : p.line, width: on ? 2 : 1),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // mini subscription card in the template's glass gradient
+            Expanded(
+              child: Container(
+                padding: const EdgeInsets.fromLTRB(8, 7, 8, 7),
+                decoration: glassBox(t, r: 12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          width: 18,
+                          height: 18,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            gradient: LinearGradient(colors: [t.acc, t.acc2]),
+                          ),
+                          child: const Icon(
+                            Icons.power_settings_new_rounded,
+                            size: 12,
+                            color: Colors.white,
+                          ),
+                        ),
+                        const Spacer(),
+                        countryBadge(t, 'TR', 16),
+                      ],
+                    ),
+                    const Spacer(),
+                    Container(
+                      height: 4,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(2),
+                        gradient: LinearGradient(
+                          colors: [t.acc, t.acc2, t.grn],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 5),
+                    Row(
+                      children: [
+                        for (final col in [t.acc, t.acc2, t.card, t.txt])
+                          Container(
+                            margin: const EdgeInsets.only(right: 4),
+                            width: 10,
+                            height: 10,
+                            decoration: BoxDecoration(
+                              color: col,
+                              shape: BoxShape.circle,
+                              border: Border.all(color: t.line),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    mono ? '$name · без флагов' : name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: t.txt,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+                if (on)
+                  Icon(Icons.check_circle_rounded, size: 18, color: t.acc2),
+              ],
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
+/// Phone connection-card layout: 'classic' | 'ring' (1) | 'compact' (2) | 'timer' (3).
+String heroStyle = 'timer';
+
+String _hms(int s) {
+  if (s < 0) s = 0;
+  String two(int v) => v.toString().padLeft(2, '0');
+  return '${two(s ~/ 3600)}:${two((s % 3600) ~/ 60)}:${two(s % 60)}';
+}
+
+class _HeroAlt extends StatelessWidget {
+  final NoxController c;
+  final Pal p;
+  final String style;
+  final bool wide; // desktop: the speed graph has its own card next to this one
+  const _HeroAlt({
+    required this.c,
+    required this.p,
+    required this.style,
+    this.wide = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final on = c.connected, wait = c.busy, st = c.status, cur = c.current;
+    final since = (c.s['since'] ?? 0) as int;
+    final secs = on && since > 0
+        ? DateTime.now().millisecondsSinceEpoch ~/ 1000 - since
+        : 0;
+    final t = c.traffic;
+    final name = cur == null ? 'Сервер не выбран' : dispName(cur['name'] ?? '');
+    final bal = cur != null && NoxController.isBal(cur);
+    final iso = cur == null ? null : region(cur['name'] ?? '');
+    final proto = cur == null
+        ? ''
+        : NoxController.proto(cur).isEmpty
+        ? 'Автовыбор'
+        : NoxController.proto(cur);
+    final label = on
+        ? 'Подключено'
+        : st == 'connecting'
+        ? 'Подключение…'
+        : st == 'disconnecting'
+        ? 'Отключение…'
+        : 'Отключено';
+    final stColor = on
+        ? p.grn
+        : wait
+        ? p.amb
+        : p.sub;
+    final ping = cur == null ? '—' : _pingOf(c, cur);
+    Widget badge(double size) => bal || iso == null
+        ? Container(
+            width: size,
+            height: size,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: LinearGradient(colors: [p.acc, p.acc2]),
+            ),
+            child: Icon(
+              Icons.bolt_rounded,
+              size: size * .6,
+              color: Colors.white,
+            ),
+          )
+        : countryBadge(p, iso, size);
+    Widget graph(double h) => SizedBox(
+      height: h,
+      width: double.infinity,
+      child: LiveGraph(
+        series: c.speed,
+        p: p,
+        active: c.animSmooth,
+        calm: true,
+        span: 40,
+      ),
+    );
+    final down = '${fmtBytes(t?['Down'] ?? 0)}/с';
+    final up = '${fmtBytes(t?['Up'] ?? 0)}/с';
+
+    switch (style) {
+      case 'ring':
+        return Container(
+          padding: const EdgeInsets.fromLTRB(16, 18, 16, 12),
+          decoration: glassBox(p, r: 26),
+          child: Column(
+            children: [
+              _GlowRing(
+                p: p,
+                on: on,
+                wait: wait,
+                spin: c.animSmooth && (on || wait),
+                child: _powerKnob(c, p, size: 104),
+              ),
+              const SizedBox(height: 14),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  badge(22),
+                  const SizedBox(width: 8),
+                  Flexible(
+                    child: Text(
+                      name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: p.txt,
+                        fontSize: 18,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 4),
+              Text(
+                on ? '${_hms(secs)}  ·  $proto' : '$label  ·  $proto',
+                style: TextStyle(
+                  color: on ? p.acc2 : stColor,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: .6,
+                  fontFeatures: const [FontFeature.tabularFigures()],
+                ),
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: _Stat(
+                      p: p,
+                      icon: Icons.south_rounded,
+                      label: 'Загрузка',
+                      value: down,
+                      color: p.acc2,
+                    ),
+                  ),
+                  Container(width: 1, height: 30, color: p.line),
+                  Expanded(
+                    child: _Stat(
+                      p: p,
+                      icon: Icons.north_rounded,
+                      label: 'Отдача',
+                      value: up,
+                      color: p.mono ? p.sub : const Color(0xFF34D399),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              graph(52),
+            ],
+          ),
+        );
+      case 'compact':
+        return Container(
+          padding: const EdgeInsets.fromLTRB(14, 14, 14, 10),
+          decoration: glassBox(p, r: 22),
+          child: Column(
+            children: [
+              Row(
+                children: [
+                  Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(2),
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: p.acc2.withValues(alpha: .5),
+                            width: 1.5,
+                          ),
+                        ),
+                        child: badge(40),
+                      ),
+                      Positioned(
+                        right: 0,
+                        bottom: 0,
+                        child: Container(
+                          width: 13,
+                          height: 13,
+                          decoration: BoxDecoration(
+                            color: stColor,
+                            shape: BoxShape.circle,
+                            border: Border.all(color: p.card, width: 2.5),
+                            boxShadow: [
+                              if (on)
+                                BoxShadow(
+                                  color: p.grn.withValues(alpha: .6),
+                                  blurRadius: 8,
+                                ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: p.txt,
+                            fontSize: 17,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          '$label · $proto',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: stColor,
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  _PillSwitch(c: c, p: p),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                decoration: BoxDecoration(
+                  color: p.bg.withValues(alpha: p.light ? .5 : .35),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: p.line.withValues(alpha: .7)),
+                ),
+                child: Row(
+                  children: [
+                    for (final (i, x) in [
+                      (Icons.south_rounded, down, p.acc2),
+                      (
+                        Icons.north_rounded,
+                        up,
+                        p.mono ? p.sub : const Color(0xFF34D399),
+                      ),
+                      (Icons.schedule_rounded, on ? _hms(secs) : '—', p.sub),
+                      (Icons.bolt_rounded, ping, p.amb),
+                    ].indexed) ...[
+                      if (i > 0) Container(width: 1, height: 22, color: p.line),
+                      Expanded(
+                        child: Column(
+                          children: [
+                            Icon(x.$1, size: 14, color: x.$3),
+                            const SizedBox(height: 2),
+                            Text(
+                              x.$2,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: p.txt,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                                fontFeatures: const [
+                                  FontFeature.tabularFigures(),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              if (on) ...[const SizedBox(height: 8), graph(30)],
+            ],
+          ),
+        );
+      default: // 'timer'
+        return Container(
+          clipBehavior: Clip.antiAlias,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(26),
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: on
+                  ? [
+                      Color.alphaBlend(p.acc.withValues(alpha: .62), p.card),
+                      Color.alphaBlend(p.acc2.withValues(alpha: .30), p.card),
+                      Color.alphaBlend(p.acc.withValues(alpha: .12), p.card),
+                    ]
+                  : [
+                      Color.alphaBlend(p.acc.withValues(alpha: .22), p.card),
+                      Color.alphaBlend(p.acc2.withValues(alpha: .08), p.card),
+                      p.card,
+                    ],
+            ),
+            border: Border.all(color: p.acc2.withValues(alpha: .35)),
+            boxShadow: [
+              BoxShadow(
+                color: p.acc.withValues(alpha: on ? .35 : .12),
+                blurRadius: 26,
+                offset: const Offset(0, 8),
+              ),
+            ],
+          ),
+          child: Stack(
+            children: [
+              if (on && !wide)
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: 70,
+                  child: Opacity(opacity: .45, child: graph(48)),
+                ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+                child: Column(
+                  mainAxisAlignment: wide
+                      ? MainAxisAlignment.spaceBetween
+                      : MainAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.fromLTRB(8, 4, 10, 4),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: .22),
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Container(
+                                width: 8,
+                                height: 8,
+                                decoration: BoxDecoration(
+                                  color: stColor,
+                                  shape: BoxShape.circle,
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              Text(
+                                label.toUpperCase(),
+                                style: TextStyle(
+                                  color: Colors.white.withValues(alpha: .92),
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w800,
+                                  letterSpacing: 1,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const Spacer(),
+                        badge(22),
+                        const SizedBox(width: 7),
+                        ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 150),
+                          child: Text(
+                            name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 14),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        Expanded(
+                          child: _Side(
+                            icon: Icons.south_rounded,
+                            value: down,
+                            label: 'загрузка',
+                          ),
+                        ),
+                        Text(
+                          _hms(secs),
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: on ? 1 : .55),
+                            fontSize: 40,
+                            fontWeight: FontWeight.w800,
+                            height: 1,
+                            letterSpacing: -.5,
+                            fontFeatures: const [FontFeature.tabularFigures()],
+                          ),
+                        ),
+                        Expanded(
+                          child: _Side(
+                            icon: Icons.north_rounded,
+                            value: up,
+                            label: 'отдача',
+                            end: true,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '$proto · пинг $ping',
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: .7),
+                        fontSize: 12,
+                      ),
+                    ),
+                    SizedBox(height: wide ? 18 : 40),
+                    _SlidePill(c: c, p: p),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        );
+    }
+  }
+}
+
+class _Stat extends StatelessWidget {
+  final Pal p;
+  final IconData icon;
+  final String label, value;
+  final Color color;
+  const _Stat({
+    required this.p,
+    required this.icon,
+    required this.label,
+    required this.value,
+    required this.color,
+  });
+  @override
+  Widget build(BuildContext context) => Column(
+    children: [
+      Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 13, color: color),
+          const SizedBox(width: 3),
+          Text(label, style: TextStyle(color: p.sub, fontSize: 11.5)),
+        ],
+      ),
+      const SizedBox(height: 2),
+      Text(
+        value,
+        style: TextStyle(
+          color: p.txt,
+          fontSize: 16,
+          fontWeight: FontWeight.w800,
+          fontFeatures: const [FontFeature.tabularFigures()],
+        ),
+      ),
+    ],
+  );
+}
+
+class _Side extends StatelessWidget {
+  final IconData icon;
+  final String value, label;
+  final bool end;
+  const _Side({
+    required this.icon,
+    required this.value,
+    required this.label,
+    this.end = false,
+  });
+  @override
+  Widget build(BuildContext context) => Column(
+    crossAxisAlignment: end ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+    children: [
+      Icon(icon, size: 15, color: Colors.white.withValues(alpha: .85)),
+      Text(
+        value,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 12.5,
+          fontWeight: FontWeight.w800,
+        ),
+      ),
+      Text(
+        label,
+        style: TextStyle(
+          color: Colors.white.withValues(alpha: .6),
+          fontSize: 10.5,
+        ),
+      ),
+    ],
+  );
+}
+
+/// Variant 2: wide pill toggle switch.
+class _PillSwitch extends StatelessWidget {
+  final NoxController c;
+  final Pal p;
+  const _PillSwitch({required this.c, required this.p});
+  @override
+  Widget build(BuildContext context) {
+    final on = c.connected, wait = c.busy;
+    return Semantics(
+      toggled: on,
+      button: true,
+      label: on ? 'Отключить' : 'Подключить',
+      child: GestureDetector(
+        key: TourKeys.power,
+        onTap: c.toggle,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 220),
+          width: 72,
+          height: 40,
+          padding: const EdgeInsets.all(4),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(20),
+            gradient: on ? LinearGradient(colors: [p.acc, p.acc2]) : null,
+            color: on ? null : (wait ? p.amb.withValues(alpha: .4) : p.chip),
+            border: Border.all(
+              color: on ? Colors.white.withValues(alpha: .2) : p.line,
+            ),
+            boxShadow: [
+              if (on)
+                BoxShadow(color: p.acc.withValues(alpha: .5), blurRadius: 16),
+            ],
+          ),
+          child: AnimatedAlign(
+            duration: const Duration(milliseconds: 220),
+            curve: Curves.easeOutBack,
+            alignment: on ? Alignment.centerRight : Alignment.centerLeft,
+            child: Container(
+              width: 32,
+              height: 32,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: on ? Colors.white : p.sub.withValues(alpha: .7),
+                boxShadow: const [
+                  BoxShadow(color: Color(0x44000000), blurRadius: 6),
+                ],
+              ),
+              child: Icon(
+                Icons.power_settings_new_rounded,
+                size: 18,
+                color: on ? p.acc : p.card,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Variant 3: slide/tap-to-connect pill (tap or swipe toggles).
+class _SlidePill extends StatelessWidget {
+  final NoxController c;
+  final Pal p;
+  const _SlidePill({required this.c, required this.p});
+  @override
+  Widget build(BuildContext context) {
+    final on = c.connected;
+    final hint = isDesktop
+        ? (on ? 'Нажмите — отключить' : 'Нажмите — подключить')
+        : (on ? 'Свайп влево — отключить' : 'Свайп вправо — подключить');
+    return FocusableActionDetector(
+      mouseCursor: SystemMouseCursors.click,
+      actions: {
+        ActivateIntent: CallbackAction<ActivateIntent>(
+          onInvoke: (_) {
+            c.toggle();
+            return null;
+          },
+        ),
+      },
+      child: GestureDetector(
+        key: TourKeys.power,
+        onTap: c.toggle,
+        onHorizontalDragEnd: (d) {
+          final v = d.primaryVelocity ?? 0;
+          if ((v > 200 && !on) || (v < -200 && on)) c.toggle();
+        },
+        child: Container(
+          height: 52,
+          padding: const EdgeInsets.all(5),
+          decoration: BoxDecoration(
+            color: Colors.black.withValues(alpha: .25),
+            borderRadius: BorderRadius.circular(26),
+            border: Border.all(color: Colors.white.withValues(alpha: .18)),
+          ),
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              Text(
+                hint,
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: .85),
+                  fontSize: 13.5,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              AnimatedAlign(
+                duration: const Duration(milliseconds: 260),
+                curve: Curves.easeOutCubic,
+                alignment: on ? Alignment.centerRight : Alignment.centerLeft,
+                child: Container(
+                  width: 42,
+                  height: 42,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: Colors.white,
+                    boxShadow: [
+                      BoxShadow(
+                        color: p.acc.withValues(alpha: .6),
+                        blurRadius: 14,
+                      ),
+                    ],
+                  ),
+                  child: Icon(
+                    on
+                        ? Icons.power_settings_new_rounded
+                        : Icons.chevron_right_rounded,
+                    color: p.acc,
+                    size: 24,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Variant 1: rotating sweep-gradient glow ring around the power knob.
+class _GlowRing extends StatefulWidget {
+  final Pal p;
+  final bool on, wait, spin;
+  final Widget child;
+  const _GlowRing({
+    required this.p,
+    required this.on,
+    required this.wait,
+    required this.spin,
+    required this.child,
+  });
+  @override
+  State<_GlowRing> createState() => _GlowRingState();
+}
+
+class _GlowRingState extends State<_GlowRing>
+    with SingleTickerProviderStateMixin {
+  late final _a = AnimationController(
+    vsync: this,
+    duration: const Duration(seconds: 4),
+  );
+  @override
+  void initState() {
+    super.initState();
+    _sync();
+  }
+
+  @override
+  void didUpdateWidget(covariant _GlowRing old) {
+    super.didUpdateWidget(old);
+    _sync();
+  }
+
+  void _sync() {
+    if (widget.spin && !_a.isAnimating) {
+      _a.repeat();
+    } else if (!widget.spin && _a.isAnimating) {
+      _a.stop();
+    }
+  }
+
+  @override
+  void dispose() {
+    _a.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final p = widget.p;
+    final c1 = widget.wait && !widget.on ? p.amb : p.acc;
+    return SizedBox(
+      width: 150,
+      height: 150,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          RotationTransition(
+            turns: _a,
+            child: Container(
+              width: 146,
+              height: 146,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: SweepGradient(
+                  colors: [
+                    c1.withValues(alpha: 0),
+                    c1.withValues(alpha: widget.on ? .9 : .35),
+                    p.acc2.withValues(alpha: widget.on ? 1 : .45),
+                    c1.withValues(alpha: 0),
+                  ],
+                  stops: const [0, .45, .7, 1],
+                ),
+              ),
+            ),
+          ),
+          Container(
+            width: 136,
+            height: 136,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: Color.alphaBlend(p.acc.withValues(alpha: .10), p.card),
+            ),
+          ),
+          widget.child,
+        ],
+      ),
+    );
+  }
 }
