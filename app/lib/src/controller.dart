@@ -342,7 +342,10 @@ class NoxController extends ChangeNotifier {
   }
 
   // ------------------------------------------------------------- list logic (as Android)
-  static bool isBal(J s) => s['type'] == 'Автовыбор' || s['type'] == 'Balancer';
+  static bool isBal(J s) {
+    final t = ((s['type'] ?? '') as String).trim().toLowerCase();
+    return t == 'автовыбор' || t == 'balancer' || t == 'urltest';
+  }
   static bool isQw(J s) => s['type'] == 'qWDTT';
   static String proto(J s) => isBal(s)
       ? ''

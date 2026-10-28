@@ -650,9 +650,7 @@ class _BodyState extends State<_Body> {
                   first: (first, first = false).$1,
                   protocol: false,
                   flat: true,
-                  listMenu: i == 0 && c.subs.isNotEmpty
-                      ? listCaption(c, list.length)
-                      : null,
+                  listMenu: i == 0 ? listCaption(c, list.length) : null,
                 ),
             ],
           ),
@@ -664,6 +662,9 @@ class _BodyState extends State<_Body> {
           p: p,
           g: g,
           open: open[g.key] ?? g.has(c.selected),
+          listMenu: tree.auto.isEmpty && g == tree.groups.first
+              ? listCaption(c, list.length)
+              : null,
           firstRow: (first, first = false).$1,
           onToggle: (v) => c.setAccOpen(g.key, v),
         ),
@@ -764,6 +765,76 @@ class _IconBtn extends StatelessWidget {
 }
 
 /// Volumetric round button: soft gradient sphere, glow, press-scale; optional spin while onTap runs.
+/// ⚡ on the subscription card (phone). While a ping runs it turns into a pill with a
+/// spinner and «41/69», so progress never needs its own row above the list.
+class _PingOrb extends StatelessWidget {
+  final NoxController c;
+  final Pal p;
+  final bool mobile;
+  final VoidCallback onTap;
+  const _PingOrb({
+    super.key,
+    required this.c,
+    required this.p,
+    required this.onTap,
+    this.mobile = false,
+  });
+  @override
+  Widget build(BuildContext context) {
+    final s = c.s;
+    if (s['pinging'] != true) {
+      return _OrbBtn(
+        p: p,
+        icon: Icons.bolt_rounded,
+        tip: 'Пинг',
+        mobile: mobile,
+        onTap: () async {
+          onTap();
+          toast(context, 'Проверяю пинг…');
+        },
+      );
+    }
+    final done = (s['pingDone'] ?? 0) as num, all = (s['pingAll'] ?? 0) as num;
+    return Tooltip(
+      message: 'Идёт пинг: $done из $all',
+      child: Container(
+        height: mobile ? 32 : 38,
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        decoration: BoxDecoration(
+          color: p.acc.withValues(alpha: .22),
+          borderRadius: BorderRadius.circular(mobile ? 10 : 12),
+          border: Border.all(color: p.acc.withValues(alpha: .60)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SizedBox(
+              width: 14,
+              height: 14,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                value: all > 0 ? (done / all).clamp(0, 1).toDouble() : null,
+                color: p.acc2,
+                backgroundColor: p.acc2.withValues(alpha: .20),
+              ),
+            ),
+            const SizedBox(width: 6),
+            Text(
+              '$done/$all',
+              style: TextStyle(
+                color: p.txt,
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                fontFeatures: const [FontFeature.tabularFigures()],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _OrbBtn extends StatefulWidget {
   final Pal p;
   final IconData icon;
@@ -1880,16 +1951,21 @@ class _SubBlock extends StatelessWidget {
   Widget _subActions(BuildContext context) => Row(
     mainAxisSize: MainAxisSize.min,
     children: [
-      if (first && c.accordion) ...[
-        _OrbBtn(
-          key: TourKeys.ping,
+      if (c.accordion) ...[
+        _PingOrb(
+          key: first ? TourKeys.ping : null,
+          c: c,
           p: p,
-          icon: Icons.bolt_rounded,
-          tip: 'Пинг',
           mobile: mobile,
-          onTap: () async {
-            c.ping(c.visible().map((e) => e['id'] as String).toList());
-            toast(context, 'Проверяю пинг…');
+          onTap: () {
+            final multi = c.subs.length > 1;
+            c.ping(
+              c
+                  .visible()
+                  .where((e) => !multi || e['subId'] == b['id'])
+                  .map((e) => e['id'] as String)
+                  .toList(),
+            );
           },
         ),
         const SizedBox(width: 6),
@@ -1914,6 +1990,21 @@ class _SubBlock extends StatelessWidget {
         mobile: mobile,
         onTap: () async => subSheet(context, c, p, b),
       ),
+      if (c.accordion && c.subs.length > 1) ...[
+        const SizedBox(width: 6),
+        _OrbBtn(
+          p: p,
+          icon: Icons.more_vert_rounded,
+          tip: 'Меню списка',
+          mobile: mobile,
+          onTap: () async => listSheet(
+            context,
+            c,
+            p,
+            caption: listCaption(c, c.visible().length),
+          ),
+        ),
+      ],
       if (mobile && onToggleCollapse != null) ...[
         const SizedBox(width: 6),
         _OrbBtn(
@@ -2737,24 +2828,9 @@ class _FilterBarState extends State<_FilterBar> {
     final cs = c.chips(), cat = c.category;
     final s = c.s;
     final pinging = s['pinging'] == true;
-    // 2.1.4 phone accordion: no header row — ⚡ lives on the subscription card, ⋮ on «Автовыбор»
-    if (c.accordion &&
-        c.subs.isNotEmpty &&
-        c.visible().any(NoxController.isBal)) {
-      return pinging
-          ? Padding(
-              padding: const EdgeInsets.fromLTRB(6, 6, 6, 2),
-              child: Text(
-                'Пинг ${s['pingDone']}/${s['pingAll']}…',
-                style: TextStyle(
-                  color: p.txt.withValues(alpha: .85),
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            )
-          : const SizedBox(height: 6);
-    }
+    // 2.1.5 phone accordion: never a header row. ⚡ (+ ping progress) lives on the
+    // subscription card, ⋮ on «Автовыбор» or on the first country card.
+    if (c.accordion) return const SizedBox(height: 6);
     final ts = MediaQuery.textScalerOf(context);
     final h = widget.mobile ? ts.scale(14) + 22 : ts.scale(13) + 24;
     WidgetsBinding.instance.addPostFrameCallback((_) => _edges());
@@ -3517,6 +3593,9 @@ class _CountryCard extends StatelessWidget {
   final bool open;
   final bool firstRow;
   final ValueChanged<bool> onToggle;
+
+  /// Caption of the ⋮ list menu, set on the first card when there is no «Автовыбор».
+  final String? listMenu;
   const _CountryCard({
     super.key,
     required this.c,
@@ -3525,6 +3604,7 @@ class _CountryCard extends StatelessWidget {
     required this.open,
     required this.onToggle,
     this.firstRow = false,
+    this.listMenu,
   });
   @override
   Widget build(BuildContext context) {
@@ -3649,6 +3729,20 @@ class _CountryCard extends StatelessWidget {
                           ),
                         ),
                       ),
+                      if (listMenu != null)
+                        IconButton(
+                          key: TourKeys.more,
+                          onPressed: () =>
+                              listSheet(context, c, p, caption: listMenu),
+                          visualDensity: VisualDensity.compact,
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints.tightFor(
+                            width: 30,
+                            height: 30,
+                          ),
+                          icon: Icon(Icons.more_vert, color: p.acc2, size: 18),
+                          tooltip: 'Меню списка',
+                        ),
                     ],
                   ),
                 ),
@@ -4712,6 +4806,16 @@ List<Widget> listItems(
       Padding(
         padding: const EdgeInsets.only(bottom: 6),
         child: Text(caption, style: TextStyle(color: p.sub, fontSize: 12.5)),
+      ),
+    if (c.accordion && c.subs.isEmpty)
+      item(
+        p,
+        'Пинг всех серверов',
+        onTap: () {
+          Navigator.pop(ctx);
+          c.ping(c.visible().map((e) => e['id'] as String).toList());
+          toast(context, 'Проверяю пинг…');
+        },
       ),
     item(
       p,
