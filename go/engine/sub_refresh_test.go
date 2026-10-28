@@ -18,8 +18,8 @@ const subNew = "vless://11111111-2222-3333-4444-555555555555@1.2.3.4:443?securit
 // noxUA reports a subscription User-Agent that is not the NOX/2.0 agent.
 // Happ and v2rayNG impersonation makes the panel strip NOX-only protocols.
 func badSubUA(ua string) string {
-	if !strings.Contains(ua, "NOX/2.0") {
-		return "missing NOX/2.0"
+	if !strings.Contains(ua, "NOX/"+Version) {
+		return "missing NOX/" + Version
 	}
 	low := strings.ToLower(ua)
 	for _, bad := range []string{"happ", "v2rayng", "v2rayn"} {
@@ -280,7 +280,7 @@ func TestFetchSubReturnsBeforeDescFetch(t *testing.T) {
 
 func TestSubUserAgentContainsNoxVersion(t *testing.T) {
 	ua := subUserAgent()
-	if ua != "NOX/2.0 "+deviceOS() {
+	if ua != "NOX/"+Version+" "+deviceOS() {
 		t.Fatal(ua)
 	}
 	if why := badSubUA(ua); why != "" {
