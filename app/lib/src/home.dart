@@ -5,6 +5,7 @@ import 'split_apps.dart';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
@@ -7215,7 +7216,7 @@ class _HeroAlt extends StatelessWidget {
                       ),
                     ),
                     SizedBox(height: wide ? 18 : 40),
-                    _SlidePill(c: c, p: p),
+                    SlidePill(c: c, p: p),
                   ],
                 ),
               ),
@@ -7362,15 +7363,100 @@ class _PillSwitch extends StatelessWidget {
   }
 }
 
-/// Variant 3: slide/tap-to-connect pill (tap or swipe toggles).
-class _SlidePill extends StatelessWidget {
+/// Variant 3: slide/tap-to-connect pill.
+/// Swipe right = connect, swipe left = disconnect (also cancels «Подключение…»),
+/// a tap anywhere on the pill toggles. Every action goes through [NoxController.toggle],
+/// the same path as the round power knob (VPN permission, MTS proxy, etc. live in the engine).
+/// 2.1.6: the knob follows the finger and a slow slide counts once it passes 35% of the
+/// track (2.1.5 only reacted to a fast fling, so a normal slide did nothing); the pill
+/// claims the pointer on touch so the vertical home scroll can't steal a diagonal swipe.
+/// Touch hints («Свайп …») on phones; desktop says «Нажмите …». Tests may flip it.
+bool slideHints = !isDesktop;
+
+class SlidePill extends StatefulWidget {
   final NoxController c;
   final Pal p;
-  const _SlidePill({required this.c, required this.p});
+  const SlidePill({super.key, required this.c, required this.p});
+  @override
+  State<SlidePill> createState() => SlidePillState();
+}
+
+/// Horizontal drag that wins the gesture arena as soon as the finger touches the pill.
+class _PillDrag extends HorizontalDragGestureRecognizer {
+  _PillDrag({super.debugOwner});
+  @override
+  void addAllowedPointer(PointerDownEvent event) {
+    super.addAllowedPointer(event);
+    resolve(GestureDisposition.accepted);
+  }
+
+  @override
+  String get debugDescription => 'pill drag';
+}
+
+class SlidePillState extends State<SlidePill> {
+  static const _knob = 42.0, _pad = 5.0;
+  double? _drag; // knob offset from the left while the finger is down
+  double _travel = 0; // total |dx| of this touch (tap if tiny)
+  double _track = 1;
+  bool _sent = false;
+
+  NoxController get c => widget.c;
+
+  /// Knob sits right while connected or connecting (the user slid it there).
+  bool get _right => c.connected || c.status == 'connecting';
+
+  void _toggle() {
+    if (_sent) return;
+    _sent = true;
+    HapticFeedback.lightImpact();
+    c.toggle().whenComplete(() => _sent = false);
+  }
+
+  void _connect() {
+    if (c.status == 'disconnected') _toggle();
+  }
+
+  void _disconnect() {
+    if (c.status != 'disconnected' && c.status != 'disconnecting') _toggle();
+  }
+
+  void _start(DragStartDetails d) {
+    _travel = 0;
+    setState(() => _drag = _right ? _track : 0);
+  }
+
+  void _update(DragUpdateDetails d) {
+    _travel += d.delta.dx.abs();
+    setState(() => _drag = ((_drag ?? 0) + d.delta.dx).clamp(0.0, _track));
+  }
+
+  void _end(DragEndDetails d) {
+    final x = _drag ?? 0, v = d.primaryVelocity ?? 0;
+    setState(() => _drag = null);
+    if (_travel < 8) {
+      _toggle(); // a tap (or a tiny wiggle) anywhere on the pill
+      return;
+    }
+    final fromLeft = !_right;
+    if (fromLeft && (x > _track * .35 || v > 300)) {
+      _connect();
+    } else if (!fromLeft && (x < _track * .65 || v < -300)) {
+      _disconnect();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    final on = c.connected;
-    final hint = isDesktop
+    final p = widget.p;
+    final on = c.connected, wait = c.busy;
+    final hint = c.status == 'connecting'
+        ? (!slideHints
+              ? 'Подключение… нажмите — отмена'
+              : 'Подключение… влево — отмена')
+        : c.status == 'disconnecting'
+        ? 'Отключение…'
+        : !slideHints
         ? (on ? 'Нажмите — отключить' : 'Нажмите — подключить')
         : (on ? 'Свайп влево — отключить' : 'Свайп вправо — подключить');
     return FocusableActionDetector(
@@ -7378,69 +7464,102 @@ class _SlidePill extends StatelessWidget {
       actions: {
         ActivateIntent: CallbackAction<ActivateIntent>(
           onInvoke: (_) {
-            c.toggle();
+            _toggle();
             return null;
           },
         ),
       },
-      child: GestureDetector(
-        key: TourKeys.power,
-        onTap: c.toggle,
-        onHorizontalDragEnd: (d) {
-          final v = d.primaryVelocity ?? 0;
-          if ((v > 200 && !on) || (v < -200 && on)) c.toggle();
-        },
-        child: Container(
-          height: 52,
-          padding: const EdgeInsets.all(5),
-          decoration: BoxDecoration(
-            color: Colors.black.withValues(alpha: .25),
-            borderRadius: BorderRadius.circular(26),
-            border: Border.all(color: Colors.white.withValues(alpha: .18)),
-          ),
-          child: Stack(
-            alignment: Alignment.center,
-            children: [
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 46),
-                child: Text(
-                  hint,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: Colors.white.withValues(alpha: .85),
-                    fontSize: 13.5,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-              AnimatedAlign(
-                duration: const Duration(milliseconds: 260),
-                curve: Curves.easeOutCubic,
-                alignment: on ? Alignment.centerRight : Alignment.centerLeft,
-                child: Container(
-                  width: 42,
-                  height: 42,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: Colors.white,
-                    boxShadow: [
-                      BoxShadow(
-                        color: p.acc.withValues(alpha: .6),
-                        blurRadius: 14,
+      child: Semantics(
+        button: true,
+        label: hint,
+        onTap: _toggle,
+        child: RawGestureDetector(
+          key: TourKeys.power,
+          behavior: HitTestBehavior.opaque,
+          gestures: {
+            _PillDrag: GestureRecognizerFactoryWithHandlers<_PillDrag>(
+              () => _PillDrag(debugOwner: this),
+              (r) => r
+                ..dragStartBehavior = DragStartBehavior.down
+                ..onStart = _start
+                ..onUpdate = _update
+                ..onEnd = _end
+                ..onCancel = () => setState(() => _drag = null),
+            ),
+          },
+          child: Container(
+            height: 52,
+            padding: const EdgeInsets.all(_pad),
+            decoration: BoxDecoration(
+              color: Colors.black.withValues(alpha: .25),
+              borderRadius: BorderRadius.circular(26),
+              border: Border.all(color: Colors.white.withValues(alpha: .18)),
+            ),
+            child: LayoutBuilder(
+              builder: (ctx, bc) {
+                _track = (bc.maxWidth - _knob).clamp(1.0, double.infinity);
+                final x = _drag ?? (_right ? _track : 0);
+                return Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 46),
+                      child: Center(
+                        child: Text(
+                          hint,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: .85),
+                            fontSize: 13.5,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
                       ),
-                    ],
-                  ),
-                  child: Icon(
-                    on
-                        ? Icons.power_settings_new_rounded
-                        : Icons.chevron_right_rounded,
-                    color: p.acc,
-                    size: 24,
-                  ),
-                ),
-              ),
-            ],
+                    ),
+                    AnimatedPositioned(
+                      duration: _drag == null
+                          ? const Duration(milliseconds: 260)
+                          : Duration.zero,
+                      curve: Curves.easeOutCubic,
+                      left: x,
+                      top: 0,
+                      child: Container(
+                        width: _knob,
+                        height: _knob,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: Colors.white,
+                          boxShadow: [
+                            BoxShadow(
+                              color: (wait ? p.amb : p.acc).withValues(
+                                alpha: .6,
+                              ),
+                              blurRadius: 14,
+                            ),
+                          ],
+                        ),
+                        child: wait
+                            ? Padding(
+                                padding: const EdgeInsets.all(11),
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2.4,
+                                  color: p.amb,
+                                ),
+                              )
+                            : Icon(
+                                on
+                                    ? Icons.power_settings_new_rounded
+                                    : Icons.chevron_right_rounded,
+                                color: p.acc,
+                                size: 24,
+                              ),
+                      ),
+                    ),
+                  ],
+                );
+              },
+            ),
           ),
         ),
       ),
