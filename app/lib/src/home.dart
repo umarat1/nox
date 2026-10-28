@@ -47,7 +47,8 @@ class Home extends StatelessWidget {
                         // (fills the whole window; narrow keeps the phone column)
                         // A 1080p TV is ~960 dp; with TV UI scale (≤1.3) it is ≥738,
                         // so TVs keep the two panes from 640 dp.
-                        final wide = box.maxWidth >= (c.isTv ? 640 : 840);
+                        // 2.1: Windows/macOS keep the phone layout at any window size (as on Android)
+                        final wide = c.isTv && box.maxWidth >= 640;
                         return Align(
                           alignment: Alignment.topCenter,
                           child: ConstrainedBox(
