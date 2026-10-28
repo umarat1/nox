@@ -383,6 +383,10 @@ func (a *App) subLoop() {
 }
 
 func (a *App) refreshDueSubs() {
+	if !a.subDueBusy.CompareAndSwap(false, true) {
+		return // the ticker and Resume() can meet here
+	}
+	defer a.subDueBusy.Store(false)
 	a.mu.Lock()
 	now := time.Now().Unix()
 	var due []Sub
@@ -392,12 +396,26 @@ func (a *App) refreshDueSubs() {
 			hrs = 1
 		}
 		if s.Updated <= 0 || now-s.Updated >= int64(hrs)*3600 {
+			if f := a.subFail[s.ID]; f > 0 && now-f < 300 {
+				continue // failed <5 min ago: don't hammer the panel every minute
+			}
 			due = append(due, s)
 		}
 	}
 	a.mu.Unlock()
 	for i := range due {
-		if _, _, err := a.fetchSub(&due[i], false); err != nil {
+		_, _, err := a.fetchSub(&due[i], false)
+		a.mu.Lock()
+		if a.subFail == nil {
+			a.subFail = map[string]int64{}
+		}
+		if err != nil {
+			a.subFail[due[i].ID] = time.Now().Unix()
+		} else {
+			delete(a.subFail, due[i].ID)
+		}
+		a.mu.Unlock()
+		if err != nil {
 			a.log("автообновление " + due[i].Name + ": " + err.Error())
 		}
 	}

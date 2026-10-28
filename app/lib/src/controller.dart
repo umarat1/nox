@@ -21,6 +21,7 @@ class NoxController extends ChangeNotifier {
   String? fatal; // core unreachable
   Set<String> pingWait = {};
   Timer? _t1, _t2;
+  AppLifecycleListener? _life;
   bool _proxyApplied = false;
   String _lastStatus = '';
 
@@ -28,6 +29,7 @@ class NoxController extends ChangeNotifier {
   J get settings => (s['settings'] as Map?)?.cast<String, dynamic>() ?? {};
   Map<String, String> get ui =>
       ((settings['ui'] as Map?) ?? {}).map((k, v) => MapEntry('$k', '$v'));
+
   /// Every server the engine knows (ignores the «МТС прокси» filter).
   List<J> get allServers => ((s['servers'] as List?) ?? [])
       .cast<Map>()
@@ -46,11 +48,22 @@ class NoxController extends ChangeNotifier {
   /// Protocols kept while «МТС прокси» is on: AnyTLS, mieru, VLESS (incl. Reality/XHTTP)
   /// and plain proxies (HTTP/HTTPS, SOCKS, Naive). Matches the outbound type first,
   /// then the label, case-insensitive. «Автовыбор» stays: the engine drops UDP members.
-  static const _mtsKinds = {'vless', 'anytls', 'mieru', 'http', 'https', 'socks', 'socks5', 'naive'};
+  static const _mtsKinds = {
+    'vless',
+    'anytls',
+    'mieru',
+    'http',
+    'https',
+    'socks',
+    'socks5',
+    'naive',
+  };
   static bool mtsAllowed(J s) {
     if (isBal(s)) return true;
     final ob = s['outbound'];
-    final o = ob is Map ? ob.cast<String, dynamic>() : const <String, dynamic>{};
+    final o = ob is Map
+        ? ob.cast<String, dynamic>()
+        : const <String, dynamic>{};
     String lo(Object? v) => '${v ?? ''}'.toLowerCase().trim();
     final tr = o['transport'];
     if (tr is Map && lo(tr['type']) == 'quic') return false;
@@ -94,6 +107,7 @@ class NoxController extends ChangeNotifier {
     await refresh();
     return true;
   }
+
   List<J> get subs => ((s['subs'] as List?) ?? [])
       .cast<Map>()
       .map((e) => e.cast<String, dynamic>())
@@ -175,6 +189,7 @@ class NoxController extends ChangeNotifier {
       unawaited(call('RefreshSubs'));
     }
     if (settings['autostart'] == true) await setUserAutostart(true);
+    watchResume();
     _t1 = Timer.periodic(const Duration(seconds: 1), (_) => refresh());
     // speed samples twice a second between full refreshes, so the graph sees each new
     // engine sample within ~250 ms on average (smoother scrolling); skipped when hidden
@@ -200,8 +215,21 @@ class NoxController extends ChangeNotifier {
     }
   }
 
+  /// 2.1.5: back in front -> the engine catches up on a missed update check and
+  /// due subscription refreshes (a sleeping phone stalls its timers).
+  void watchResume() {
+    _life ??= AppLifecycleListener(
+      onResume: () => unawaited(
+        api
+            .call('Resume')
+            .then((_) {}, onError: (_) {}), // older core: no Resume
+      ),
+    );
+  }
+
   @override
   void dispose() {
+    _life?.dispose();
     _t1?.cancel();
     _t2?.cancel();
     super.dispose();
@@ -346,6 +374,7 @@ class NoxController extends ChangeNotifier {
     final t = ((s['type'] ?? '') as String).trim().toLowerCase();
     return t == 'автовыбор' || t == 'balancer' || t == 'urltest';
   }
+
   static bool isQw(J s) => s['type'] == 'qWDTT';
   static String proto(J s) => isBal(s)
       ? ''

@@ -29,7 +29,7 @@ var UpdateFallbackURLs = []string{
 
 // VersionCode is the pubspec build number (2000 for 2.0). Split APKs use abi*1000+VersionCode
 // (armeabi-v7a 3000, arm64-v8a 4000). Update checks compare this to version.json's versionCode.
-const VersionCode = 2000
+const VersionCode = 2150
 
 type UpdateInfo struct {
 	Version string `json:"versionName"`
@@ -44,7 +44,20 @@ type UpdateInfo struct {
 var UpdatePubKey = "1FPIC0CfR+VLt5OXYiUS6GUdhXyWYBRrvS+sGrh/FGA="
 
 // UpdateChannel is the version.json key for the signed Windows/macOS flow.
-func UpdateChannel() string { return "nox2-" + osName() }
+func UpdateChannel() string { return "nox2-" + updOS() }
+
+// updOSTest lets Linux tests run the Android / macOS update paths.
+var updOSTest string
+
+func updOS() string {
+	if updOSTest != "" {
+		return updOSTest
+	}
+	if runtime.GOOS == "android" {
+		return "android"
+	}
+	return osName()
+}
 
 // AndroidABI: "arm64-v8a" / "armeabi-v7a" / "x86_64" — set by noxcore from Build.SUPPORTED_ABIS[0].
 var AndroidABI string
@@ -121,7 +134,7 @@ func parseUpdate(m map[string]json.RawMessage) (*UpdateInfo, bool) {
 	if raw, ok := m[UpdateChannel()]; ok && json.Unmarshal(raw, &u) == nil && u.URL != "" {
 		return &u, true
 	}
-	if osName() != "android" {
+	if updOS() != "android" {
 		return nil, false
 	}
 	if json.Unmarshal(flattenTop(m), &u) != nil || u.URL == "" || u.Version == "" {
@@ -181,7 +194,7 @@ func updateNewer(u *UpdateInfo) bool {
 	if u.Version != "" && !verLess(Version, u.Version) {
 		return false
 	}
-	if u.Code > 0 && (runtime.GOOS == "android" || osName() == "android") {
+	if u.Code > 0 && updOS() == "android" {
 		return u.Code > int64(VersionCode)
 	}
 	return u.Version != "" && verLess(Version, u.Version)
@@ -306,7 +319,7 @@ func (a *App) downloadCtx(ctx context.Context, u *UpdateInfo, prog func(done, to
 			drop()
 			return "", errors.New("подпись обновления неверна — установка отменена")
 		}
-	} else if runtime.GOOS != "android" && osName() != "android" {
+	} else if updOS() != "android" {
 		drop()
 		return "", errors.New("подпись обновления отсутствует — установка отменена")
 	} else if u.SHA256 == "" {

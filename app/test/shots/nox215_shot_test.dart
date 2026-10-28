@@ -5,6 +5,7 @@
 import 'dart:io';
 
 import 'package:flutter/services.dart';
+import 'package:flutter/widgets.dart' show AppLifecycleState;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nox/main.dart';
 import 'package:nox/src/controller.dart';
@@ -31,9 +32,15 @@ class _Tolerant extends LocalFileComparator {
 
 class _PingApi extends MockApi {
   int done = 0, all = 0;
+  Map<String, dynamic>? upd2;
+  final calls = <String>[];
   @override
   Future<dynamic> call(String m, [List<dynamic> a = const []]) async {
+    calls.add(m);
     final r = await super.call(m, a);
+    if (m == 'GetState' && upd2 != null) {
+      return {...(r as Map), 'update': upd2};
+    }
     if (m == 'GetState' && all > 0) {
       return {...(r as Map), 'pinging': true, 'pingDone': done, 'pingAll': all};
     }
@@ -47,13 +54,14 @@ Future<NoxController> _app(
   bool ping = false,
   bool twoSubs = false,
   double h = 1500,
+  Map<String, dynamic>? upd,
 }) async {
   t.view.physicalSize = Size(411, h) * 2.625;
   t.view.devicePixelRatio = 2.625;
   addTearDown(t.view.reset);
   NoxController.forceAccordion = true;
   heroStyle = 'timer';
-  final api = _PingApi();
+  final api = _PingApi()..upd2 = upd;
   api.settings['theme'] = 'dark';
   api.status = 'connected';
   final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
@@ -151,7 +159,10 @@ void main() {
     expect(find.text('СЕРВЕРЫ'), findsNothing);
     expect(find.textContaining('Пинг 41/69'), findsNothing);
     expect(find.text('41/69'), findsOneWidget);
-    expect(find.byKey(TourKeys.more), findsOneWidget); // on the first country card
+    expect(
+      find.byKey(TourKeys.more),
+      findsOneWidget,
+    ); // on the first country card
     expect(find.byKey(TourKeys.ping), findsOneWidget); // the ⚡ / progress pill
     await expectLater(
       find.byType(NoxApp),
@@ -199,7 +210,10 @@ void main() {
     await _app(t, twoSubs: true, h: 1300);
     expect(find.text('СЕРВЕРЫ'), findsNothing);
     expect(find.byTooltip('Пинг'), findsNWidgets(2));
-    expect(find.byTooltip('Меню списка'), findsNWidgets(3)); // 2 sub cards + 1st country
+    expect(
+      find.byTooltip('Меню списка'),
+      findsNWidgets(3),
+    ); // 2 sub cards + 1st country
     await expectLater(
       find.byType(NoxApp),
       matchesGoldenFile('215-two-subs.png'),
@@ -210,5 +224,39 @@ void main() {
     final f = File('test/shots/215-real-ping.png');
     if (!f.existsSync()) return;
     f.copySync('/workspace/nox215-preview.png');
+  });
+
+  testWidgets('215 phone: a newer version is offered (banner + badge)', (
+    t,
+  ) async {
+    final c = await _app(
+      t,
+      h: 900,
+      upd: {
+        'versionName': '2.1.6',
+        'url': 'https://sessia.top/files/x.apk',
+        'notes': 'тест',
+      },
+    );
+    expect(c.s['update'], isA<Map>());
+    expect(find.textContaining('Доступна версия'), findsOneWidget);
+    expect(find.text('Обновить'), findsOneWidget);
+    expect(find.byTooltip('Доступно обновление'), findsWidgets);
+    expect(find.text('СЕРВЕРЫ'), findsNothing);
+  });
+
+  testWidgets('215 resume asks the engine to catch up', (t) async {
+    final c = await _app(t, h: 900);
+    final api = c.api as _PingApi;
+    c.watchResume();
+    api.calls.clear();
+    t.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    t.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+    t.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+    t.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+    t.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    t.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await t.pump(const Duration(milliseconds: 50));
+    expect(api.calls, contains('Resume'));
   });
 }

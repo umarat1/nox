@@ -207,29 +207,62 @@ const (
 
 var nowFn = time.Now
 
-// updateLoop: check on every launch; skip only if the last *successful* check was <6h ago;
-// on failure retry after 2 minutes; keep re-checking every 6h while running.
+// updateLoop: check on every launch (2.1.5: the <6h throttle used to skip it, and the
+// 6h time.Sleep runs on the monotonic clock, which stops while a phone sleeps, so a
+// running Android engine could go days without a check). After the launch check a
+// 1-minute ticker compares wall-clock time: re-check 6h after the last success,
+// retry 2 min after a failure. Resume() (app brought to front) runs the same test.
 func (a *App) updateLoop() {
-	for {
-		a.mu.Lock()
-		last := a.p.UpdOK
-		a.mu.Unlock()
-		wait := time.Duration(0)
-		if last > 0 {
-			if d := nowFn().Sub(time.Unix(last, 0)); d < updThrottle {
-				wait = updThrottle - d
-			}
-		}
-		if wait > 0 {
-			time.Sleep(wait)
-			continue
-		}
-		if _, ok := a.checkUpdate(); ok {
-			time.Sleep(updThrottle)
-		} else {
-			time.Sleep(updRetry)
-		}
+	time.Sleep(updFirst)
+	a.checkUpdateNow()
+	tick := time.NewTicker(time.Minute)
+	defer tick.Stop()
+	for range tick.C {
+		a.maybeCheckUpdate()
 	}
+}
+
+var updFirst = 3 * time.Second
+
+func (a *App) checkUpdateNow() {
+	if !a.updBusy.CompareAndSwap(false, true) {
+		return
+	}
+	defer a.updBusy.Store(false)
+	_, ok := a.checkUpdate()
+	a.mu.Lock()
+	if ok {
+		a.updFail = 0
+	} else {
+		a.updFail = nowFn().Unix()
+	}
+	a.mu.Unlock()
+}
+
+// updDue: no successful check in 6h, and no failed one in the last 2 min.
+func (a *App) updDue() bool {
+	a.mu.Lock()
+	last, fail := a.p.UpdOK, a.updFail
+	a.mu.Unlock()
+	now := nowFn()
+	if fail > 0 && now.Sub(time.Unix(fail, 0)) < updRetry {
+		return false
+	}
+	return last <= 0 || now.Sub(time.Unix(last, 0)) >= updThrottle
+}
+
+func (a *App) maybeCheckUpdate() {
+	if a.updDue() {
+		a.checkUpdateNow()
+	}
+}
+
+// Resume: the UI came to the front (Android onResume, desktop window shown).
+// Catches up on an update check and due subscription refreshes that a sleeping
+// phone or a frozen process missed.
+func (a *App) Resume() {
+	go a.maybeCheckUpdate()
+	go a.refreshDueSubs()
 }
 
 // HideUpdate («Позже») hides the given version for 24 h.

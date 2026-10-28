@@ -23,6 +23,8 @@ jobs:
     # before a runner was assigned. Intel still gets a machine; the bundled
     # noxd/sing-box/xray stay universal (lipo). The Flutter shell is x86_64.
     runs-on: macos-15-intel
+    env:
+      HAS_KEY: ${{ secrets.NOX_UPDATE_KEY != '' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -90,6 +92,18 @@ jobs:
           hdiutil create -volname "Nox ${{ steps.ver.outputs.name }}" -srcfolder out/dmg -ov -format UDZO out/Nox-${{ steps.ver.outputs.name }}-macos.dmg
           shasum -a 256 out/*.dmg
 
+      - name: Sign update (ed25519) -> update.json
+        # 2.1.5: Macs read the signed nox2-macos channel; the engine refuses an unsigned DMG.
+        if: ${{ env.HAS_KEY == 'true' }}
+        env:
+          NOX_UPDATE_KEY: ${{ secrets.NOX_UPDATE_KEY }}
+        working-directory: go
+        run: |
+          set -e
+          DMG=$(ls ../out/Nox-*-macos.dmg)
+          S=$(go run ./cmd/signupdate -key-env NOX_UPDATE_KEY "$DMG")
+          python3 -c 'import json,sys; s=json.loads(sys.argv[1]); print(json.dumps({"nox2-macos":{"versionName":sys.argv[2],"url":"https://REPLACE/"+sys.argv[3],"sha256":s["sha256"],"sig":s["sig"]}},indent=1))' "$S" "${{ steps.ver.outputs.name }}" "$(basename "$DMG")" > ../out/update.json
+
       - name: Smoke test (core starts, UI launches)
         run: |
           set -e
@@ -101,7 +115,9 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: nox-macos
-          path: out/*.dmg
+          path: |
+            out/*.dmg
+            out/update.json
           if-no-files-found: error
           # UDZO is already compressed. Deflate on a ~160 MB DMG pinned the
           # macos-15-intel runner until it lost contact with GitHub (1.0.29).

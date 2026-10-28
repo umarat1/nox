@@ -91,9 +91,13 @@ type App struct {
 	stopWanted bool  // user pressed Disconnect; do not auto-reconnect
 	coreRetry  int
 	coreToken  int64
-	subFetchMu sync.Mutex // one subscription fetch at a time (manual + timer)
-	tun        *exec.Cmd  // sstpc (Linux)
-	sstpUp     bool       // Windows RAS SSTP entry dialed / Android bridge up
+	updBusy    atomic.Bool
+	updFail    int64 // unix time of the last failed update check (memory only)
+	subDueBusy atomic.Bool
+	subFail    map[string]int64 // sub id -> unix time of the last failed timer refresh
+	subFetchMu sync.Mutex       // one subscription fetch at a time (manual + timer)
+	tun        *exec.Cmd        // sstpc (Linux)
+	sstpUp     bool             // Windows RAS SSTP entry dialed / Android bridge up
 	sstpBr     *sstpBridge
 	cancel     context.CancelFunc
 	logBuf     []string

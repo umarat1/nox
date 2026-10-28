@@ -4,6 +4,7 @@ package engine
 
 import (
 	"io"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 )
@@ -15,7 +16,15 @@ func binPath(dir, n string) string {
 	}
 	return filepath.Join(dir, n+".exe")
 }
-func osName() string                          { return "linux" }
+
+// osName: "macos" on darwin (2.1.5: it used to say "linux", so Macs read the
+// non-existent nox2-linux channel and were never offered an update).
+func osName() string {
+	if runtime.GOOS == "darwin" {
+		return "macos"
+	}
+	return "linux"
+}
 func ruleDir(binDir string) string            { return binDir }
 func applyUpdate(a *App, u *UpdateInfo) error { return nil }
 
@@ -23,6 +32,10 @@ func applyUpdate(a *App, u *UpdateInfo) error { return nil }
 func installUpdate(a *App, path string) error {
 	if installHook != nil {
 		return installHook(path)
+	}
+	if runtime.GOOS == "darwin" {
+		// verified DMG: Finder mounts it with Nox.app and the Applications link
+		return exec.Command("open", path).Start()
 	}
 	return nil
 }
