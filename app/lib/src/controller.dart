@@ -376,7 +376,30 @@ class NoxController extends ChangeNotifier {
     return c;
   }
 
+  /// Android phones/tablets (not TV): one accordion of countries, no category tabs.
+  static bool forceAccordion = false; // widget tests
+  bool get accordion => (isAndroid || forceAccordion) && !isTv;
+
+  /// Accordion open state («TR» → true/false); default: the country with the selected server.
+  Map<String, bool> get accOpen {
+    final m = <String, bool>{};
+    for (final e in pref('accOpen', '').split(',')) {
+      final i = e.lastIndexOf(':');
+      if (i > 0) m[e.substring(0, i)] = e.substring(i + 1) == '1';
+    }
+    return m;
+  }
+
+  void setAccOpen(String key, bool open) {
+    final m = accOpen..[key] = open;
+    setPrefLive(
+      'accOpen',
+      m.entries.map((e) => '${e.key}:${e.value ? 1 : 0}').join(','),
+    );
+  }
+
   String get category {
+    if (accordion) return ''; // no tabs: never filter by a stale tab
     final c = pref('cat', '');
     return chips().any((e) => e.$1 == c) ? c : '';
   }

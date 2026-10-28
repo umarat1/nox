@@ -10,6 +10,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
 import 'controller.dart';
+import 'country_groups.dart';
 import 'fmt.dart';
 import 'live_graph.dart';
 import 'platform.dart';
@@ -573,6 +574,7 @@ class _BodyState extends State<_Body> {
         ),
       ];
     }
+    if (c.accordion) return _accordionSlivers(list, h);
     if (view == 'grid') {
       final ts = MediaQuery.textScalerOf(context);
       final cardH = math.max(104.0, ts.scale(64) + 40);
@@ -615,6 +617,32 @@ class _BodyState extends State<_Body> {
           ),
         ),
       ),
+    ];
+  }
+
+  /// Android: «Автовыбор» on top, then one collapsible card per country (subscription order),
+  /// entries grouped by protocol inside, qWDTT of that country last, «Другое» at the bottom.
+  List<Widget> _accordionSlivers(List<J> list, EdgeInsets pad) {
+    final tree = groupServers(list, order: c.allServers);
+    final open = c.accOpen;
+    var first = true;
+    final kids = <Widget>[
+      for (final s in tree.auto)
+        _ServerRow(c: c, p: p, s: s, first: (first, first = false).$1, protocol: false),
+      if (tree.auto.isNotEmpty) const SizedBox(height: 4),
+      for (final g in tree.groups)
+        _CountryCard(
+          key: ValueKey('cc-${g.key}'),
+          c: c,
+          p: p,
+          g: g,
+          open: open[g.key] ?? g.has(c.selected),
+          firstRow: (first, first = false).$1,
+          onToggle: (v) => c.setAccOpen(g.key, v),
+        ),
+    ];
+    return [
+      SliverPadding(padding: pad, sliver: SliverList.list(children: kids)),
     ];
   }
 
@@ -2683,7 +2711,26 @@ class _FilterBarState extends State<_FilterBar> {
           Row(
             children: [
               Expanded(
-                child: SizedBox(key: TourKeys.tabs, height: h, child: strip),
+                child: SizedBox(
+                  key: TourKeys.tabs,
+                  height: h,
+                  child: c.accordion
+                      ? Align(
+                          alignment: Alignment.centerLeft,
+                          child: Padding(
+                            padding: const EdgeInsets.only(left: 4),
+                            child: Text(
+                              'Серверы · ${widget.shown}',
+                              style: TextStyle(
+                                color: p.txt,
+                                fontSize: 15,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                        )
+                      : strip,
+                ),
               ),
               const SizedBox(width: 4),
               _IconBtn(
@@ -3052,12 +3099,14 @@ class _ServerRow extends StatelessWidget {
   final J s;
   final bool first; // carries the tour target
   final bool protocol; // desktop keeps the protocol line; the phone column does not
+  final bool inCountry; // accordion: the country card already names the country
   const _ServerRow({
     required this.c,
     required this.p,
     required this.s,
     this.first = false,
     this.protocol = true,
+    this.inCountry = false,
   });
   @override
   Widget build(BuildContext context) {
@@ -3080,7 +3129,9 @@ class _ServerRow extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
-                    dispName(s['name'] ?? ''),
+                    inCountry
+                        ? shortName(s['name'] ?? '')
+                        : dispName(s['name'] ?? ''),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
@@ -3110,6 +3161,148 @@ class _ServerRow extends StatelessWidget {
               tooltip: 'Ещё',
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Accordion card: flag, country, count · best ping, chevron; body animates open/closed.
+class _CountryCard extends StatelessWidget {
+  final NoxController c;
+  final Pal p;
+  final CountryGroup g;
+  final bool open;
+  final bool firstRow;
+  final ValueChanged<bool> onToggle;
+  const _CountryCard({
+    super.key,
+    required this.c,
+    required this.p,
+    required this.g,
+    required this.open,
+    required this.onToggle,
+    this.firstRow = false,
+  });
+  @override
+  Widget build(BuildContext context) {
+    final iso = g.iso;
+    final best = g.bestPing;
+    final sel = g.has(c.selected);
+    final flag = iso != null && hasFlag(iso)
+        ? ClipOval(
+            child: SvgPicture.asset(
+              'assets/flags/${iso.toLowerCase()}.svg',
+              width: 26,
+              height: 26,
+              fit: BoxFit.cover,
+            ),
+          )
+        : Container(
+            width: 26,
+            height: 26,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(color: p.chip, shape: BoxShape.circle),
+            child: Icon(Icons.public, size: 16, color: p.sub),
+          );
+    var first = firstRow;
+    final body = Padding(
+      padding: const EdgeInsets.fromLTRB(8, 0, 8, 6),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          for (final (cat, items) in g.cats) ...[
+            Padding(
+              padding: const EdgeInsets.fromLTRB(6, 6, 6, 4),
+              child: Text(
+                '${cat == 'qWDTT' ? 'Антиблок · qWDTT' : cat} · ${items.length}',
+                style: TextStyle(
+                  color: p.sub,
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: .3,
+                ),
+              ),
+            ),
+            for (final s in items)
+              _ServerRow(
+                c: c,
+                p: p,
+                s: s,
+                first: (first, first = false).$1,
+                protocol: false,
+                inCountry: true,
+              ),
+          ],
+        ],
+      ),
+    );
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Container(
+        decoration: _box(p, r: 18, border: sel ? p.acc.withValues(alpha: .55) : null),
+        clipBehavior: Clip.antiAlias,
+        child: Material(
+          type: MaterialType.transparency,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              InkWell(
+                onTap: () => onToggle(!open),
+                focusColor: p.acc.withValues(alpha: .18),
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
+                  child: Row(
+                    children: [
+                      flag,
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          g.title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: p.txt,
+                            fontSize: 15,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                      Text(
+                        '${g.count}',
+                        style: TextStyle(
+                          color: p.sub,
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      if (best != null) ...[
+                        const SizedBox(width: 8),
+                        PingChip(p: p, text: pingText(best)),
+                      ],
+                      const SizedBox(width: 2),
+                      AnimatedRotation(
+                        turns: open ? .5 : 0,
+                        duration: const Duration(milliseconds: 220),
+                        curve: Curves.easeInOut,
+                        child: Icon(
+                          Icons.keyboard_arrow_down_rounded,
+                          color: p.sub,
+                          size: 24,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              AnimatedSize(
+                duration: const Duration(milliseconds: 240),
+                curve: Curves.easeInOutCubic,
+                alignment: Alignment.topCenter,
+                child: open ? body : const SizedBox(width: double.infinity),
+              ),
+            ],
+          ),
         ),
       ),
     );

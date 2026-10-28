@@ -154,3 +154,32 @@ String dispName(String n) {
       .trim();
   return s.isEmpty ? n : s;
 }
+
+/// ISO code for a single word/alias («лондон» → GB); null if unknown.
+String? aliasIso(String word) {
+  final w = word.toLowerCase();
+  for (final (k, iso) in _byName) {
+    if (k == w) return iso;
+  }
+  return null;
+}
+
+/// Country named anywhere in [name] as a whole word («qWDTT Турция 2» → TR); null if none.
+String? regionAnywhere(String name) {
+  final t =
+      ' ${name.toLowerCase().replaceAll(RegExp(r'[^\p{L}]+', unicode: true), ' ')} ';
+  for (final (k, iso) in _byName) {
+    if (k.length >= 3 && t.contains(' $k ')) return iso;
+  }
+  return null;
+}
+
+/// Name inside a country card: no flag, no leading country word
+/// («🇹🇷 Турция vless tcp tls 443» → «vless tcp tls 443»); unchanged if nothing is left.
+String shortName(String n) {
+  final d = dispName(n);
+  final m = RegExp(r'^(\p{L}+)[\s·|,:\-–—]+', unicode: true).firstMatch(d);
+  if (m == null || aliasIso(m.group(1)!) == null) return d;
+  final r = d.substring(m.end).trim();
+  return r.isEmpty ? d : r;
+}
