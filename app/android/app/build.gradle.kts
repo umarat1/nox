@@ -23,7 +23,7 @@ android {
         applicationId = "com.lumen.vpn"
         minSdk = 24
         targetSdk = flutter.targetSdkVersion
-        // pubspec build 2150. Split APKs become abi*1000+2140 (v7a 3150, arm64 4150),
+        // pubspec build 2150. Split APKs become abi*1000+build (v7a 3150, arm64 4150),
         // both above 1.0.30. versionName stays "2.1" (pubspec 2.1.0 is only the semver triple).
         versionCode = flutter.versionCode
         versionName = "2.1.5"
