@@ -27,7 +27,7 @@ import (
 	"nox/core"
 )
 
-const Version = "2.1.8"
+const Version = "2.2.0"
 
 type Sub struct {
 	ID       string `json:"id"`
@@ -114,6 +114,7 @@ type App struct {
 	physHint                     uint32 // physical NIC index remembered before the tunnel came up
 	lastSwitch                   time.Time
 	lastUnder                    string // last physical network name (wifi ↔ mobile reconnect)
+	underLost                    bool   // 2.2.0: the physical network went away since lastUnder
 	netGen                       uint64
 }
 

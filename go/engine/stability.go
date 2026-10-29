@@ -22,7 +22,8 @@ func (a *App) ExternalStop(msg string) {
 
 // UnderlyingNetworkChanged is the physical default network (wifi ↔ mobile).
 // The first observation is recorded; a later change while the tunnel is up
-// reconnects, after a short pause so a flap does not stack dials.
+// reconnects, after a short pause so a flap does not stack dials. 2.2.0: so does the
+// same network returning after a loss ("" in between).
 func (a *App) UnderlyingNetworkChanged(name string) {
 	if !a.wantRebind(name) {
 		return
@@ -45,11 +46,16 @@ func (a *App) wantRebind(name string) bool {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if name == "" {
+		// 2.2.0: signal lost (tunnel, lift, roaming). Remember it so the same network
+		// coming back also reconnects at once instead of waiting for dead sockets to time out.
+		if a.lastUnder != "" {
+			a.underLost = true
+		}
 		return false
 	}
-	prev := a.lastUnder
-	a.lastUnder = name
-	if prev == "" || prev == name {
+	prev, lost := a.lastUnder, a.underLost
+	a.lastUnder, a.underLost = name, false
+	if prev == "" || (prev == name && !lost) {
 		return false
 	}
 	if a.stopWanted || (a.status != "connected" && a.status != "connecting") {
