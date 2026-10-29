@@ -40,72 +40,262 @@ class Home extends StatelessWidget {
           data: materialTheme(p),
           child: Scaffold(
             backgroundColor: p.bg,
-            body: PairGlue(
-              c: c,
-              child: Stack(
-                children: [
-                  SafeArea(
-                    child: LayoutBuilder(
-                      builder: (context, box) {
-                        // TV / wide window: two panes (controls left, servers right)
-                        // (fills the whole window; narrow keeps the phone column)
-                        // A 1080p TV is ~960 dp; with TV UI scale (≤1.3) it is ≥738,
-                        // so TVs keep the two panes from 640 dp.
-                        // 2.1: Windows/macOS keep the phone layout at any window size (as on Android)
-                        final wide = c.isTv && box.maxWidth >= 640;
-                        return Align(
-                          alignment: Alignment.topCenter,
-                          child: ConstrainedBox(
-                            constraints: BoxConstraints(
-                              maxWidth: wide ? double.infinity : 560,
+            body: _WithTitleBar(
+              p: p,
+              child: PairGlue(
+                c: c,
+                child: Stack(
+                  children: [
+                    SafeArea(
+                      child: LayoutBuilder(
+                        builder: (context, box) {
+                          // TV / wide window: two panes (controls left, servers right)
+                          // (fills the whole window; narrow keeps the phone column)
+                          // A 1080p TV is ~960 dp; with TV UI scale (≤1.3) it is ≥738,
+                          // so TVs keep the two panes from 640 dp.
+                          // 2.1: Windows/macOS keep the phone layout at any window size (as on Android)
+                          final wide = c.isTv && box.maxWidth >= 640;
+                          // 2.2.2: Windows/macOS: mobile column; from 860 dp (maximized /
+                          // fullscreen) two mobile-style panes: card + subscriptions | servers.
+                          final split = isSplit(c, box.maxWidth);
+                          return Align(
+                            alignment: Alignment.topCenter,
+                            child: ConstrainedBox(
+                              constraints: BoxConstraints(
+                                maxWidth: wide || split ? double.infinity : 560,
+                              ),
+                              child: _Body(
+                                c: c,
+                                p: p,
+                                wide: wide,
+                                split: split,
+                                w: box.maxWidth,
+                                h: box.maxHeight,
+                              ),
                             ),
-                            child: _Body(
-                              c: c,
-                              p: p,
-                              wide: wide,
-                              w: box.maxWidth,
-                              h: box.maxHeight,
-                            ),
-                          ),
-                        );
-                      },
+                          );
+                        },
+                      ),
                     ),
-                  ),
-                  // 2.1.7: «＋» moved from the top bar to the bottom of the screen (TV keeps it
-                  // in the header for the D-pad).
-                  // 2.1.8: bottom bar, left to right: «＋», «Добавить из буфера» (only while
-                  // nothing is added), then the connect pill filling the rest. It floats over
-                  // the server list (which keeps bottom padding for it).
-                  if (showAddFab(c))
-                    Positioned(
-                      left: 0,
-                      right: 0,
-                      bottom: 0,
-                      child: SafeArea(
-                        top: false,
-                        child: Center(
-                          child: ConstrainedBox(
-                            constraints: const BoxConstraints(maxWidth: 560),
-                            child: BottomBar(c: c, p: p),
+                    // 2.1.7: «＋» moved from the top bar to the bottom of the screen (TV keeps it
+                    // in the header for the D-pad).
+                    // 2.1.8: bottom bar, left to right: «＋», «Добавить из буфера» (only while
+                    // nothing is added), then the connect pill filling the rest. It floats over
+                    // the server list (which keeps bottom padding for it).
+                    if (showAddFab(c))
+                      Positioned(
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        child: SafeArea(
+                          top: false,
+                          child: LayoutBuilder(
+                            builder: (_, box) {
+                              final bar = BottomBar(c: c, p: p);
+                              if (isSplit(c, box.maxWidth)) {
+                                // two panes: the bar sits under the left column
+                                return Align(
+                                  alignment: Alignment.bottomLeft,
+                                  child: Padding(
+                                    padding: const EdgeInsets.only(
+                                      left: _splitPad - 14,
+                                    ),
+                                    child: SizedBox(
+                                      width: splitLeftW(box.maxWidth) + 28,
+                                      child: bar,
+                                    ),
+                                  ),
+                                );
+                              }
+                              return Center(
+                                child: ConstrainedBox(
+                                  constraints: const BoxConstraints(
+                                    maxWidth: 560,
+                                  ),
+                                  child: bar,
+                                ),
+                              );
+                            },
                           ),
                         ),
                       ),
-                    ),
-                  if (c.tourOn)
-                    Positioned.fill(
-                      child: TourOverlay(
-                        key: ValueKey('tour${c.tourRun}'),
-                        p: p,
-                        steps: tourSteps(tv: c.isTv),
-                        onDone: c.endTour,
+                    if (c.tourOn)
+                      Positioned.fill(
+                        child: TourOverlay(
+                          key: ValueKey('tour${c.tourRun}'),
+                          p: p,
+                          steps: tourSteps(tv: c.isTv),
+                          onDone: c.endTour,
+                        ),
                       ),
-                    ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),
         );
       },
+    );
+  }
+}
+
+const _splitPad = 18.0, _splitGap = 18.0;
+
+/// Desktop (Windows/macOS) window wide enough for the two-pane mobile-style layout.
+bool isSplit(NoxController c, double w) => desktopUi && !c.isTv && w >= 860;
+
+/// Width of the left pane (connection card, banners, subscriptions, bottom bar).
+double splitLeftW(double w) => (w * .40).clamp(380.0, 500.0);
+
+/// 2.2.2 Windows: frameless window with a slim title bar in the app colours
+/// (drag to move, double-click to maximize, ⎯ ▢ ✕; ✕ hides to the tray). Gone in fullscreen.
+class _WithTitleBar extends StatelessWidget {
+  final Pal p;
+  final Widget child;
+  const _WithTitleBar({required this.p, required this.child});
+  @override
+  Widget build(BuildContext context) {
+    if (!customTitleBar && !debugTitleBar) return child;
+    return ValueListenableBuilder<bool>(
+      valueListenable: fullScreen,
+      builder: (_, fs, _) => fs
+          ? child
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                WinTitleBar(p: p),
+                Expanded(
+                  child: MediaQuery.removePadding(
+                    context: context,
+                    removeTop: true,
+                    child: child,
+                  ),
+                ),
+              ],
+            ),
+    );
+  }
+}
+
+/// Widget tests / screenshots: draw the Windows title bar on other hosts.
+bool debugTitleBar = false;
+
+class WinTitleBar extends StatelessWidget {
+  final Pal p;
+  const WinTitleBar({super.key, required this.p});
+  static const height = 34.0;
+  @override
+  Widget build(BuildContext context) {
+    Widget btn(
+      IconData i,
+      String tip,
+      VoidCallback onTap, {
+      bool close = false,
+    }) => _TitleBtn(p: p, icon: i, tip: tip, onTap: onTap, close: close);
+    return Container(
+      key: const Key('win-title-bar'),
+      height: height,
+      color: p.bg,
+      child: Row(
+        children: [
+          Expanded(
+            child: GestureDetector(
+              behavior: HitTestBehavior.translucent,
+              onPanStart: (_) => winStartDrag(),
+              onDoubleTap: winToggleMaximize,
+              child: Padding(
+                padding: const EdgeInsets.only(left: 12),
+                child: Row(
+                  children: [
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(5),
+                      child: Image.asset(
+                        'assets/icon.png',
+                        width: 18,
+                        height: 18,
+                        filterQuality: FilterQuality.medium,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Nox',
+                      style: TextStyle(
+                        color: p.txt.withValues(alpha: .80),
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: .3,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          btn(Icons.remove_rounded, 'Свернуть', winMinimize),
+          btn(Icons.crop_square_rounded, 'Развернуть', winToggleMaximize),
+          btn(
+            Icons.close_rounded,
+            'Закрыть (Nox останется в трее)',
+            winClose,
+            close: true,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _TitleBtn extends StatefulWidget {
+  final Pal p;
+  final IconData icon;
+  final String tip;
+  final VoidCallback onTap;
+  final bool close;
+  const _TitleBtn({
+    required this.p,
+    required this.icon,
+    required this.tip,
+    required this.onTap,
+    this.close = false,
+  });
+  @override
+  State<_TitleBtn> createState() => _TitleBtnState();
+}
+
+class _TitleBtnState extends State<_TitleBtn> {
+  bool _hover = false;
+  @override
+  Widget build(BuildContext context) {
+    final p = widget.p;
+    final bg = !_hover
+        ? Colors.transparent
+        : widget.close
+        ? const Color(0xFFE81123)
+        : p.txt.withValues(alpha: .08);
+    return Tooltip(
+      message: widget.tip,
+      waitDuration: const Duration(milliseconds: 600),
+      child: MouseRegion(
+        onEnter: (_) => setState(() => _hover = true),
+        onExit: (_) => setState(() => _hover = false),
+        child: GestureDetector(
+          onTap: widget.onTap,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 90),
+            width: 46,
+            height: WinTitleBar.height,
+            color: bg,
+            alignment: Alignment.center,
+            child: Icon(
+              widget.icon,
+              size: widget.icon == Icons.crop_square_rounded ? 14 : 17,
+              color: _hover && widget.close
+                  ? Colors.white
+                  : p.txt.withValues(alpha: .75),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
@@ -145,11 +335,13 @@ class _Body extends StatefulWidget {
   final NoxController c;
   final Pal p;
   final bool wide;
+  final bool split; // 2.2.2 desktop: two mobile-style panes
   final double w, h;
   const _Body({
     required this.c,
     required this.p,
     this.wide = false,
+    this.split = false,
     this.w = 0,
     this.h = 0,
   });
@@ -166,6 +358,7 @@ class _BodyState extends State<_Body> {
   NoxController get c => widget.c;
   Pal get p => widget.p;
   bool get wide => widget.wide;
+  bool get split => widget.split;
   double get w => widget.w;
   double get h => widget.h;
 
@@ -173,6 +366,8 @@ class _BodyState extends State<_Body> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       if (c.isTv) return;
+      // 2.2.2 desktop: collapsing a card no longer shrinks the window
+      if (desktopUi) return;
       final rv = RendererBinding.instance.renderViews.firstOrNull;
       if (rv == null || !rv.hasConfiguration) return;
       final curH = rv.size.height;
@@ -265,7 +460,7 @@ class _BodyState extends State<_Body> {
     final hdrCol = mobile && c.flag('hdrCol', false);
     final subCol = mobile && c.flag('subCol', false);
     // Phone column stays open: a saved collapse and the chip chevron are desktop-only.
-    final srvCol = !phone && mobile && c.flag('srvCol', false);
+    final srvCol = !phone && !desktopUi && mobile && c.flag('srvCol', false);
     _scheduleSizeSync(hdrCol, subCol, srvCol);
     if (c.s['update'] is Map) maybeOfferUpdate(context, c, p);
     final head = <Widget>[
@@ -343,6 +538,63 @@ class _BodyState extends State<_Body> {
       ),
     ];
     final servers = _serverSlivers(context, list, view);
+    if (split) {
+      // 2.2.2 desktop, wide window / fullscreen: the phone UI in two panes. Left: the
+      // connection card (corner buttons), banners and subscriptions, bottom bar under it.
+      // Right: the server accordion with its pinned list header.
+      final leftW = splitLeftW(w);
+      final hero = head.firstWhere((x) => x is _Hero);
+      final rest = [
+        for (final x in head)
+          if (x is! _Hero && x is! _TopBar && x is! _GraphSlot) x,
+      ];
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(_splitPad, 12, _splitPad, 0),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            SizedBox(
+              width: leftW,
+              child: FocusTraversalGroup(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    hero,
+                    Expanded(
+                      child: ListView(
+                        padding: EdgeInsets.only(
+                          bottom: showAddFab(c) ? 96 : 16,
+                        ),
+                        children: rest,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(width: _splitGap),
+            Expanded(
+              child: FocusTraversalGroup(
+                child: CustomScrollView(
+                  slivers: [
+                    PinnedHeaderSliver(
+                      child: ColoredBox(
+                        color: p.bg,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: listHead,
+                        ),
+                      ),
+                    ),
+                    ...servers,
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
     if (wide && !c.isTv) {
       // 1.0.20+ desktop: top row = connection card (left) + speed graph stretching the rest of
       // the width; below, full-width scroll with banners, subscriptions, filters and a grid of
@@ -594,6 +846,8 @@ class _BodyState extends State<_Body> {
   List<Widget> _serverSlivers(BuildContext context, List<J> list, String view) {
     final h = wide
         ? const EdgeInsets.fromLTRB(14, 0, 14, 14)
+        : split
+        ? const EdgeInsets.fromLTRB(0, 0, 0, 18)
         : EdgeInsets.fromLTRB(12, 0, 12, showAddFab(c) ? 96 : 40);
     if (list.isEmpty) {
       // 2.1.7: nothing added yet → a big «Добавить из буфера»; it goes away with the first
@@ -1350,7 +1604,18 @@ class _TopBar extends StatelessWidget {
 }
 
 /// 2.2.0: Android has no top bar (no «nox» wordmark); tests may flip this.
-bool noTopBar = isAndroid;
+/// 2.2.2: neither do Windows/macOS (mobile UI).
+bool noTopBar = isAndroid || desktopUi;
+
+/// 2.2.2: protocol names (VLESS, Hysteria2…) are not shown on desktop: no protocol in the
+/// connection card, no protocol chips/badges in the server list. Tests may flip this.
+bool showProto = !desktopUi;
+
+/// 2.2.2: desktop shows server names exactly as the subscription/config gives them
+/// (no stripping of a leading flag emoji or country word). Tests may flip this.
+bool rawNames = desktopUi;
+String _dispName(String n) => rawNames ? n : dispName(n);
+String _shortName(String n) => rawNames ? n : shortName(n);
 
 /// 2.2.1: МТС, mail and settings as small glass buttons in the connection card's
 /// top-right corner (Android, no top bar). Theme lives in Настройки → Тема.
@@ -1441,24 +1706,43 @@ class _HeroCorner extends StatelessWidget {
       key: const Key('hero-corner'),
       mainAxisSize: MainAxisSize.min,
       children: [
-        _btn(
-          tip: c.mtsOn ? 'МТС прокси: вкл' : 'МТС прокси: выкл',
-          text: 'МТС',
-          fill: c.mtsOn ? _MtsBtn._red : null,
-          onTap: () async {
-            final on = !c.mtsOn;
-            await c.setMtsProxy(on);
-            if (!context.mounted) return;
-            toast(
-              context,
-              on
-                  ? 'МТС прокси включён: только AnyTLS, mieru, VLESS и прокси'
-                  : 'МТС прокси выключен',
-            );
-            if (on) await mtsApnDialog(context);
-          },
-        ),
-        const SizedBox(width: 5),
+        // МТС прокси works through the Android APN; desktop gets fullscreen instead
+        if (desktopUi && canFullScreen) ...[
+          ValueListenableBuilder<bool>(
+            valueListenable: fullScreen,
+            builder: (_, fs, _) => _btn(
+              key: const Key('corner-fullscreen'),
+              tip: fs
+                  ? 'Выйти из полноэкранного режима (F11 / Esc)'
+                  : 'Во весь экран (F11)',
+              icon: fs
+                  ? Icons.fullscreen_exit_rounded
+                  : Icons.fullscreen_rounded,
+              onTap: () => toggleFullScreen(),
+            ),
+          ),
+          const SizedBox(width: 5),
+        ],
+        if (!desktopUi) ...[
+          _btn(
+            tip: c.mtsOn ? 'МТС прокси: вкл' : 'МТС прокси: выкл',
+            text: 'МТС',
+            fill: c.mtsOn ? _MtsBtn._red : null,
+            onTap: () async {
+              final on = !c.mtsOn;
+              await c.setMtsProxy(on);
+              if (!context.mounted) return;
+              toast(
+                context,
+                on
+                    ? 'МТС прокси включён: только AnyTLS, mieru, VLESS и прокси'
+                    : 'МТС прокси выключен',
+              );
+              if (on) await mtsApnDialog(context);
+            },
+          ),
+          const SizedBox(width: 5),
+        ],
         _btn(
           key: TourKeys.mail,
           tip: upd ? 'Доступно обновление' : 'Обновления и сообщения',
@@ -1841,7 +2125,7 @@ class _Hero extends StatelessWidget {
                 Text(
                   cur == null
                       ? 'Сервер не выбран'
-                      : dispName(cur['name'] ?? ''),
+                      : _dispName(cur['name'] ?? ''),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
@@ -1854,8 +2138,17 @@ class _Hero extends StatelessWidget {
                 Text(
                   cur == null
                       ? ''
-                      : '${NoxController.proto(cur).isEmpty ? 'Автовыбор' : NoxController.proto(cur)}'
-                            '${on && since > 0 ? ' · ${fmtDur(DateTime.now().millisecondsSinceEpoch ~/ 1000 - since)}' : ''}',
+                      : [
+                          if (NoxController.proto(cur).isEmpty)
+                            'Автовыбор'
+                          else if (showProto)
+                            NoxController.proto(cur),
+                          if (on && since > 0)
+                            fmtDur(
+                              DateTime.now().millisecondsSinceEpoch ~/ 1000 -
+                                  since,
+                            ),
+                        ].join(' · '),
                   style: TextStyle(color: p.sub, fontSize: 12),
                 ),
                 const SizedBox(height: 8),
@@ -3349,11 +3642,17 @@ Widget _flag(Pal p, J s, {double size = 36}) {
   } else {
     final r = region(s['name'] ?? '');
     if (r != null && (hasFlag(r) || p.mono)) return countryBadge(p, r, size);
-    final t = r ?? NoxController.proto(s);
-    inner = Text(
-      t.length > 2 ? t.substring(0, 2).toUpperCase() : t.toUpperCase(),
-      style: TextStyle(color: p.sub, fontWeight: FontWeight.w700, fontSize: 12),
-    );
+    final t = r ?? (showProto ? NoxController.proto(s) : '');
+    inner = t.isEmpty
+        ? Icon(Icons.public, size: size * .6, color: p.sub)
+        : Text(
+            t.length > 2 ? t.substring(0, 2).toUpperCase() : t.toUpperCase(),
+            style: TextStyle(
+              color: p.sub,
+              fontWeight: FontWeight.w700,
+              fontSize: 12,
+            ),
+          );
   }
   return Container(
     width: size,
@@ -3605,7 +3904,7 @@ String _pingOf(NoxController c, J s) {
 }
 
 String _sub(J s) {
-  final pr = NoxController.proto(s);
+  final pr = showProto ? NoxController.proto(s) : '';
   final m = (s['members'] as List?)?.length;
   final d = (s['desc'] ?? '') as String;
   return '${pr.isNotEmpty ? pr : (m != null ? '$m серв.' : '')}${d.isNotEmpty ? ' · $d' : ''}';
@@ -3722,8 +4021,8 @@ class _ServerRow extends StatelessWidget {
                 children: [
                   Text(
                     inCountry
-                        ? shortName(s['name'] ?? '')
-                        : dispName(s['name'] ?? ''),
+                        ? _shortName(s['name'] ?? '')
+                        : _dispName(s['name'] ?? ''),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
@@ -3818,20 +4117,10 @@ class _CountryCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          for (final (cat, items) in g.cats) ...[
-            Padding(
-              padding: const EdgeInsets.fromLTRB(2, 8, 2, 6),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: _CatChip(
-                  p: p,
-                  text: cat == 'qWDTT' ? 'Антиблок · qWDTT' : cat,
-                  n: items.length,
-                  color: catColor(p, cat),
-                ),
-              ),
-            ),
-            for (final s in items)
+          // 2.2.2 desktop: no protocol chips/badges, just flag, name and ping
+          if (!showProto) ...[
+            const SizedBox(height: 4),
+            for (final s in g.all)
               _ServerRow(
                 c: c,
                 p: p,
@@ -3839,9 +4128,32 @@ class _CountryCard extends StatelessWidget {
                 first: (first, first = false).$1,
                 protocol: false,
                 inCountry: true,
-                glyph: catColor(p, cat),
               ),
-          ],
+          ] else
+            for (final (cat, items) in g.cats) ...[
+              Padding(
+                padding: const EdgeInsets.fromLTRB(2, 8, 2, 6),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: _CatChip(
+                    p: p,
+                    text: cat == 'qWDTT' ? 'Антиблок · qWDTT' : cat,
+                    n: items.length,
+                    color: catColor(p, cat),
+                  ),
+                ),
+              ),
+              for (final s in items)
+                _ServerRow(
+                  c: c,
+                  p: p,
+                  s: s,
+                  first: (first, first = false).$1,
+                  protocol: false,
+                  inCountry: true,
+                  glyph: catColor(p, cat),
+                ),
+            ],
         ],
       ),
     );
@@ -3980,7 +4292,7 @@ class _ServerCard extends StatelessWidget {
         ),
         const Spacer(),
         Text(
-          dispName(s['name'] ?? ''),
+          _dispName(s['name'] ?? ''),
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: TextStyle(
@@ -5287,7 +5599,7 @@ void serverSheet(
   sheet(
     context,
     p,
-    dispName(s['name'] ?? ''),
+    _dispName(s['name'] ?? ''),
     (ctx) => [
       Text(
         '${s['type']} · ${s['host'] ?? ''}${(s['port'] ?? 0) != 0 ? ':${s['port']}' : ''}',
@@ -6196,7 +6508,7 @@ class _TextPanel extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 10),
-        row('Сервер', name.isEmpty ? 'не выбран' : dispName(name)),
+        row('Сервер', name.isEmpty ? 'не выбран' : _dispName(name)),
         row('Страна', country.isEmpty ? '—' : country),
         row('Пинг', ping),
         row('Протокол', proto.isEmpty ? '—' : proto),
@@ -6312,7 +6624,7 @@ class _TextPanel extends StatelessWidget {
                 children: [
                   Expanded(
                     child: Text(
-                      '${s['id'] == c.selected ? '● ' : ''}${dispName('${s['name'] ?? ''}')}'
+                      '${s['id'] == c.selected ? '● ' : ''}${_dispName('${s['name'] ?? ''}')}'
                       '${_countryOf('${s['name'] ?? ''}') == '' ? '' : ' · ${_countryOf('${s['name'] ?? ''}')}'}'
                       ' · ${s['type'] ?? ''}',
                       style: TextStyle(color: p.txt, fontSize: 15, height: 1.3),
@@ -6977,14 +7289,18 @@ class _HeroAlt extends StatelessWidget {
         ? DateTime.now().millisecondsSinceEpoch ~/ 1000 - since
         : 0;
     final t = c.traffic;
-    final name = cur == null ? 'Сервер не выбран' : dispName(cur['name'] ?? '');
+    final name = cur == null
+        ? 'Сервер не выбран'
+        : _dispName(cur['name'] ?? '');
     final bal = cur != null && NoxController.isBal(cur);
     final iso = cur == null ? null : region(cur['name'] ?? '');
     final proto = cur == null
         ? ''
         : NoxController.proto(cur).isEmpty
         ? 'Автовыбор'
-        : NoxController.proto(cur);
+        : showProto
+        ? NoxController.proto(cur)
+        : '';
     final label = on
         ? 'Подключено'
         : st == 'connecting'
@@ -7071,7 +7387,10 @@ class _HeroAlt extends StatelessWidget {
               ),
               const SizedBox(height: 4),
               Text(
-                on ? '${_hms(secs)}  ·  $proto' : '$label  ·  $proto',
+                [
+                  on ? _hms(secs) : label,
+                  if (showProto || proto.isNotEmpty) proto,
+                ].join('  ·  '),
                 style: TextStyle(
                   color: on ? p.acc2 : stColor,
                   fontSize: 13,
@@ -7174,7 +7493,10 @@ class _HeroAlt extends StatelessWidget {
                         ),
                         const SizedBox(height: 2),
                         Text(
-                          '$label · $proto',
+                          [
+                            label,
+                            if (showProto || proto.isNotEmpty) proto,
+                          ].join(' · '),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
@@ -7394,7 +7716,10 @@ class _HeroAlt extends StatelessWidget {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      '$proto · пинг $ping',
+                      [
+                        if (showProto || proto.isNotEmpty) proto,
+                        'пинг $ping',
+                      ].join(' · '),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
