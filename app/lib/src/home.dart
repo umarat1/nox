@@ -269,7 +269,7 @@ class _BodyState extends State<_Body> {
     _scheduleSizeSync(hdrCol, subCol, srvCol);
     if (c.s['update'] is Map) maybeOfferUpdate(context, c, p);
     final head = <Widget>[
-      // 2.2.0: no top bar on Android; its buttons live in the bottom card (_CardTools).
+      // 2.2.0: no top bar on Android; МТС, mail and settings sit in the connection card's corner (_HeroCorner).
       if (!wide && !srvCol && !noTopBar)
         _TopBar(
           c: c,
@@ -314,7 +314,6 @@ class _BodyState extends State<_Body> {
           onTap: () => c.call('ClearError'),
         ),
       if (c.s['update'] != null) _UpdateBanner(c: c, p: p),
-      if (!wide && noTopBar && c.subs.isEmpty) _ToolsCard(c: c, p: p),
       for (final (i, b) in c.subs.indexed)
         _SubBlock(
           key: i == 0 ? TourKeys.sub : null,
@@ -322,7 +321,6 @@ class _BodyState extends State<_Body> {
           p: p,
           b: b,
           first: i == 0,
-          tools: i == 0 && !wide && noTopBar,
           mobile: mobile,
           collapsed: subCol,
           onToggleCollapse: mobile
@@ -1354,21 +1352,99 @@ class _TopBar extends StatelessWidget {
 /// 2.2.0: Android has no top bar (no «nox» wordmark); tests may flip this.
 bool noTopBar = isAndroid;
 
-/// 2.2.0: the former phone top-bar buttons (МТС, theme, mail, settings) as one row in
-/// the bottom card. Same 36 dp glass buttons and actions as the top bar; tour keys kept.
-class _CardTools extends StatelessWidget {
+/// 2.2.1: МТС, mail and settings as small glass buttons in the connection card's
+/// top-right corner (Android, no top bar). Theme lives in Настройки → Тема.
+class _HeroCorner extends StatelessWidget {
   final NoxController c;
   final Pal p;
-  final bool divider;
-  const _CardTools({required this.c, required this.p, this.divider = true});
+  const _HeroCorner({required this.c, required this.p});
+
+  /// Only on the phone column of Android-style layouts (tests flip [noTopBar]).
+  static Widget? of(NoxController c, Pal p, {bool wide = false}) =>
+      noTopBar && !wide && !c.isTv ? _HeroCorner(c: c, p: p) : null;
+
+  Widget _btn({
+    Key? key,
+    required String tip,
+    required VoidCallback onTap,
+    IconData? icon,
+    String? text,
+    bool hot = false,
+    bool dot = false,
+    Color? fill,
+  }) {
+    final acc = p.acc;
+    return Tooltip(
+      key: key,
+      message: tip,
+      child: Material(
+        type: MaterialType.transparency,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(9),
+          onTap: onTap,
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Container(
+                height: 28,
+                constraints: const BoxConstraints(minWidth: 28),
+                padding: EdgeInsets.symmetric(horizontal: text != null ? 7 : 0),
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: fill ?? acc.withValues(alpha: p.light ? .10 : .16),
+                  borderRadius: BorderRadius.circular(9),
+                  border: Border.all(
+                    color: fill ?? acc.withValues(alpha: p.light ? .22 : .34),
+                  ),
+                ),
+                child: text != null
+                    ? Text(
+                        text,
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w800,
+                          color: fill != null
+                              ? Colors.white
+                              : p.txt.withValues(alpha: .78),
+                        ),
+                      )
+                    : Icon(
+                        icon,
+                        size: 15,
+                        color: hot ? p.acc2 : p.txt.withValues(alpha: .85),
+                      ),
+              ),
+              if (dot)
+                Positioned(
+                  right: -1,
+                  top: -1,
+                  child: Container(
+                    width: 7,
+                    height: 7,
+                    decoration: BoxDecoration(
+                      color: p.acc2,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final th = (c.settings['theme'] ?? 'dark') as String;
-    final items = <Widget>[
-      if (noTopBar)
-        _MtsBtn(
-          p: p,
-          on: c.mtsOn,
+    final upd = c.s['update'] is Map;
+    return Row(
+      key: const Key('hero-corner'),
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _btn(
+          tip: c.mtsOn ? 'МТС прокси: вкл' : 'МТС прокси: выкл',
+          text: 'МТС',
+          fill: c.mtsOn ? _MtsBtn._red : null,
           onTap: () async {
             final on = !c.mtsOn;
             await c.setMtsProxy(on);
@@ -1382,78 +1458,25 @@ class _CardTools extends StatelessWidget {
             if (on) await mtsApnDialog(context);
           },
         ),
-      _GhostBtn(
-        key: TourKeys.theme,
-        p: p,
-        icon: th == 'light'
-            ? Icons.light_mode_outlined
-            : th == 'mono'
-            ? Icons.contrast_rounded
-            : Icons.dark_mode_outlined,
-        tip: 'Тема',
-        mobile: true,
-        onTap: () {
-          final i = themeNames.indexWhere((e) => e.$1 == th);
-          final n = themeNames[(i + 1) % themeNames.length].$1;
-          c.saveSettings({'theme': n});
-          toast(context, 'Тема: ${themeName(n)}');
-        },
-      ),
-      if (canFullScreen)
-        ValueListenableBuilder<bool>(
-          valueListenable: fullScreen,
-          builder: (_, fs, _) => _GhostBtn(
-            p: p,
-            icon: fs ? Icons.fullscreen_exit : Icons.fullscreen,
-            tip: fs
-                ? 'Выйти из полноэкранного режима (F11)'
-                : 'Во весь экран (F11)',
-            mobile: true,
-            onTap: () => toggleFullScreen(),
-          ),
+        const SizedBox(width: 5),
+        _btn(
+          key: TourKeys.mail,
+          tip: upd ? 'Доступно обновление' : 'Обновления и сообщения',
+          icon: upd ? Icons.mark_email_unread_outlined : Icons.mail_outline,
+          hot: upd,
+          dot: upd,
+          onTap: () => updateSheet(context, c, p),
         ),
-      _MailBtn(c: c, p: p, mobile: true),
-      _GhostBtn(
-        key: TourKeys.settings,
-        p: p,
-        icon: Icons.settings_outlined,
-        tip: 'Настройки',
-        mobile: true,
-        onTap: () => settingsSheet(context, c, p),
-      ),
-    ];
-    return Container(
-      key: const Key('card-tools'),
-      padding: const EdgeInsets.only(top: 8),
-      decoration: !divider
-          ? null
-          : BoxDecoration(
-              border: Border(
-                top: BorderSide(
-                  color: p.acc2.withValues(alpha: p.light ? .14 : .16),
-                ),
-              ),
-            ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-        children: items,
-      ),
+        const SizedBox(width: 5),
+        _btn(
+          key: TourKeys.settings,
+          tip: 'Настройки',
+          icon: Icons.settings_outlined,
+          onTap: () => settingsSheet(context, c, p),
+        ),
+      ],
     );
   }
-}
-
-/// 2.2.0: phones with no subscription still get the former top-bar buttons.
-class _ToolsCard extends StatelessWidget {
-  final NoxController c;
-  final Pal p;
-  const _ToolsCard({required this.c, required this.p});
-  @override
-  Widget build(BuildContext context) => Container(
-    margin: const EdgeInsets.only(top: 6),
-    padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
-    decoration: _box(p, r: 22),
-    child: _CardTools(c: c, p: p, divider: false),
-  );
 }
 
 /// Flat header button: no fill, circular ripple, accent focus ring for TV D-pad.
@@ -1792,18 +1815,27 @@ class _Hero extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  label,
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 1,
-                    color: on
-                        ? p.grn
-                        : wait
-                        ? p.amb
-                        : p.sub,
-                  ),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 1,
+                          color: on
+                              ? p.grn
+                              : wait
+                              ? p.amb
+                              : p.sub,
+                        ),
+                      ),
+                    ),
+                    ?_HeroCorner.of(c, p, wide: wide),
+                  ],
                 ),
                 const SizedBox(height: 3),
                 Text(
@@ -2095,12 +2127,10 @@ class _SubBlock extends StatelessWidget {
     required this.p,
     required this.b,
     this.first = false,
-    this.tools = false,
     this.mobile = false,
     this.collapsed = false,
     this.onToggleCollapse,
   });
-  final bool tools;
 
   /// Refresh / ••• / collapse, shared by every card style.
   Widget _subActions(BuildContext context) => Row(
@@ -2194,7 +2224,6 @@ class _SubBlock extends StatelessWidget {
       d: _SubData(n: n, used: used, total: total, left: left, dt: dt),
       ann: ann,
       actions: _subActions(context),
-      tools: tools ? _CardTools(c: c, p: p) : null,
       mobile: mobile,
       collapsed: mobile && collapsed,
     );
@@ -2240,7 +2269,6 @@ class _SubStyled extends StatelessWidget {
   final _SubData d;
   final String ann;
   final Widget actions;
-  final Widget? tools; // 2.2.0: former top-bar buttons (first card on phones)
   final bool mobile, collapsed;
   const _SubStyled({
     required this.c,
@@ -2249,7 +2277,6 @@ class _SubStyled extends StatelessWidget {
     required this.d,
     required this.ann,
     required this.actions,
-    this.tools,
     required this.mobile,
     required this.collapsed,
   });
@@ -2446,10 +2473,6 @@ class _SubStyled extends StatelessWidget {
                 ],
               ),
             ),
-          ],
-          if (tools != null) ...[
-            SizedBox(height: collapsed ? 6 : 10),
-            Padding(padding: const EdgeInsets.only(right: 6), child: tools!),
           ],
         ],
       ),
@@ -4030,15 +4053,17 @@ Future<void> sheet(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                title,
-                style: TextStyle(
-                  color: p.txt,
-                  fontSize: 17,
-                  fontWeight: FontWeight.w700,
+              if (title.isNotEmpty) ...[
+                Text(
+                  title,
+                  style: TextStyle(
+                    color: p.txt,
+                    fontSize: 17,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 8),
+                const SizedBox(height: 8),
+              ],
               ...items(ctx),
             ],
           ),
@@ -4919,8 +4944,8 @@ void listSheet(
 }) => sheet(
   context,
   p,
-  'Список',
-  (ctx) => listItems(context, ctx, c, p, caption: caption),
+  noTopBar ? '' : 'Список',
+  (ctx) => listItems(context, ctx, c, p, caption: noTopBar ? null : caption),
 );
 
 /// Items of the list menu (sort, view, filters…); also appended to the first server's ⋮.
@@ -4951,64 +4976,67 @@ List<Widget> listItems(
           toast(context, 'Проверяю пинг…');
         },
       ),
-    item(
-      p,
-      'Сортировка',
-      desc: _sorts
-          .firstWhere(
-            (e) => e.$1 == (c.s['sort'] ?? ''),
-            orElse: () => _sorts[0],
-          )
-          .$2,
-      arrow: true,
-      onTap: () {
-        Navigator.pop(ctx);
-        sheet(
-          context,
-          p,
-          'Сортировка',
-          (c2) => [
-            for (final (k, n) in _sorts)
-              item(
-                p,
-                n,
-                checked: (c.s['sort'] ?? '') == k,
-                onTap: () async {
-                  await c.call('SetSort', [k]);
-                  await c.refresh();
-                  if (c2.mounted) Navigator.pop(c2);
-                },
-              ),
-          ],
-        );
-      },
-    ),
-    item(
-      p,
-      'Вид',
-      desc: _views.firstWhere((e) => e.$1 == v).$2,
-      arrow: true,
-      onTap: () {
-        Navigator.pop(ctx);
-        sheet(
-          context,
-          p,
-          'Вид',
-          (c2) => [
-            for (final (k, n) in _views)
-              item(
-                p,
-                n,
-                checked: v == k,
-                onTap: () {
-                  c.setPref('view', k);
-                  Navigator.pop(c2);
-                },
-              ),
-          ],
-        );
-      },
-    ),
+    // 2.2.1: Android keeps the current sort and view; the rows are gone from the menu.
+    if (!noTopBar) ...[
+      item(
+        p,
+        'Сортировка',
+        desc: _sorts
+            .firstWhere(
+              (e) => e.$1 == (c.s['sort'] ?? ''),
+              orElse: () => _sorts[0],
+            )
+            .$2,
+        arrow: true,
+        onTap: () {
+          Navigator.pop(ctx);
+          sheet(
+            context,
+            p,
+            'Сортировка',
+            (c2) => [
+              for (final (k, n) in _sorts)
+                item(
+                  p,
+                  n,
+                  checked: (c.s['sort'] ?? '') == k,
+                  onTap: () async {
+                    await c.call('SetSort', [k]);
+                    await c.refresh();
+                    if (c2.mounted) Navigator.pop(c2);
+                  },
+                ),
+            ],
+          );
+        },
+      ),
+      item(
+        p,
+        'Вид',
+        desc: _views.firstWhere((e) => e.$1 == v).$2,
+        arrow: true,
+        onTap: () {
+          Navigator.pop(ctx);
+          sheet(
+            context,
+            p,
+            'Вид',
+            (c2) => [
+              for (final (k, n) in _views)
+                item(
+                  p,
+                  n,
+                  checked: v == k,
+                  onTap: () {
+                    c.setPref('view', k);
+                    Navigator.pop(c2);
+                  },
+                ),
+            ],
+          );
+        },
+      ),
+    ],
     item(
       p,
       'Скрыть нерабочие',
@@ -6921,6 +6949,14 @@ String _hms(int s) {
   return '${two(s ~/ 3600)}:${two((s % 3600) ~/ 60)}:${two(s % 60)}';
 }
 
+/// Flexible when [flex], else a bounded box (keeps a Flexible child inside legal).
+Widget _flexOr(bool flex, {required Widget child}) => flex
+    ? Flexible(child: child)
+    : ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 150),
+        child: child,
+      );
+
 class _HeroAlt extends StatelessWidget {
   final NoxController c;
   final Pal p;
@@ -6990,14 +7026,22 @@ class _HeroAlt extends StatelessWidget {
     );
     final down = '${fmtBytes(t?['Down'] ?? 0)}/с';
     final up = '${fmtBytes(t?['Up'] ?? 0)}/с';
+    final corner = _HeroCorner.of(c, p, wide: wide);
 
     switch (style) {
       case 'ring':
         return Container(
-          padding: const EdgeInsets.fromLTRB(16, 18, 16, 12),
+          padding: EdgeInsets.fromLTRB(
+            16,
+            corner == null ? 18 : 12,
+            corner == null ? 16 : 12,
+            12,
+          ),
           decoration: glassBox(p, r: 26),
           child: Column(
             children: [
+              if (corner != null)
+                Align(alignment: Alignment.centerRight, child: corner),
               _GlowRing(
                 p: p,
                 on: on,
@@ -7067,10 +7111,14 @@ class _HeroAlt extends StatelessWidget {
         );
       case 'compact':
         return Container(
-          padding: const EdgeInsets.fromLTRB(14, 14, 14, 10),
+          padding: EdgeInsets.fromLTRB(14, corner == null ? 14 : 10, 14, 10),
           decoration: glassBox(p, r: 22),
           child: Column(
             children: [
+              if (corner != null) ...[
+                Align(alignment: Alignment.centerRight, child: corner),
+                const SizedBox(height: 6),
+              ],
               Row(
                 children: [
                   Stack(
@@ -7239,7 +7287,8 @@ class _HeroAlt extends StatelessWidget {
                   children: [
                     Row(
                       children: [
-                        Flexible(
+                        _flexOr(
+                          corner == null,
                           child: Container(
                             padding: const EdgeInsets.fromLTRB(8, 4, 10, 4),
                             decoration: BoxDecoration(
@@ -7281,6 +7330,7 @@ class _HeroAlt extends StatelessWidget {
                         badge(22),
                         const SizedBox(width: 7),
                         Flexible(
+                          fit: corner == null ? FlexFit.loose : FlexFit.tight,
                           child: Text(
                             name,
                             maxLines: 1,
@@ -7292,6 +7342,10 @@ class _HeroAlt extends StatelessWidget {
                             ),
                           ),
                         ),
+                        if (corner != null) ...[
+                          const SizedBox(width: 8),
+                          corner,
+                        ],
                       ],
                     ),
                     const SizedBox(height: 14),
