@@ -73,12 +73,22 @@ class Home extends StatelessWidget {
                   ),
                   // 2.1.7: «＋» moved from the top bar to the bottom of the screen (TV keeps it
                   // in the header for the D-pad).
+                  // 2.1.8: bottom bar, left to right: «＋», «Добавить из буфера» (only while
+                  // nothing is added), then the connect pill filling the rest. It floats over
+                  // the server list (which keeps bottom padding for it).
                   if (showAddFab(c))
                     Positioned(
-                      right: 18,
-                      bottom: 18,
+                      left: 0,
+                      right: 0,
+                      bottom: 0,
                       child: SafeArea(
-                        child: AddFab(c: c, p: p),
+                        top: false,
+                        child: Center(
+                          child: ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: 560),
+                            child: BottomBar(c: c, p: p),
+                          ),
+                        ),
                       ),
                     ),
                   if (c.tourOn)
@@ -511,7 +521,7 @@ class _BodyState extends State<_Body> {
         physics: const ClampingScrollPhysics(),
         child: Padding(
           key: _compactKey,
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          padding: EdgeInsets.fromLTRB(10, 6, 10, showAddFab(c) ? 90 : 6),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -591,17 +601,24 @@ class _BodyState extends State<_Body> {
       return [
         SliverToBoxAdapter(
           child: Padding(
-            padding: EdgeInsets.fromLTRB(28, none ? 28 : 40, 28, 40),
+            padding: EdgeInsets.fromLTRB(
+              28,
+              none ? 28 : 40,
+              28,
+              showAddFab(c) ? 100 : 40,
+            ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                if (none) ...[
+                if (none && !showAddFab(c)) ...[
                   ClipboardAddButton(c: c, p: p),
                   const SizedBox(height: 14),
                 ],
                 Text(
                   none
-                      ? 'Скопируйте ссылку на подписку или сервер (vless, trojan, ss, hy2, tuic, qwdtt, sstp) и нажмите кнопку выше. Другие способы — кнопка «＋» внизу.'
+                      ? (showAddFab(c)
+                            ? 'Скопируйте ссылку на подписку или сервер (vless, trojan, ss, hy2, tuic, qwdtt, sstp) и нажмите «Добавить из буфера» внизу. Другие способы — кнопка «＋».'
+                            : 'Скопируйте ссылку на подписку или сервер (vless, trojan, ss, hy2, tuic, qwdtt, sstp) и нажмите кнопку выше. Другие способы — кнопка «＋» внизу.')
                       : 'Нет серверов. Нажмите «＋», чтобы добавить подписку или ссылку (vless, trojan, ss, hy2, tuic, qwdtt, sstp).',
                   textAlign: TextAlign.center,
                   style: TextStyle(color: p.sub),
@@ -636,7 +653,7 @@ class _BodyState extends State<_Body> {
     if (view == 'slider') {
       return [
         SliverPadding(
-          padding: const EdgeInsets.fromLTRB(0, 0, 0, 40),
+          padding: EdgeInsets.fromLTRB(0, 0, 0, showAddFab(c) ? 96 : 40),
           sliver: SliverList.list(children: _sliders(list)),
         ),
       ];
@@ -7214,8 +7231,11 @@ class _HeroAlt extends StatelessWidget {
                         fontSize: 12,
                       ),
                     ),
-                    SizedBox(height: wide ? 18 : 40),
-                    TapPill(c: c, p: p),
+                    // 2.1.8: on phone/desktop the pill sits in the bottom bar next to «＋».
+                    if (!pillAtBottom(c)) ...[
+                      SizedBox(height: wide ? 18 : 40),
+                      TapPill(c: c, p: p),
+                    ],
                   ],
                 ),
               ),
@@ -7414,6 +7434,32 @@ class TapPillState extends State<TapPill> {
       _ => ('Отключено', 'нажмите, чтобы подключить'),
     };
     final label = hint.isEmpty ? title : '$title · $hint';
+    return LayoutBuilder(
+      builder: (context, box) => _build(
+        context,
+        p,
+        on,
+        wait,
+        right,
+        title,
+        box.maxWidth < 230 ? '' : hint,
+        label,
+        box.maxWidth < 230,
+      ),
+    );
+  }
+
+  Widget _build(
+    BuildContext context,
+    Pal p,
+    bool on,
+    bool wait,
+    bool right,
+    String title,
+    String hint,
+    String label,
+    bool narrow,
+  ) {
     return FocusableActionDetector(
       mouseCursor: SystemMouseCursors.click,
       actions: {
@@ -7454,7 +7500,13 @@ class TapPillState extends State<TapPill> {
               fit: StackFit.expand,
               children: [
                 Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 46),
+                  // narrow (bottom bar next to «Добавить из буфера»): keep clear of the knob only
+                  padding: narrow
+                      ? EdgeInsets.only(
+                          left: right ? 4 : 46,
+                          right: right ? 46 : 4,
+                        )
+                      : const EdgeInsets.symmetric(horizontal: 46),
                   child: Center(
                     child: Text.rich(
                       TextSpan(
@@ -7604,10 +7656,58 @@ Future<void> importFromClipboard(BuildContext context, NoxController c) async {
   }
 }
 
+/// 2.1.8: the connect pill lives in the bottom bar whenever the bar is shown and the
+/// «Таймер» card is used (the ring/compact/classic cards keep their own power knob).
+bool pillAtBottom(NoxController c) =>
+    showAddFab(c) && !const {'ring', 'compact', 'classic'}.contains(heroStyle);
+
+class BottomBar extends StatelessWidget {
+  final NoxController c;
+  final Pal p;
+  const BottomBar({super.key, required this.c, required this.p});
+  @override
+  Widget build(BuildContext context) {
+    final none = c.subs.isEmpty && c.servers.isEmpty;
+    final pill = pillAtBottom(c);
+    return Padding(
+      key: const Key('bottom-bar'),
+      padding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
+      child: Row(
+        children: [
+          AddFab(c: c, p: p),
+          if (none) ...[
+            const SizedBox(width: 10),
+            pill
+                ? ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 128),
+                    child: ClipboardAddButton(c: c, p: p, compact: true),
+                  )
+                : Expanded(
+                    child: ClipboardAddButton(c: c, p: p),
+                  ),
+          ],
+          if (pill) ...[
+            const SizedBox(width: 10),
+            Expanded(
+              child: TapPill(c: c, p: p),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
 class ClipboardAddButton extends StatefulWidget {
   final NoxController c;
   final Pal p;
-  const ClipboardAddButton({super.key, required this.c, required this.p});
+  final bool compact; // bottom bar next to the pill: 52 dp tall, two-line label
+  const ClipboardAddButton({
+    super.key,
+    required this.c,
+    required this.p,
+    this.compact = false,
+  });
   @override
   State<ClipboardAddButton> createState() => _ClipboardAddButtonState();
 }
@@ -7642,38 +7742,53 @@ class _ClipboardAddButtonState extends State<ClipboardAddButton> {
                   }
                 },
           child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 18),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                busy
-                    ? const SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2.4,
+            padding: widget.compact
+                ? const EdgeInsets.symmetric(horizontal: 10)
+                : const EdgeInsets.symmetric(vertical: 16, horizontal: 18),
+            child: SizedBox(
+              height: widget.compact ? 52 : null,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  busy
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2.4,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Icon(
+                          Icons.content_paste_rounded,
                           color: Colors.white,
+                          size: 22,
                         ),
-                      )
-                    : const Icon(
-                        Icons.content_paste_rounded,
+                  SizedBox(width: widget.compact ? 7 : 10),
+                  Flexible(
+                    child: Text(
+                      busy
+                          ? 'Добавляю…'
+                          : widget.compact
+                          ? 'Добавить\nиз буфера'
+                          : 'Добавить из буфера',
+                      maxLines: widget.compact ? 2 : 1,
+                      overflow: TextOverflow.ellipsis,
+                      textScaler: widget.compact
+                          ? MediaQuery.textScalerOf(
+                              context,
+                            ).clamp(maxScaleFactor: 1.15)
+                          : null,
+                      style: TextStyle(
                         color: Colors.white,
-                        size: 22,
+                        fontSize: widget.compact ? 13 : 16,
+                        height: widget.compact ? 1.15 : null,
+                        fontWeight: FontWeight.w800,
                       ),
-                const SizedBox(width: 10),
-                Flexible(
-                  child: Text(
-                    busy ? 'Добавляю…' : 'Добавить из буфера',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 16,
-                      fontWeight: FontWeight.w800,
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),

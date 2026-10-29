@@ -82,18 +82,22 @@ Finder _inDialog(Finder f) =>
 void main() {
   setUp(resetUpdateOffers);
 
-  testWidgets('«+» is the round button at the bottom and opens the add sheet', (
-    t,
-  ) async {
-    await _app(t, _Api());
-    final r = t.getRect(find.byKey(TourKeys.add));
-    expect(r.center.dy, greaterThan(860 * .8));
-    expect(r.center.dx, greaterThan(411 / 2));
-    expect(find.byKey(const Key('clip-add')), findsNothing);
-    await t.tap(find.byTooltip('Добавить подписку'));
-    await _frames(t);
-    expect(find.text('Передать на другое устройство'), findsOneWidget);
-  });
+  testWidgets(
+    '«+» is the round button at the bottom left and opens the add sheet',
+    (t) async {
+      await _app(t, _Api());
+      final r = t.getRect(find.byKey(TourKeys.add));
+      expect(r.center.dy, greaterThan(860 * .8));
+      expect(
+        r.center.dx,
+        lessThan(411 / 2),
+      ); // 2.1.8: «＋» is first (left) in the bottom bar
+      expect(find.byKey(const Key('clip-add')), findsNothing);
+      await t.tap(find.byTooltip('Добавить подписку'));
+      await _frames(t);
+      expect(find.text('Передать на другое устройство'), findsOneWidget);
+    },
+  );
 
   testWidgets('empty list: «Добавить из буфера» imports and disappears', (
     t,
@@ -103,7 +107,7 @@ void main() {
       ..servers.clear();
     _clipboard(t, '  vless://u@1.2.3.4:443#Test  ');
     await _app(t, api);
-    expect(find.text('Добавить из буфера'), findsOneWidget);
+    expect(find.byKey(const Key('clip-add')), findsOneWidget);
     await t.tap(find.byKey(const Key('clip-add')));
     await _frames(t);
     expect(api.imported, ['vless://u@1.2.3.4:443#Test']);
