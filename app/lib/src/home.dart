@@ -269,7 +269,8 @@ class _BodyState extends State<_Body> {
     _scheduleSizeSync(hdrCol, subCol, srvCol);
     if (c.s['update'] is Map) maybeOfferUpdate(context, c, p);
     final head = <Widget>[
-      if (!wide && !srvCol)
+      // 2.2.0: no top bar on Android; its buttons live in the bottom card (_CardTools).
+      if (!wide && !srvCol && !noTopBar)
         _TopBar(
           c: c,
           p: p,
@@ -313,6 +314,7 @@ class _BodyState extends State<_Body> {
           onTap: () => c.call('ClearError'),
         ),
       if (c.s['update'] != null) _UpdateBanner(c: c, p: p),
+      if (!wide && noTopBar && c.subs.isEmpty) _ToolsCard(c: c, p: p),
       for (final (i, b) in c.subs.indexed)
         _SubBlock(
           key: i == 0 ? TourKeys.sub : null,
@@ -320,6 +322,7 @@ class _BodyState extends State<_Body> {
           p: p,
           b: b,
           first: i == 0,
+          tools: i == 0 && !wide && noTopBar,
           mobile: mobile,
           collapsed: subCol,
           onToggleCollapse: mobile
@@ -1348,6 +1351,111 @@ class _TopBar extends StatelessWidget {
   }
 }
 
+/// 2.2.0: Android has no top bar (no «nox» wordmark); tests may flip this.
+bool noTopBar = isAndroid;
+
+/// 2.2.0: the former phone top-bar buttons (МТС, theme, mail, settings) as one row in
+/// the bottom card. Same 36 dp glass buttons and actions as the top bar; tour keys kept.
+class _CardTools extends StatelessWidget {
+  final NoxController c;
+  final Pal p;
+  final bool divider;
+  const _CardTools({required this.c, required this.p, this.divider = true});
+  @override
+  Widget build(BuildContext context) {
+    final th = (c.settings['theme'] ?? 'dark') as String;
+    final items = <Widget>[
+      if (noTopBar)
+        _MtsBtn(
+          p: p,
+          on: c.mtsOn,
+          onTap: () async {
+            final on = !c.mtsOn;
+            await c.setMtsProxy(on);
+            if (!context.mounted) return;
+            toast(
+              context,
+              on
+                  ? 'МТС прокси включён: только AnyTLS, mieru, VLESS и прокси'
+                  : 'МТС прокси выключен',
+            );
+            if (on) await mtsApnDialog(context);
+          },
+        ),
+      _GhostBtn(
+        key: TourKeys.theme,
+        p: p,
+        icon: th == 'light'
+            ? Icons.light_mode_outlined
+            : th == 'mono'
+            ? Icons.contrast_rounded
+            : Icons.dark_mode_outlined,
+        tip: 'Тема',
+        mobile: true,
+        onTap: () {
+          final i = themeNames.indexWhere((e) => e.$1 == th);
+          final n = themeNames[(i + 1) % themeNames.length].$1;
+          c.saveSettings({'theme': n});
+          toast(context, 'Тема: ${themeName(n)}');
+        },
+      ),
+      if (canFullScreen)
+        ValueListenableBuilder<bool>(
+          valueListenable: fullScreen,
+          builder: (_, fs, _) => _GhostBtn(
+            p: p,
+            icon: fs ? Icons.fullscreen_exit : Icons.fullscreen,
+            tip: fs
+                ? 'Выйти из полноэкранного режима (F11)'
+                : 'Во весь экран (F11)',
+            mobile: true,
+            onTap: () => toggleFullScreen(),
+          ),
+        ),
+      _MailBtn(c: c, p: p, mobile: true),
+      _GhostBtn(
+        key: TourKeys.settings,
+        p: p,
+        icon: Icons.settings_outlined,
+        tip: 'Настройки',
+        mobile: true,
+        onTap: () => settingsSheet(context, c, p),
+      ),
+    ];
+    return Container(
+      key: const Key('card-tools'),
+      padding: const EdgeInsets.only(top: 8),
+      decoration: !divider
+          ? null
+          : BoxDecoration(
+              border: Border(
+                top: BorderSide(
+                  color: p.acc2.withValues(alpha: p.light ? .14 : .16),
+                ),
+              ),
+            ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+        children: items,
+      ),
+    );
+  }
+}
+
+/// 2.2.0: phones with no subscription still get the former top-bar buttons.
+class _ToolsCard extends StatelessWidget {
+  final NoxController c;
+  final Pal p;
+  const _ToolsCard({required this.c, required this.p});
+  @override
+  Widget build(BuildContext context) => Container(
+    margin: const EdgeInsets.only(top: 6),
+    padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+    decoration: _box(p, r: 22),
+    child: _CardTools(c: c, p: p, divider: false),
+  );
+}
+
 /// Flat header button: no fill, circular ripple, accent focus ring for TV D-pad.
 /// «МТС прокси» pill in the top bar: red when on.
 class _MtsBtn extends StatelessWidget {
@@ -1987,10 +2095,12 @@ class _SubBlock extends StatelessWidget {
     required this.p,
     required this.b,
     this.first = false,
+    this.tools = false,
     this.mobile = false,
     this.collapsed = false,
     this.onToggleCollapse,
   });
+  final bool tools;
 
   /// Refresh / ••• / collapse, shared by every card style.
   Widget _subActions(BuildContext context) => Row(
@@ -2084,6 +2194,7 @@ class _SubBlock extends StatelessWidget {
       d: _SubData(n: n, used: used, total: total, left: left, dt: dt),
       ann: ann,
       actions: _subActions(context),
+      tools: tools ? _CardTools(c: c, p: p) : null,
       mobile: mobile,
       collapsed: mobile && collapsed,
     );
@@ -2129,6 +2240,7 @@ class _SubStyled extends StatelessWidget {
   final _SubData d;
   final String ann;
   final Widget actions;
+  final Widget? tools; // 2.2.0: former top-bar buttons (first card on phones)
   final bool mobile, collapsed;
   const _SubStyled({
     required this.c,
@@ -2137,6 +2249,7 @@ class _SubStyled extends StatelessWidget {
     required this.d,
     required this.ann,
     required this.actions,
+    this.tools,
     required this.mobile,
     required this.collapsed,
   });
@@ -2303,7 +2416,7 @@ class _SubStyled extends StatelessWidget {
               ),
             ),
             if (ann.isNotEmpty) _Announce(c: c, p: p, text: ann),
-            const SizedBox(height: 12),
+            const SizedBox(height: 10),
             Padding(
               padding: const EdgeInsets.only(right: 6),
               child: Row(
@@ -2321,11 +2434,11 @@ class _SubStyled extends StatelessWidget {
                   Expanded(
                     child: Column(
                       children: [
-                        _CoinDonateBtn(p: p, url: _donate, size: 40),
-                        const SizedBox(height: 4),
+                        _CoinDonateBtn(p: p, url: _donate, size: 28),
+                        const SizedBox(height: 3),
                         Text(
                           'Донат',
-                          style: TextStyle(color: p.sub, fontSize: 10.5),
+                          style: TextStyle(color: p.sub, fontSize: 9),
                         ),
                       ],
                     ),
@@ -2333,6 +2446,10 @@ class _SubStyled extends StatelessWidget {
                 ],
               ),
             ),
+          ],
+          if (tools != null) ...[
+            SizedBox(height: collapsed ? 6 : 10),
+            Padding(padding: const EdgeInsets.only(right: 6), child: tools!),
           ],
         ],
       ),
@@ -2353,8 +2470,8 @@ class _SubStyled extends StatelessWidget {
       child: Column(
         children: [
           Container(
-            width: 40,
-            height: 40,
+            width: 28, // 2.2.0: compact (was 40)
+            height: 28,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               color: primary
@@ -2368,9 +2485,9 @@ class _SubStyled extends StatelessWidget {
                     : p.acc2.withValues(alpha: .22),
               ),
             ),
-            child: Icon(icon, size: 18, color: primary ? p.txt : p.acc2),
+            child: Icon(icon, size: 13, color: primary ? p.txt : p.acc2),
           ),
-          const SizedBox(height: 4),
+          const SizedBox(height: 3),
           FittedBox(
             fit: BoxFit.scaleDown,
             child: Text(
@@ -2378,7 +2495,7 @@ class _SubStyled extends StatelessWidget {
               maxLines: 1,
               style: TextStyle(
                 color: primary ? p.acc2 : p.sub,
-                fontSize: 10.5,
+                fontSize: 9,
                 fontWeight: primary ? FontWeight.w700 : FontWeight.w500,
               ),
             ),
@@ -7382,6 +7499,10 @@ class _PillSwitch extends StatelessWidget {
   }
 }
 
+/// 2.2.0: tap still toggles, and the knob can also be dragged along the pill. A drag only
+/// fires past [dragFire] of the travel (else the knob snaps back); the recognizer is
+/// horizontal-only, so vertical drags keep scrolling the list, and drags shorter than the
+/// touch slop never start. Haptic feedback when a drag fires.
 /// Variant 3 (2.1.7): tap-to-toggle pill on the «Таймер» card. The 2.1.x swipe slider was
 /// too sensitive (it fired while scrolling and missed slow slides), so it is now a plain
 /// button: tap = connect, tap again = disconnect (also cancels «Подключение…»).
@@ -7392,6 +7513,7 @@ class TapPill extends StatefulWidget {
   final NoxController c;
   final Pal p;
   static Duration debounce = const Duration(milliseconds: 700);
+  static const dragFire = .6;
   const TapPill({super.key, required this.c, required this.p});
   @override
   State<TapPill> createState() => TapPillState();
@@ -7401,19 +7523,40 @@ class TapPillState extends State<TapPill> {
   static const _knob = 42.0, _pad = 5.0;
   bool _sent = false;
   DateTime _last = DateTime.fromMillisecondsSinceEpoch(0);
+  double? _drag; // knob position 0 (left) … 1 (right) while a finger drags it
+  double _travel = 1;
 
   NoxController get c => widget.c;
+  bool get _right => c.connected || c.status == 'connecting';
+  bool get _blocked =>
+      _sent ||
+      c.status == 'disconnecting' ||
+      DateTime.now().difference(_last) < TapPill.debounce;
 
-  void _toggle() {
-    final now = DateTime.now();
-    if (_sent ||
-        c.status == 'disconnecting' ||
-        now.difference(_last) < TapPill.debounce) {
-      return;
-    }
+  void _dragStart(DragStartDetails _) {
+    if (_blocked) return;
+    setState(() => _drag = _right ? 1 : 0);
+  }
+
+  void _dragUpdate(DragUpdateDetails d) {
+    final v = _drag;
+    if (v == null) return;
+    setState(() => _drag = (v + d.delta.dx / _travel).clamp(0.0, 1.0));
+  }
+
+  void _dragEnd(DragEndDetails _) {
+    final v = _drag;
+    if (v == null) return;
+    final fire = _right ? v <= 1 - TapPill.dragFire : v >= TapPill.dragFire;
+    setState(() => _drag = null); // snap back (or animate on to the new side)
+    if (fire) _toggle(drag: true);
+  }
+
+  void _toggle({bool drag = false}) {
+    if (_blocked) return;
     _sent = true;
-    _last = now;
-    HapticFeedback.lightImpact();
+    _last = DateTime.now();
+    drag ? HapticFeedback.mediumImpact() : HapticFeedback.lightImpact();
     c.toggle().whenComplete(() {
       _sent = false;
       if (mounted) setState(() {});
@@ -7435,17 +7578,20 @@ class TapPillState extends State<TapPill> {
     };
     final label = hint.isEmpty ? title : '$title · $hint';
     return LayoutBuilder(
-      builder: (context, box) => _build(
-        context,
-        p,
-        on,
-        wait,
-        right,
-        title,
-        box.maxWidth < 230 ? '' : hint,
-        label,
-        box.maxWidth < 230,
-      ),
+      builder: (context, box) {
+        _travel = (box.maxWidth - 2 * _pad - 2 - _knob).clamp(1.0, 4000.0);
+        return _build(
+          context,
+          p,
+          on,
+          wait,
+          right,
+          title,
+          box.maxWidth < 230 ? '' : hint,
+          label,
+          box.maxWidth < 230,
+        );
+      },
     );
   }
 
@@ -7479,6 +7625,12 @@ class TapPillState extends State<TapPill> {
           key: TourKeys.power,
           behavior: HitTestBehavior.opaque,
           onTap: _toggle,
+          onHorizontalDragStart: _dragStart,
+          onHorizontalDragUpdate: _dragUpdate,
+          onHorizontalDragEnd: _dragEnd,
+          onHorizontalDragCancel: () {
+            if (_drag != null) setState(() => _drag = null);
+          },
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 220),
             height: 52,
@@ -7507,46 +7659,61 @@ class TapPillState extends State<TapPill> {
                           right: right ? 46 : 4,
                         )
                       : const EdgeInsets.symmetric(horizontal: 46),
-                  child: Center(
-                    child: Text.rich(
-                      TextSpan(
-                        children: [
-                          TextSpan(
-                            text: title,
-                            style: const TextStyle(fontWeight: FontWeight.w800),
+                  child: Opacity(
+                    // while dragging, the label fades as the knob leaves its side
+                    opacity: _drag == null
+                        ? 1
+                        : (1 - ((_drag! - (right ? 1 : 0)).abs() * 1.6)).clamp(
+                            0.0,
+                            1.0,
                           ),
-                          if (hint.isNotEmpty)
+                    child: Center(
+                      child: Text.rich(
+                        TextSpan(
+                          children: [
                             TextSpan(
-                              text: '\n$hint',
-                              style: TextStyle(
-                                fontSize: 11.5,
-                                height: 1.25,
-                                fontWeight: FontWeight.w600,
-                                color: Colors.white.withValues(alpha: .7),
+                              text: title,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w800,
                               ),
                             ),
-                        ],
-                      ),
-                      key: const Key('pill-label'),
-                      textAlign: TextAlign.center,
-                      textScaler: MediaQuery.textScalerOf(
-                        context,
-                      ).clamp(maxScaleFactor: 1.15),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: Colors.white.withValues(alpha: .92),
-                        fontSize: 13.5,
+                            if (hint.isNotEmpty)
+                              TextSpan(
+                                text: '\n$hint',
+                                style: TextStyle(
+                                  fontSize: 11.5,
+                                  height: 1.25,
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.white.withValues(alpha: .7),
+                                ),
+                              ),
+                          ],
+                        ),
+                        key: const Key('pill-label'),
+                        textAlign: TextAlign.center,
+                        textScaler: MediaQuery.textScalerOf(
+                          context,
+                        ).clamp(maxScaleFactor: 1.15),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: .92),
+                          fontSize: 13.5,
+                        ),
                       ),
                     ),
                   ),
                 ),
                 AnimatedAlign(
-                  duration: const Duration(milliseconds: 260),
+                  key: const Key('pill-knob'),
+                  duration: _drag != null
+                      ? Duration.zero
+                      : const Duration(milliseconds: 260),
                   curve: Curves.easeOutCubic,
-                  alignment: right
-                      ? Alignment.centerRight
-                      : Alignment.centerLeft,
+                  alignment: Alignment(
+                    _drag != null ? _drag! * 2 - 1 : (right ? 1 : -1),
+                    0,
+                  ),
                   child: Container(
                     width: _knob,
                     height: _knob,

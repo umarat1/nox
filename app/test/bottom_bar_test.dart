@@ -127,4 +127,35 @@ void main() {
       matchesGoldenFile('shots/218-bottom-bar-empty.png'),
     );
   });
+
+  testWidgets(
+    '2.2.0: in the bar the knob drags (shot mid-drag), past 60% connects',
+    (t) async {
+      TapPill.debounce = Duration.zero;
+      addTearDown(() => TapPill.debounce = const Duration(milliseconds: 700));
+      noTopBar = true;
+      addTearDown(() => noTopBar = false);
+      final c = await _app(t, 'disconnected', sel: '');
+      final r = t.getRect(find.byKey(TourKeys.power));
+      final g = await t.startGesture(Offset(r.left + 26, r.center.dy));
+      for (var i = 0; i < 8; i++) {
+        await g.moveBy(Offset(r.width * .45 / 8, 0));
+        await t.pump(const Duration(milliseconds: 30));
+      }
+      expect(c.connected, isFalse);
+      await expectLater(
+        find.byType(NoxApp),
+        matchesGoldenFile('shots/220-bottom-bar-drag.png'),
+      );
+      for (var i = 0; i < 6; i++) {
+        await g.moveBy(Offset(r.width * .3 / 6, 0));
+        await t.pump(const Duration(milliseconds: 30));
+      }
+      await g.up();
+      for (var i = 0; i < 10; i++) {
+        await t.pump(const Duration(milliseconds: 60));
+      }
+      expect(c.connected, isTrue);
+    },
+  );
 }

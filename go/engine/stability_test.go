@@ -44,3 +44,20 @@ func TestExternalStopBlocksReconnect(t *testing.T) {
 		t.Fatal("missing error")
 	}
 }
+
+func TestWantRebindWhenSameNetworkReturnsAfterLoss(t *testing.T) {
+	a := NewApp(t.TempDir(), t.TempDir())
+	a.mu.Lock()
+	a.status = "connected"
+	a.lastUnder = "rmnet0"
+	a.mu.Unlock()
+	if a.wantRebind("") {
+		t.Fatal("loss itself must not reconnect")
+	}
+	if !a.wantRebind("rmnet0") {
+		t.Fatal("same network back after a loss should reconnect")
+	}
+	if a.wantRebind("rmnet0") {
+		t.Fatal("no loss in between: no reconnect")
+	}
+}
