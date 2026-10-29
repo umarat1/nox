@@ -1,0 +1,501 @@
+From f15502da0c5df8223388013af730aa49c073b187 Mon Sep 17 00:00:00 2001
+From: nox <nox@local>
+Date: Thu, 29 Oct 2026 12:52:16 +0300
+Subject: [PATCH] nox: transport liveness detector + -turn-auto UDP/TCP
+ fallback
+
+---
+ go_client/dispatcher.go    |   2 +
+ go_client/group.go         |   5 +-
+ go_client/liveness.go      | 216 +++++++++++++++++++++++++++++++++++++
+ go_client/liveness_test.go | 115 ++++++++++++++++++++
+ go_client/main.go          |  11 +-
+ go_client/session.go       |  15 ++-
+ 6 files changed, 360 insertions(+), 4 deletions(-)
+ create mode 100644 go_client/liveness.go
+ create mode 100644 go_client/liveness_test.go
+
+diff --git a/go_client/dispatcher.go b/go_client/dispatcher.go
+index c47db7f..5f89ecd 100644
+--- a/go_client/dispatcher.go
++++ b/go_client/dispatcher.go
+@@ -255,6 +255,7 @@ func (d *Dispatcher) readLoop() {
+ 			d.clientAddr.Store(&addr)
+ 		}
+ 		d.stats.TotalBytesUp.Add(int64(n))
++		tctl.NoteUp(n)
+ 
+ 		if d.tunFile != nil {
+ 			c := atomic.AddUint64(&d.tunReadCount, 1)
+@@ -405,6 +406,7 @@ func (d *Dispatcher) writeLoop() {
+ 		case <-d.ctx.Done():
+ 			return
+ 		case pkt := <-d.ReturnCh:
++			tctl.NoteDown()
+ 			if d.tunFile != nil {
+ 				if atomic.CompareAndSwapUint32(&d.firstPktDown, 0, 1) {
+ 					log.Printf("[ДИСП] [ДЕБАГ] Отправляем ПЕРВЫЙ пакет обратно в TUN (%d байт)", len(pkt))
+diff --git a/go_client/group.go b/go_client/group.go
+index 2cdf2bb..ff0418c 100644
+--- a/go_client/group.go
++++ b/go_client/group.go
+@@ -247,7 +247,10 @@ func WorkerGroup(
+ 				}
+ 
+ 				retryDelay := time.Duration(5+rand.Intn(11)) * time.Second
+-				if quotaRetry {
++				if tctl.RecentlyRotated(8 * time.Second) {
++					// transport rotation: reconnect right away (staggered)
++					retryDelay = time.Duration(300+rand.Intn(1500)) * time.Millisecond
++				} else if quotaRetry {
+ 					retryDelay = time.Duration(30+rand.Intn(31)) * time.Second
+ 				} else if fastRetry {
+ 					retryDelay = time.Duration(1+rand.Intn(3)) * time.Second
+diff --git a/go_client/liveness.go b/go_client/liveness.go
+new file mode 100644
+index 0000000..e6de42e
+--- /dev/null
++++ b/go_client/liveness.go
+@@ -0,0 +1,216 @@
++package main
++
++// Transport liveness / auto-fallback (nox patch).
++//
++// Problem: on some mobile carriers (MTS) UDP to the VK TURN relays is
++// throttled or silently black-holed *after* the TURN allocation and the
++// DTLS handshake succeed. Workers report READY, but no data ever comes
++// back, so the tunnel looks "connected" while nothing works. The session
++// reader deadline is 30 min, so nothing notices.
++//
++// Detection relies on WireGuard semantics: whenever the server-side WG
++// receives a data packet and has nothing to send for 10 s, it emits a
++// passive keepalive. So if the local WG has sent real (non-keepalive)
++// packets and we received *nothing at all* for stallAfter, the path is
++// dead. WG persistent keepalives (exactly 32 bytes) never get a reply and
++// are excluded.
++//
++// Reaction: bump the transport generation, which cancels every active
++// session so workers immediately re-allocate. With -turn-auto the TURN
++// transport is also flipped UDP<->TCP. A machine-readable line
++// "TRANSPORT|udp|tcp|<reason>" is printed to stdout for the host app.
++
++import (
++	"context"
++	"fmt"
++	"log"
++	"sync"
++	"sync/atomic"
++	"time"
++)
++
++const (
++	wgKeepaliveLen = 32
++)
++
++type transportCtl struct {
++	auto      bool
++	checkData bool // data-stall detection (WG-based modes only)
++
++	tcp atomic.Bool
++
++	mu        sync.Mutex
++	gen       context.Context
++	genCancel context.CancelFunc
++
++	epoch         atomic.Int64 // start of current generation (unix nano)
++	pendingSince  atomic.Int64 // first unanswered upstream data packet
++	lastDown      atomic.Int64
++	readyInEpoch  atomic.Int32
++	configDone    atomic.Bool
++	switches      atomic.Int32
++	lastRotate    atomic.Int64
++	lastDataEpoch atomic.Int64 // last epoch in which data flowed
++
++	// tunables (overridable in tests)
++	stallAfter   time.Duration
++	readyTimeout time.Duration
++	configTO     time.Duration
++	grace        time.Duration
++	minRotateGap time.Duration
++	now          func() time.Time
++	emit         func(string)
++}
++
++var tctl = newTransportCtl()
++
++func newTransportCtl() *transportCtl {
++	t := &transportCtl{
++		checkData:    true,
++		stallAfter:   15 * time.Second,
++		readyTimeout: 30 * time.Second,
++		configTO:     40 * time.Second,
++		grace:        20 * time.Second,
++		minRotateGap: 45 * time.Second,
++		now:          time.Now,
++		emit:         func(s string) { fmt.Println(s) },
++	}
++	t.gen, t.genCancel = context.WithCancel(context.Background())
++	t.epoch.Store(t.now().UnixNano())
++	return t
++}
++
++// Configure is called once from main.
++func (t *transportCtl) Configure(auto, startTCP, checkData bool) {
++	t.auto = auto
++	t.tcp.Store(startTCP)
++	t.checkData = checkData
++	t.epoch.Store(t.now().UnixNano())
++}
++
++// UseTCP reports the transport new sessions must dial with.
++func (t *transportCtl) UseTCP(tp *TurnParams) bool {
++	if t.auto {
++		return t.tcp.Load()
++	}
++	return tp.TCPTransport
++}
++
++func (t *transportCtl) Gen() context.Context {
++	t.mu.Lock()
++	defer t.mu.Unlock()
++	return t.gen
++}
++
++// RecentlyRotated: workers use a short retry delay right after a rotation.
++func (t *transportCtl) RecentlyRotated(within time.Duration) bool {
++	last := t.lastRotate.Load()
++	return last != 0 && t.now().UnixNano()-last < int64(within)
++}
++
++func (t *transportCtl) NoteUp(n int) {
++	if n == wgKeepaliveLen && t.checkData {
++		return
++	}
++	if t.pendingSince.Load() == 0 {
++		t.pendingSince.CompareAndSwap(0, t.now().UnixNano())
++	}
++}
++
++func (t *transportCtl) NoteDown() {
++	now := t.now().UnixNano()
++	t.lastDown.Store(now)
++	t.pendingSince.Store(0)
++	t.lastDataEpoch.Store(t.epoch.Load())
++	if t.switches.Load() != 0 {
++		// path works again – reset escalation
++		t.switches.Store(0)
++	}
++}
++
++func (t *transportCtl) NoteReady()  { t.readyInEpoch.Add(1) }
++func (t *transportCtl) NoteConfig() { t.configDone.Store(true) }
++func (t *transportCtl) transportName() string {
++	if t.tcp.Load() {
++		return "tcp"
++	}
++	return "udp"
++}
++
++// check evaluates the state once; returns a reason if a rotation is needed.
++func (t *transportCtl) check(active int32) string {
++	now := t.now().UnixNano()
++	age := time.Duration(now - t.epoch.Load())
++	// escalate grace a bit after repeated failures so we don't flap too fast
++	grace := t.grace + time.Duration(t.switches.Load())*5*time.Second
++	if grace > 60*time.Second {
++		grace = 60 * time.Second
++	}
++	if active == 0 && t.readyInEpoch.Load() == 0 && age > t.readyTimeout+grace-t.grace {
++		return "no-ready-session"
++	}
++	if !t.configDone.Load() && age > t.configTO+grace-t.grace {
++		return "no-config"
++	}
++	if !t.checkData || age < grace {
++		return ""
++	}
++	if p := t.pendingSince.Load(); p != 0 && time.Duration(now-p) > t.stallAfter {
++		return "data-stall"
++	}
++	return ""
++}
++
++// Rotate starts a new transport generation.
++func (t *transportCtl) Rotate(reason string) {
++	now := t.now()
++	from := t.transportName()
++	if !t.auto {
++		if last := t.lastRotate.Load(); last != 0 && now.UnixNano()-last < int64(t.minRotateGap) {
++			return
++		}
++	}
++	if t.auto {
++		t.tcp.Store(!t.tcp.Load())
++	}
++	to := t.transportName()
++	t.switches.Add(1)
++	t.lastRotate.Store(now.UnixNano())
++	t.pendingSince.Store(0)
++	t.readyInEpoch.Store(0)
++	t.epoch.Store(now.UnixNano())
++
++	t.mu.Lock()
++	old := t.genCancel
++	t.gen, t.genCancel = context.WithCancel(context.Background())
++	t.mu.Unlock()
++	old()
++
++	if t.auto {
++		log.Printf("[ТРАНСПОРТ] %s: путь не передаёт данные, переключаюсь %s → %s", reason, from, to)
++	} else {
++		log.Printf("[ТРАНСПОРТ] %s: путь не передаёт данные, переподключаю сессии (%s)", reason, to)
++	}
++	t.emit(fmt.Sprintf("TRANSPORT|%s|%s|%s", from, to, reason))
++}
++
++func (t *transportCtl) Run(ctx context.Context, stats *Stats, pause *int32) {
++	tk := time.NewTicker(time.Second)
++	defer tk.Stop()
++	for {
++		select {
++		case <-ctx.Done():
++			return
++		case <-tk.C:
++		}
++		if pause != nil && atomic.LoadInt32(pause) != 0 {
++			// doze: don't judge the path while paused
++			t.pendingSince.Store(0)
++			t.epoch.Store(t.now().UnixNano())
++			continue
++		}
++		if r := t.check(stats.ActiveConnections.Load()); r != "" {
++			t.Rotate(r)
++		}
++	}
++}
+diff --git a/go_client/liveness_test.go b/go_client/liveness_test.go
+new file mode 100644
+index 0000000..a50b031
+--- /dev/null
++++ b/go_client/liveness_test.go
+@@ -0,0 +1,115 @@
++package main
++
++import (
++	"strings"
++	"testing"
++	"time"
++)
++
++type fakeClock struct{ t time.Time }
++
++func (f *fakeClock) now() time.Time      { return f.t }
++func (f *fakeClock) add(d time.Duration) { f.t = f.t.Add(d) }
++func newTestCtl(auto, tcp bool) (*transportCtl, *fakeClock, *[]string) {
++	c := &fakeClock{t: time.Unix(1000, 0)}
++	t := newTransportCtl()
++	t.now = c.now
++	var out []string
++	t.emit = func(s string) { out = append(out, s) }
++	t.Configure(auto, tcp, true)
++	return t, c, &out
++}
++
++func TestDataStallFlipsToTCP(t *testing.T) {
++	c, clk, out := newTestCtl(true, false)
++	c.NoteReady()
++	c.NoteConfig()
++	clk.add(25 * time.Second)
++	c.NoteUp(148) // handshake initiation, never answered
++	clk.add(10 * time.Second)
++	if r := c.check(16); r != "" {
++		t.Fatalf("too early: %q", r)
++	}
++	clk.add(9 * time.Second)
++	r := c.check(16)
++	if r != "data-stall" {
++		t.Fatalf("want data-stall, got %q", r)
++	}
++	gen := c.Gen()
++	c.Rotate(r)
++	if !c.UseTCP(&TurnParams{}) {
++		t.Fatal("expected TCP after rotation")
++	}
++	if gen.Err() == nil {
++		t.Fatal("old generation must be cancelled")
++	}
++	if len(*out) != 1 || !strings.HasPrefix((*out)[0], "TRANSPORT|udp|tcp|data-stall") {
++		t.Fatalf("emit: %v", *out)
++	}
++}
++
++func TestKeepaliveAndRepliesDoNotStall(t *testing.T) {
++	c, clk, _ := newTestCtl(true, false)
++	c.NoteReady()
++	c.NoteConfig()
++	for i := 0; i < 10; i++ {
++		clk.add(25 * time.Second)
++		c.NoteUp(wgKeepaliveLen) // persistent keepalive, no reply expected
++		if r := c.check(16); r != "" {
++			t.Fatalf("idle tunnel flagged: %q", r)
++		}
++	}
++	c.NoteUp(1200)
++	clk.add(5 * time.Second)
++	c.NoteDown()
++	clk.add(60 * time.Second)
++	if r := c.check(16); r != "" {
++		t.Fatalf("answered traffic flagged: %q", r)
++	}
++}
++
++func TestNoReadyAndNoConfig(t *testing.T) {
++	c, clk, _ := newTestCtl(true, false)
++	clk.add(31 * time.Second)
++	if r := c.check(0); r != "no-ready-session" {
++		t.Fatalf("got %q", r)
++	}
++	c2, clk2, _ := newTestCtl(true, false)
++	c2.NoteReady()
++	clk2.add(41 * time.Second)
++	if r := c2.check(5); r != "no-config" {
++		t.Fatalf("got %q", r)
++	}
++}
++
++func TestFixedModeOnlyReconnects(t *testing.T) {
++	c, clk, out := newTestCtl(false, false)
++	tp := &TurnParams{TCPTransport: false}
++	c.Rotate("data-stall")
++	if c.UseTCP(tp) {
++		t.Fatal("fixed UDP must stay UDP")
++	}
++	clk.add(10 * time.Second)
++	c.Rotate("data-stall") // rate-limited
++	if len(*out) != 1 {
++		t.Fatalf("rate limit broken: %v", *out)
++	}
++	clk.add(40 * time.Second)
++	c.Rotate("data-stall")
++	if len(*out) != 2 {
++		t.Fatalf("expected second rotation: %v", *out)
++	}
++}
++
++func TestRawModeSkipsDataCheck(t *testing.T) {
++	c, clk, _ := newTestCtl(true, false)
++	c.checkData = false
++	c.NoteReady()
++	c.NoteConfig()
++	clk.add(25 * time.Second)
++	c.NoteUp(100)
++	clk.add(60 * time.Second)
++	if r := c.check(3); r != "" {
++		t.Fatalf("raw mode flagged: %q", r)
++	}
++}
+diff --git a/go_client/main.go b/go_client/main.go
+index 108af15..755902d 100644
+--- a/go_client/main.go
++++ b/go_client/main.go
+@@ -184,6 +184,8 @@ func main() {
+ 	socksPass := flag.String("socks-pass", "", "пароль SOCKS5")
+ 	noDTLS := flag.Bool("notls", false, "прямой режим: RTP-obfs AEAD без DTLS поверх TURN (нужен сервер с -listen-direct)")
+ 	turnTCP := flag.Bool("turn-tcp", false, "соединяться с TURN-relay по TCP вместо UDP (обход UDP-душения на некоторых сетях, напр. Ростелеком)")
++	turnAuto := flag.Bool("turn-auto", false, "авто-фолбэк UDP<->TCP до TURN, если сессии подняты, но данные не идут (nox)")
++	noLiveness := flag.Bool("no-liveness", false, "отключить детектор зависшего пути (nox)")
+ 	tunFdSock := flag.String("tun-fd-sock", "", "unix-сокет для получения TUN fd от Android (только -mode rawtun)")
+ 
+ 	flag.Parse()
+@@ -282,6 +284,8 @@ func main() {
+ 		TCPTransport: *turnTCP,
+ 	}
+ 
++	tctl.Configure(*turnAuto, *turnTCP, activeConnMode != "rawtun")
++
+ 	if *pingOnly {
+ 		var lastErr error
+ 		for i, hash := range hashes {
+@@ -342,7 +346,9 @@ func main() {
+ 	log.Printf("[КЛИЕНТ] Воркеров: %d (групп: %d, по %d)", *numW, numGroups, workersPerGroup)
+ 	log.Printf("[КЛИЕНТ] Хешей: %d", len(hashes))
+ 	log.Printf("[КЛИЕНТ] Слушаю: %s | Пир: %s", *listen, *peerAddr)
+-	if *turnTCP {
++	if *turnAuto {
++		log.Printf("[КЛИЕНТ] TURN-транспорт: авто (старт %s, фолбэк при зависании)", tctl.transportName())
++	} else if *turnTCP {
+ 		log.Printf("[КЛИЕНТ] TURN-транспорт: TCP")
+ 	} else {
+ 		log.Printf("[КЛИЕНТ] TURN-транспорт: UDP")
+@@ -367,6 +373,9 @@ func main() {
+ 		close(shutdownCh)
+ 	}()
+ 	go stats.RunLoop(shutdownCh)
++	if !*noLiveness {
++		go tctl.Run(ctx, stats, &pauseFlag)
++	}
+ 
+ 	var disp *Dispatcher
+ 	if activeConnMode == "rawtun" {
+diff --git a/go_client/session.go b/go_client/session.go
+index 91715e2..6b744c9 100644
+--- a/go_client/session.go
++++ b/go_client/session.go
+@@ -192,13 +192,19 @@ func RunSession(
+ 	}
+ 	turnAddr := net.JoinHostPort(urlhost, urlport)
+ 
+-	turnConn, turnConnCloser, err := dialTURNConn(turnAddr, tp.TCPTransport)
++	genCtx := tctl.Gen()
++	useTCP := tctl.UseTCP(tp)
++	turnConn, turnConnCloser, err := dialTURNConn(turnAddr, useTCP)
+ 	if err != nil {
+ 		return false, err
+ 	}
+ 	defer turnConnCloser.Close()
++	// Transport rotation (liveness.go) must also abort sessions stuck in
++	// Allocate/handshake: closing the TURN socket unblocks them.
++	stopGenEarly := context.AfterFunc(genCtx, func() { _ = turnConnCloser.Close() })
++	defer stopGenEarly()
+ 
+-	if tp.TCPTransport {
++	if useTCP {
+ 		log.Printf("[СЕССИЯ #%d] TURN TCP (%s)", sessionID, turnAddr)
+ 	} else {
+ 		log.Printf("[СЕССИЯ #%d] TURN UDP (%s)", sessionID, turnAddr)
+@@ -271,6 +277,8 @@ func RunSession(
+ 
+ 	sessCtx, sessCancel := context.WithCancel(ctx)
+ 	defer sessCancel()
++	stopGen := context.AfterFunc(genCtx, sessCancel)
++	defer stopGen()
+ 
+ 	// Keepalive goroutine (TURN binding request)
+ 	var sessionWg sync.WaitGroup
+@@ -474,6 +482,7 @@ func RunSession(
+ 			select {
+ 			case configCh <- conf:
+ 				configDelivered = true
++				tctl.NoteConfig()
+ 				log.Printf("[ВОРКЕР #%d] RAW-конфиг получен (ip=%s)", sessionID, ip)
+ 			default:
+ 				configDelivered = true
+@@ -494,6 +503,7 @@ func RunSession(
+ 			select {
+ 			case configCh <- conf:
+ 				configDelivered = true
++				tctl.NoteConfig()
+ 				log.Printf("[ВОРКЕР #%d] Конфиг получен", sessionID)
+ 			default:
+ 				configDelivered = true
+@@ -509,6 +519,7 @@ func RunSession(
+ 	}
+ 
+ 	log.Printf("[ВОРКЕР #%d] [READY] Туннель готов к работе ✓", sessionID)
++	tctl.NoteReady()
+ 
+ 	// Регистрация в диспетчере
+ 	slot := &WorkerSlot{
+-- 
+2.47.3
+

@@ -21,6 +21,15 @@ type Qwdtt struct {
 	GoDNS     string   `json:"go_dns,omitempty"`
 	Obfs      string   `json:"obfs,omitempty"`
 	TurnTCP   bool     `json:"turn_tcp,omitempty"`
+	// Transport: "" / "auto" — start on UDP (or TCP when TurnTCP) and let
+	// qwdtt switch UDP<->TCP by itself when the path stops passing data;
+	// "udp" / "tcp" — pinned, no switching.
+	Transport string `json:"transport,omitempty"`
+}
+
+// AutoTransport reports whether qwdtt may switch UDP<->TCP on its own.
+func (q Qwdtt) AutoTransport() bool {
+	return q.Transport != "udp" && q.Transport != "tcp"
 }
 
 const QwdttType = "_qwdtt"
@@ -151,6 +160,14 @@ func ParseQwdtt(link string) (Qwdtt, error) {
 		q.Obfs = o
 	}
 	q.TurnTCP = truthy(g("turn_tcp", "tcp"))
+	switch t := strings.ToLower(g("transport", "turn")); t {
+	case "tcp":
+		q.Transport, q.TurnTCP = "tcp", true
+	case "udp":
+		q.Transport, q.TurnTCP = "udp", false
+	case "auto":
+		q.Transport = "auto"
+	}
 	q.Name = g("name")
 	if q.Name == "" && frag != "" {
 		q.Name, _ = url.QueryUnescape(frag)
@@ -180,6 +197,13 @@ func QwdttFromOutbound(raw []byte) (Qwdtt, error) {
 }
 
 func (q Qwdtt) RelayArgs(deviceID, goDNS string) []string {
+	return q.LaunchArgs(deviceID, goDNS, false, false)
+}
+
+// LaunchArgs builds the qwdtt command line. auto=true is only valid for a
+// libqwdtt built with third_party/qwdtt patches (-turn-auto flag);
+// preferTCP starts on TCP (link turn_tcp=1, or TCP learned for this server).
+func (q Qwdtt) LaunchArgs(deviceID, goDNS string, auto, preferTCP bool) []string {
 	obfs := q.Obfs
 	if obfs == "" {
 		obfs = "audio"
@@ -187,10 +211,31 @@ func (q Qwdtt) RelayArgs(deviceID, goDNS string) []string {
 	a := []string{"-peer", q.Peer, "-vk", strings.Join(q.Hashes, ","), "-password", q.Password, "-device-id", deviceID,
 		"-n", strconv.Itoa(q.EffectiveWorkers()), "-listen", fmt.Sprintf("127.0.0.1:%d", q.LocalPort), "-mode", "vpn",
 		"-vk-auth", "anonymous", "-vk-anon-path", "vkcalls", "-captcha-mode", "rjs", "-go-dns", goDNS, "-obfs", obfs}
-	if q.TurnTCP {
+	tcp := q.TurnTCP
+	if auto && q.AutoTransport() {
+		tcp = tcp || preferTCP
+		a = append(a, "-turn-auto")
+	}
+	if tcp {
 		a = append(a, "-turn-tcp")
 	}
 	return a
+}
+
+// QwdttTransportLine parses qwdtt's "TRANSPORT|from|to|reason" stdout line.
+func QwdttTransportLine(l string) (to, reason string, ok bool) {
+	l = strings.TrimSpace(l)
+	if !strings.HasPrefix(l, "TRANSPORT|") {
+		return "", "", false
+	}
+	p := strings.Split(l, "|")
+	if len(p) < 3 || (p[2] != "tcp" && p[2] != "udp") {
+		return "", "", false
+	}
+	if len(p) > 3 {
+		reason = p[3]
+	}
+	return p[2], reason, true
 }
 
 func (q Qwdtt) PingArgs(goDNS string) []string {
