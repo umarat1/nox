@@ -1,5 +1,5 @@
-// 2.2.0: Android has no top bar; МТС, theme, mail and settings sit in the subscription
-// card (or a small glass card when there is no subscription). Shots of the new screen.
+// 2.2.1: Android has no top bar; МТС, mail and settings sit in the connection card's
+// top-right corner (theme button removed). The list menu has no header, sort or view.
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -35,6 +35,7 @@ Future<NoxController> _app(
   String status = 'connected',
   bool empty = false,
   String style = 'timer',
+  String? name,
 }) async {
   t.view.physicalSize = _size * 2.625;
   t.view.devicePixelRatio = 2.625;
@@ -55,6 +56,8 @@ Future<NoxController> _app(
       ..clear()
       ..addAll(realServers());
     api.selected = 'm3';
+    if (name != null)
+      api.servers.firstWhere((e) => e['id'] == 'm3')['name'] = name;
   }
   final c = NoxController(api);
   await c.refresh();
@@ -86,89 +89,124 @@ void main() {
     }
   });
 
-  testWidgets('no top bar: no wordmark, buttons in the subscription card', (
-    t,
-  ) async {
-    final c = await _app(t);
-    expect(find.text('nox'), findsNothing);
-    expect(find.byTooltip('Свернуть шапку'), findsNothing);
-    final tools = find.byKey(const Key('card-tools'));
-    expect(tools, findsOneWidget);
-    expect(
-      find.descendant(of: find.byKey(TourKeys.sub), matching: tools),
-      findsOneWidget,
-    );
-    for (final k in [TourKeys.theme, TourKeys.mail, TourKeys.settings]) {
-      expect(
-        find.descendant(of: tools, matching: find.byKey(k)),
-        findsOneWidget,
-      );
-    }
-    // the connection card is now first, right under the safe area
-    final hero = t.getRect(find.text('ПОДКЛЮЧЕНО').first);
-    expect(hero.top, lessThan(80));
-    final e = t.takeException();
-    if (e != null) dumpOverflow(t);
-    expect(e, isNull);
-    await expectLater(
-      find.byType(NoxApp),
-      matchesGoldenFile('shots/220-main.png'),
-    );
-    // theme still cycles
-    final before = c.settings['theme'];
-    await t.tap(find.byKey(TourKeys.theme));
-    for (var i = 0; i < 6; i++) {
-      await t.pump(const Duration(milliseconds: 60));
-    }
-    expect(c.settings['theme'], isNot(before));
-  });
-
-  testWidgets('settings opens from the card', (t) async {
-    await _app(t);
-    await t.tap(find.byKey(TourKeys.settings));
+  Future<void> settle(WidgetTester t) async {
     for (var i = 0; i < 10; i++) {
       await t.pump(const Duration(milliseconds: 60));
     }
-    expect(find.byType(BottomSheet), findsWidgets);
-  });
+  }
 
-  testWidgets('collapsed subscription keeps the buttons', (t) async {
-    await _app(t);
-    await t.tap(find.byTooltip('Свернуть подписку'));
-    for (var i = 0; i < 6; i++) {
-      await t.pump(const Duration(milliseconds: 60));
+  void corner(WidgetTester t) {
+    final k = find.byKey(const Key('hero-corner'));
+    expect(k, findsOneWidget);
+    for (final x in [TourKeys.mail, TourKeys.settings]) {
+      expect(find.descendant(of: k, matching: find.byKey(x)), findsOneWidget);
     }
-    expect(find.byTooltip('Развернуть подписку'), findsOneWidget);
-    expect(find.byKey(const Key('card-tools')), findsOneWidget);
-    expect(t.takeException(), isNull);
-    await expectLater(
-      find.byType(NoxApp),
-      matchesGoldenFile('shots/220-main-collapsed.png'),
-    );
-  });
+    expect(find.descendant(of: k, matching: find.text('МТС')), findsOneWidget);
+    // top-right: right edge near the card edge, above the middle of the hero
+    final r = t.getRect(k);
+    expect(r.right, greaterThan(_size.width - 40));
+    expect(r.top, lessThan(60));
+    expect(find.byKey(TourKeys.theme), findsNothing);
+    expect(find.byKey(const Key('card-tools')), findsNothing);
+  }
 
-  testWidgets('no subscription: buttons in their own glass card', (t) async {
-    await _app(t, status: 'disconnected', empty: true);
-    expect(find.byKey(const Key('card-tools')), findsOneWidget);
-    expect(find.byKey(TourKeys.settings), findsOneWidget);
-    expect(t.takeException(), isNull);
-    await expectLater(
-      find.byType(NoxApp),
-      matchesGoldenFile('shots/220-main-empty.png'),
-    );
-  });
-
-  for (final s in ['ring', 'compact', 'classic']) {
-    testWidgets('hero style $s: buttons in the card, no overflow', (t) async {
-      await _app(t, style: s);
-      expect(find.byKey(const Key('card-tools')), findsOneWidget);
+  for (final st in ['connected', 'disconnected']) {
+    testWidgets('corner buttons, no theme, collapse kept — $st', (t) async {
+      await _app(t, status: st);
+      expect(find.text('nox'), findsNothing);
+      corner(t);
+      expect(find.byTooltip('Свернуть подписку'), findsOneWidget);
       final e = t.takeException();
       if (e != null) dumpOverflow(t);
       expect(e, isNull);
       await expectLater(
         find.byType(NoxApp),
-        matchesGoldenFile('shots/220-main-$s.png'),
+        matchesGoldenFile('shots/221-main-$st.png'),
       );
     });
   }
+
+  testWidgets('settings and mail open from the corner', (t) async {
+    await _app(t);
+    await t.tap(find.byKey(TourKeys.settings));
+    await settle(t);
+    expect(find.byType(BottomSheet), findsWidgets);
+    expect(find.text('Тема'), findsWidgets);
+    Navigator.of(t.element(find.byType(BottomSheet).first)).pop();
+    await settle(t);
+    await t.tap(find.byKey(TourKeys.mail));
+    await settle(t);
+    expect(t.takeException(), isNull);
+  });
+
+  testWidgets('subscription collapse still works', (t) async {
+    await _app(t);
+    await t.tap(find.byTooltip('Свернуть подписку'));
+    await settle(t);
+    expect(find.byTooltip('Развернуть подписку'), findsOneWidget);
+    corner(t);
+    expect(t.takeException(), isNull);
+  });
+
+  testWidgets('no subscription: corner still there, no tools card', (t) async {
+    await _app(t, status: 'disconnected', empty: true);
+    corner(t);
+    expect(t.takeException(), isNull);
+  });
+
+  const long = '🇨🇭 Швейцария очень длинное имя сервера qwdtt через прокси';
+  for (final s in ['timer', 'ring', 'compact', 'classic']) {
+    testWidgets('style $s: long name is cut, never under the buttons', (
+      t,
+    ) async {
+      await _app(t, style: s, name: long);
+      corner(t);
+      final e = t.takeException();
+      if (e != null) dumpOverflow(t);
+      expect(e, isNull);
+      final k = t.getRect(find.byKey(const Key('hero-corner')));
+      final txt = find.byWidgetPredicate(
+        (w) => w is Text && (w.data ?? '').contains('очень длинное'),
+      );
+      expect(txt, findsWidgets);
+      for (final el in txt.evaluate()) {
+        final r = t.getRect(find.byWidget(el.widget));
+        expect(r.overlaps(k), isFalse, reason: 'name under the corner in $s');
+      }
+      await expectLater(
+        find.byType(NoxApp),
+        matchesGoldenFile('shots/221-main-$s.png'),
+      );
+    });
+  }
+
+  testWidgets('list menu: no header, sort or view; the rest stays', (t) async {
+    final c = await _app(t);
+    await t.tap(find.byKey(TourKeys.more).first);
+    await settle(t);
+    expect(find.text('Список'), findsNothing);
+    expect(find.textContaining('Сортировка'), findsNothing);
+    expect(find.textContaining(RegExp(r'^Вид')), findsNothing);
+    expect(find.textContaining('пинг:'), findsNothing);
+    for (final x in [
+      'Скрыть нерабочие',
+      'Скрывать дубликаты',
+      'Выбрать самый быстрый',
+      'Удалить нерабочие',
+      'Тип пинга',
+      'Журнал',
+    ]) {
+      expect(find.textContaining(x), findsWidgets, reason: x);
+    }
+    expect(c.pref('view', 'list'), 'list');
+    await expectLater(
+      find.byType(NoxApp),
+      matchesGoldenFile('shots/221-list-menu.png'),
+    );
+    // a toggle still works
+    final before = c.flag('dedup', true);
+    await t.tap(find.textContaining('Скрывать дубликаты').last);
+    await settle(t);
+    expect(c.flag('dedup', true), isNot(before));
+  });
 }

@@ -11,6 +11,15 @@ import (
 
 func fileExists(p string) bool { _, err := os.Stat(p); return err == nil }
 
+// withKV copies m and sets k=v.
+func withKV(m map[string]any, k string, v any) map[string]any {
+	o := map[string]any{k: v}
+	for a, b := range m {
+		o[a] = b
+	}
+	return o
+}
+
 type Settings struct {
 	Mode       string `json:"mode"` // "tun" | "proxy"
 	DNS        string `json:"dns"`  // auto|cloudflare|google|quad9|adguard|yandex|dnsai|comss|xbox|controld|mullvad|nextdns|custom
@@ -62,6 +71,14 @@ func DefaultSettings() Settings {
 // ivi.ru covers api/dfs/rocket/player subdomains. ivicdn.tv and tivision.ru are the player CDN
 // (ASN IVI); video segments are served from *.dfs.ivi.ru.
 var IviSuffixes = []string{"ivi.ru", "ivi.tv", "ivicdn.tv", "tivision.ru"}
+
+// AdSuffixes (2.2.1): Google/YouTube ad and ad-measurement hosts blocked with «Блокировка
+// рекламы» even if the ads rule set fails to load. They are separate from the hosts that
+// serve video (youtube.com, googlevideo.com, ytimg.com, ggpht.com), which are never blocked:
+// YouTube's in-stream ads come from those same hosts, so they cannot be told apart by domain.
+var AdSuffixes = []string{"doubleclick.net", "googlesyndication.com", "googleadservices.com",
+	"adservice.google.com", "ads.youtube.com", "pagead.l.google.com", "partnerad.l.google.com",
+	"googletagservices.com", "2mdn.net", "app-measurement.com"}
 
 // IviProcesses: desktop player binaries. Android uses package exclusion (ru.ivi.*) instead.
 var IviProcesses = []string{"ivi.exe", "Ivi.exe", "IVI.exe", "ivi", "Ivi"}
@@ -216,6 +233,12 @@ func BuildConfig(proxy map[string]any, s Settings, clashAddr string, ruleDir str
 	ds["detour"] = "proxy"
 	servers := []any{ds, map[string]any{"type": "local", "tag": "local"}}
 	dnsRules := []any{}
+	if s.BlockAds {
+		// 2.2.1: ad hosts get NXDOMAIN, so blocking holds for direct and proxied apps alike
+		// and apps give up at once instead of waiting on a rejected connection.
+		nx := map[string]any{"action": "predefined", "rcode": "NXDOMAIN"}
+		dnsRules = append(dnsRules, withKV(nx, "domain_suffix", AdSuffixes), withKV(nx, "rule_set", "ads"))
+	}
 	// ivi is resolved on the direct resolver so the player does not get a tunnel address.
 	dnsRules = append(dnsRules, map[string]any{"domain_suffix": IviSuffixes, "server": "local"})
 	if pd := cleanDomains(s.ProxyDomains); len(pd) > 0 {
@@ -248,7 +271,9 @@ func BuildConfig(proxy map[string]any, s Settings, clashAddr string, ruleDir str
 	rules = append(rules, map[string]any{"domain_suffix": IviSuffixes, "outbound": "direct"})
 	rules = append(rules, map[string]any{"process_name": IviProcesses, "outbound": "direct"})
 	if s.BlockAds {
-		rules = append(rules, map[string]any{"rule_set": "ads", "action": "reject"})
+		// ahead of every direct rule (user, RU, YouTube-direct subscriptions): applies to both paths
+		rules = append(rules, map[string]any{"domain_suffix": AdSuffixes, "action": "reject"},
+			map[string]any{"rule_set": "ads", "action": "reject"})
 	}
 	if pd := cleanDomains(s.ProxyDomains); len(pd) > 0 {
 		rules = append(rules, map[string]any{"domain_suffix": pd, "outbound": "proxy"})
