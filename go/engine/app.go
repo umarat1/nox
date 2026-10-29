@@ -1396,7 +1396,17 @@ func (a *App) startQwdtt(ctx context.Context, q core.Qwdtt) (map[string]any, err
 	}
 	dns := pickDNS(q)
 	a.log(fmt.Sprintf("qWDTT: старт, потоков %d, DNS %s", q.EffectiveWorkers(), dns))
-	args := q.RelayArgs(dev, dns)
+	auto := qwdttAutoSupported()
+	memo := qwMemo(a.dataDir)
+	preferTCP := auto && q.AutoTransport() && memo.PreferTCP(q.Peer)
+	args := q.LaunchArgs(dev, dns, auto, preferTCP)
+	if auto && q.AutoTransport() {
+		start := "UDP"
+		if q.TurnTCP || preferTCP {
+			start = "TCP"
+		}
+		a.log("qWDTT: транспорт авто (старт " + start + ", переключение UDP↔TCP при зависании)")
+	}
 	if CaptchaUI {
 		// "auto": qwdtt's Go solver first, then a manual WebView request the UI shows
 		for i := range args {
@@ -1430,6 +1440,11 @@ func (a *App) startQwdtt(ctx context.Context, q core.Qwdtt) (map[string]any, err
 		for sc.Scan() {
 			l := sc.Text()
 			if a.qwdttCaptchaLine(l) {
+				continue
+			}
+			if to, why, ok := core.QwdttTransportLine(l); ok {
+				memo.Note(q.Peer, to)
+				a.log(fmt.Sprintf("qWDTT: путь не передавал данные (%s) — переключено на TURN-%s", why, strings.ToUpper(to)))
 				continue
 			}
 			for _, s := range secrets {
