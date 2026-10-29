@@ -339,3 +339,177 @@ class _UpdateDialogState extends State<UpdateDialog> {
     );
   }
 }
+
+/// 2.1.7: «Доступна версия X» with the changelog (latest.json `changelog` → `notes`).
+/// Shown once per version on launch (and from the envelope / settings). When the install
+/// is below latest.json `minSupported` the engine marks the update `mandatory`: no «Позже»,
+/// back / tap outside do nothing, and it comes back until the update is installed.
+bool _offerOpen = false;
+final Set<String> _offered = {};
+
+bool get updateOfferOpen => _offerOpen;
+
+Future<void> offerUpdate(BuildContext context, NoxController c, Pal p) async {
+  final u = c.s['update'];
+  if (u is! Map || _offerOpen) return;
+  final m = u.cast<String, dynamic>();
+  final v = '${m['versionName'] ?? ''}';
+  final mandatory = m['mandatory'] == true;
+  _offered.add(v);
+  _offerOpen = true;
+  try {
+    final go = await showDialog<bool>(
+      context: context,
+      barrierDismissible: !mandatory,
+      builder: (_) => UpdateOfferDialog(
+        p: p,
+        version: v,
+        current: '${c.s['version'] ?? ''}',
+        notes: '${m['notes'] ?? ''}',
+        mandatory: mandatory,
+      ),
+    );
+    if (!context.mounted) return;
+    if (go == true) {
+      await openUpdate(context, c, p);
+    } else if (!mandatory) {
+      await c.call('HideUpdate', [v]);
+      await c.refresh();
+    }
+  } finally {
+    _offerOpen = false;
+  }
+  // A mandatory update re-offers itself after the progress dialog closes.
+  if (mandatory && context.mounted) {
+    await c.refresh();
+    if (context.mounted && c.s['update'] is Map) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (context.mounted) offerUpdate(context, c, p);
+      });
+    }
+  }
+}
+
+/// Launch: offer each new version once per app run (mandatory ones always).
+void maybeOfferUpdate(BuildContext context, NoxController c, Pal p) {
+  final u = c.s['update'];
+  if (u is! Map || _offerOpen) return;
+  final v = '${u['versionName'] ?? ''}';
+  // once per version per run; a mandatory one re-offers itself from offerUpdate()
+  if (_offered.contains(v)) return;
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    if (context.mounted) offerUpdate(context, c, p);
+  });
+}
+
+@visibleForTesting
+void resetUpdateOffers() {
+  _offered.clear();
+  _offerOpen = false;
+}
+
+class UpdateOfferDialog extends StatelessWidget {
+  final Pal p;
+  final String version, current, notes;
+  final bool mandatory;
+  const UpdateOfferDialog({
+    super.key,
+    required this.p,
+    required this.version,
+    required this.current,
+    required this.notes,
+    this.mandatory = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return PopScope(
+      canPop: !mandatory,
+      child: Dialog(
+        backgroundColor: p.hero,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 460, maxHeight: 560),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(22, 20, 22, 14),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    Icon(Icons.system_update_rounded, color: p.acc2, size: 22),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        'Доступна версия $version',
+                        style: TextStyle(
+                          color: p.txt,
+                          fontSize: 18,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  mandatory
+                      ? 'Версия $current больше не поддерживается — обновите приложение, чтобы продолжить.'
+                      : 'Установлена $current',
+                  style: TextStyle(
+                    color: mandatory ? p.amb : p.sub,
+                    fontSize: 12.5,
+                  ),
+                ),
+                if (notes.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  Text(
+                    'Что нового',
+                    style: TextStyle(
+                      color: p.txt,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Flexible(
+                    child: SingleChildScrollView(
+                      child: Text(
+                        notes,
+                        style: TextStyle(
+                          color: p.sub,
+                          fontSize: 13,
+                          height: 1.35,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 16),
+                Wrap(
+                  alignment: WrapAlignment.end,
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    if (!mandatory)
+                      OutlinedButton(
+                        onPressed: () => Navigator.pop(context, false),
+                        child: Text('Позже', style: TextStyle(color: p.txt)),
+                      ),
+                    FilledButton(
+                      autofocus: true,
+                      style: FilledButton.styleFrom(backgroundColor: p.acc),
+                      onPressed: () => Navigator.pop(context, true),
+                      child: const Text('Обновить'),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}

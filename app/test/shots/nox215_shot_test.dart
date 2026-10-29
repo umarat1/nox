@@ -14,6 +14,7 @@ import 'package:nox/src/home.dart';
 import 'package:nox/src/mock.dart';
 import 'package:nox/src/pair.dart';
 import 'package:nox/src/tour.dart';
+import 'package:nox/src/update_ui.dart';
 
 import '../real_servers.dart';
 import '../ui_util.dart';
@@ -133,6 +134,7 @@ void main() {
       'nox215_shot_test.dart',
     ),
   );
+  setUp(resetUpdateOffers);
   setUpAll(() async {
     await loadFonts();
     final dir =
@@ -239,8 +241,10 @@ void main() {
       },
     );
     expect(c.s['update'], isA<Map>());
-    expect(find.textContaining('Доступна версия'), findsOneWidget);
-    expect(find.text('Обновить'), findsOneWidget);
+    // 2.1.7: the launch dialog with the changelog opens over the banner
+    expect(find.byType(UpdateOfferDialog), findsOneWidget);
+    expect(find.textContaining('Доступна версия'), findsNWidgets(2));
+    expect(find.text('Обновить'), findsNWidgets(2));
     expect(find.byTooltip('Доступно обновление'), findsWidgets);
     expect(find.text('СЕРВЕРЫ'), findsNothing);
   });

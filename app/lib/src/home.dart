@@ -5,7 +5,6 @@ import 'split_apps.dart';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
-import 'package:flutter/gestures.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
@@ -72,6 +71,16 @@ class Home extends StatelessWidget {
                       },
                     ),
                   ),
+                  // 2.1.7: «＋» moved from the top bar to the bottom of the screen (TV keeps it
+                  // in the header for the D-pad).
+                  if (showAddFab(c))
+                    Positioned(
+                      right: 18,
+                      bottom: 18,
+                      child: SafeArea(
+                        child: AddFab(c: c, p: p),
+                      ),
+                    ),
                   if (c.tourOn)
                     Positioned.fill(
                       child: TourOverlay(
@@ -248,6 +257,7 @@ class _BodyState extends State<_Body> {
     // Phone column stays open: a saved collapse and the chip chevron are desktop-only.
     final srvCol = !phone && mobile && c.flag('srvCol', false);
     _scheduleSizeSync(hdrCol, subCol, srvCol);
+    if (c.s['update'] is Map) maybeOfferUpdate(context, c, p);
     final head = <Widget>[
       if (!wide && !srvCol)
         _TopBar(
@@ -573,16 +583,30 @@ class _BodyState extends State<_Body> {
   List<Widget> _serverSlivers(BuildContext context, List<J> list, String view) {
     final h = wide
         ? const EdgeInsets.fromLTRB(14, 0, 14, 14)
-        : const EdgeInsets.fromLTRB(12, 0, 12, 40);
+        : EdgeInsets.fromLTRB(12, 0, 12, showAddFab(c) ? 96 : 40);
     if (list.isEmpty) {
+      // 2.1.7: nothing added yet → a big «Добавить из буфера»; it goes away with the first
+      // subscription/server (a filter that hides everything keeps the plain hint).
+      final none = c.subs.isEmpty && c.servers.isEmpty;
       return [
         SliverToBoxAdapter(
           child: Padding(
-            padding: const EdgeInsets.all(40),
-            child: Text(
-              'Нет серверов. Нажмите «＋», чтобы добавить подписку или ссылку (vless, trojan, ss, hy2, tuic, qwdtt, sstp).',
-              textAlign: TextAlign.center,
-              style: TextStyle(color: p.sub),
+            padding: EdgeInsets.fromLTRB(28, none ? 28 : 40, 28, 40),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (none) ...[
+                  ClipboardAddButton(c: c, p: p),
+                  const SizedBox(height: 14),
+                ],
+                Text(
+                  none
+                      ? 'Скопируйте ссылку на подписку или сервер (vless, trojan, ss, hy2, tuic, qwdtt, sstp) и нажмите кнопку выше. Другие способы — кнопка «＋» внизу.'
+                      : 'Нет серверов. Нажмите «＋», чтобы добавить подписку или ссылку (vless, trojan, ss, hy2, tuic, qwdtt, sstp).',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: p.sub),
+                ),
+              ],
             ),
           ),
         ),
@@ -1190,18 +1214,20 @@ class _TopBar extends StatelessWidget {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                _GhostBtn(
-                  key: TourKeys.add,
-                  p: p,
-                  icon: Icons.add_rounded,
-                  tip: 'Добавить подписку',
-                  mobile: mobile,
-                  accent: mobile,
-                  onTap: () => addSheet(context, c, p),
-                ),
-                // «МТС прокси» lives next to «+» (Android only)
-                if (isAndroid) ...[
+                if (c.isTv) ...[
+                  _GhostBtn(
+                    key: TourKeys.add,
+                    p: p,
+                    icon: Icons.add_rounded,
+                    tip: 'Добавить подписку',
+                    mobile: mobile,
+                    accent: mobile,
+                    onTap: () => addSheet(context, c, p),
+                  ),
                   SizedBox(width: mobile ? 6 : 2),
+                ],
+                // «МТС прокси» (Android only); «＋» is the bottom button on phones/desktop
+                if (isAndroid) ...[
                   _MtsBtn(
                     p: p,
                     on: c.mtsOn,
@@ -1218,8 +1244,8 @@ class _TopBar extends StatelessWidget {
                       if (on) await mtsApnDialog(context);
                     },
                   ),
+                  SizedBox(width: mobile ? 6 : 2),
                 ],
-                SizedBox(width: mobile ? 6 : 2),
                 _GhostBtn(
                   key: TourKeys.theme,
                   p: p,
@@ -1916,13 +1942,14 @@ class _UpdateBanner extends StatelessWidget {
               style: TextStyle(color: p.acc2, fontWeight: FontWeight.w700),
             ),
           ),
-          TextButton(
-            onPressed: () async {
-              await c.call('HideUpdate', [v]);
-              c.refresh();
-            },
-            child: Text('Позже', style: TextStyle(color: p.sub)),
-          ),
+          if (u['mandatory'] != true)
+            TextButton(
+              onPressed: () async {
+                await c.call('HideUpdate', [v]);
+                c.refresh();
+              },
+              child: Text('Позже', style: TextStyle(color: p.sub)),
+            ),
         ],
       ),
     );
@@ -4138,42 +4165,8 @@ void updateSheet(BuildContext context, NoxController c, Pal p) async {
   final msg = await c.call('CheckUpdateMsg');
   await c.refresh();
   if (!context.mounted) return;
-  final u = c.s['update'];
-  if (u is Map) {
-    final m = u.cast<String, dynamic>();
-    final v = '${m['versionName']}';
-    final notes = '${m['notes'] ?? ''}';
-    sheet(
-      context,
-      p,
-      'Доступна версия $v',
-      (ctx) => [
-        Padding(
-          padding: const EdgeInsets.only(bottom: 8),
-          child: Text(
-            notes.isEmpty ? 'Установлена ${c.s['version']}.' : notes,
-            style: TextStyle(color: p.sub, fontSize: 13),
-          ),
-        ),
-        item(
-          p,
-          'Обновить',
-          onTap: () {
-            Navigator.pop(ctx);
-            openUpdate(context, c, p);
-          },
-        ),
-        item(
-          p,
-          'Позже',
-          onTap: () async {
-            Navigator.pop(ctx);
-            await c.call('HideUpdate', [v]);
-            c.refresh();
-          },
-        ),
-      ],
-    );
+  if (c.s['update'] is Map) {
+    await offerUpdate(context, c, p); // changelog + «Обновить» / «Позже»
   } else {
     toast(context, msg is String ? msg : 'У вас последняя версия');
   }
@@ -4711,7 +4704,13 @@ void settingsSheet(BuildContext context, NoxController c, Pal p) {
         'Проверить обновления',
         onTap: () async {
           final r = await c.call('CheckUpdateMsg');
-          if (ctx.mounted) toast(ctx, '$r');
+          await c.refresh();
+          if (!ctx.mounted) return;
+          if (c.s['update'] is Map) {
+            await offerUpdate(ctx, c, p);
+          } else {
+            toast(ctx, '$r');
+          }
         },
       ),
       Padding(
@@ -7216,7 +7215,7 @@ class _HeroAlt extends StatelessWidget {
                       ),
                     ),
                     SizedBox(height: wide ? 18 : 40),
-                    SlidePill(c: c, p: p),
+                    TapPill(c: c, p: p),
                   ],
                 ),
               ),
@@ -7363,102 +7362,58 @@ class _PillSwitch extends StatelessWidget {
   }
 }
 
-/// Variant 3: slide/tap-to-connect pill.
-/// Swipe right = connect, swipe left = disconnect (also cancels «Подключение…»),
-/// a tap anywhere on the pill toggles. Every action goes through [NoxController.toggle],
-/// the same path as the round power knob (VPN permission, MTS proxy, etc. live in the engine).
-/// 2.1.6: the knob follows the finger and a slow slide counts once it passes 35% of the
-/// track (2.1.5 only reacted to a fast fling, so a normal slide did nothing); the pill
-/// claims the pointer on touch so the vertical home scroll can't steal a diagonal swipe.
-/// Touch hints («Свайп …») on phones; desktop says «Нажмите …». Tests may flip it.
-bool slideHints = !isDesktop;
-
-class SlidePill extends StatefulWidget {
+/// Variant 3 (2.1.7): tap-to-toggle pill on the «Таймер» card. The 2.1.x swipe slider was
+/// too sensitive (it fired while scrolling and missed slow slides), so it is now a plain
+/// button: tap = connect, tap again = disconnect (also cancels «Подключение…»).
+/// Taps are debounced: while a Connect/Disconnect call is in flight, during «Отключение…»
+/// and for [debounce] after the last accepted tap, more taps are ignored. Every action goes
+/// through [NoxController.toggle], the same path as the round power knob.
+class TapPill extends StatefulWidget {
   final NoxController c;
   final Pal p;
-  const SlidePill({super.key, required this.c, required this.p});
+  static Duration debounce = const Duration(milliseconds: 700);
+  const TapPill({super.key, required this.c, required this.p});
   @override
-  State<SlidePill> createState() => SlidePillState();
+  State<TapPill> createState() => TapPillState();
 }
 
-/// Horizontal drag that wins the gesture arena as soon as the finger touches the pill.
-class _PillDrag extends HorizontalDragGestureRecognizer {
-  _PillDrag({super.debugOwner});
-  @override
-  void addAllowedPointer(PointerDownEvent event) {
-    super.addAllowedPointer(event);
-    resolve(GestureDisposition.accepted);
-  }
-
-  @override
-  String get debugDescription => 'pill drag';
-}
-
-class SlidePillState extends State<SlidePill> {
+class TapPillState extends State<TapPill> {
   static const _knob = 42.0, _pad = 5.0;
-  double? _drag; // knob offset from the left while the finger is down
-  double _travel = 0; // total |dx| of this touch (tap if tiny)
-  double _track = 1;
   bool _sent = false;
+  DateTime _last = DateTime.fromMillisecondsSinceEpoch(0);
 
   NoxController get c => widget.c;
 
-  /// Knob sits right while connected or connecting (the user slid it there).
-  bool get _right => c.connected || c.status == 'connecting';
-
   void _toggle() {
-    if (_sent) return;
-    _sent = true;
-    HapticFeedback.lightImpact();
-    c.toggle().whenComplete(() => _sent = false);
-  }
-
-  void _connect() {
-    if (c.status == 'disconnected') _toggle();
-  }
-
-  void _disconnect() {
-    if (c.status != 'disconnected' && c.status != 'disconnecting') _toggle();
-  }
-
-  void _start(DragStartDetails d) {
-    _travel = 0;
-    setState(() => _drag = _right ? _track : 0);
-  }
-
-  void _update(DragUpdateDetails d) {
-    _travel += d.delta.dx.abs();
-    setState(() => _drag = ((_drag ?? 0) + d.delta.dx).clamp(0.0, _track));
-  }
-
-  void _end(DragEndDetails d) {
-    final x = _drag ?? 0, v = d.primaryVelocity ?? 0;
-    setState(() => _drag = null);
-    if (_travel < 8) {
-      _toggle(); // a tap (or a tiny wiggle) anywhere on the pill
+    final now = DateTime.now();
+    if (_sent ||
+        c.status == 'disconnecting' ||
+        now.difference(_last) < TapPill.debounce) {
       return;
     }
-    final fromLeft = !_right;
-    if (fromLeft && (x > _track * .35 || v > 300)) {
-      _connect();
-    } else if (!fromLeft && (x < _track * .65 || v < -300)) {
-      _disconnect();
-    }
+    _sent = true;
+    _last = now;
+    HapticFeedback.lightImpact();
+    c.toggle().whenComplete(() {
+      _sent = false;
+      if (mounted) setState(() {});
+    });
+    setState(() {});
   }
 
   @override
   Widget build(BuildContext context) {
     final p = widget.p;
-    final on = c.connected, wait = c.busy;
-    final hint = c.status == 'connecting'
-        ? (!slideHints
-              ? 'Подключение… нажмите — отмена'
-              : 'Подключение… влево — отмена')
-        : c.status == 'disconnecting'
-        ? 'Отключение…'
-        : !slideHints
-        ? (on ? 'Нажмите — отключить' : 'Нажмите — подключить')
-        : (on ? 'Свайп влево — отключить' : 'Свайп вправо — подключить');
+    final st = c.status, on = c.connected;
+    final wait = c.busy || _sent;
+    final right = on || st == 'connecting';
+    final (String title, String hint) = switch (st) {
+      'connected' => ('Подключено', 'нажмите, чтобы отключить'),
+      'connecting' => ('Подключение…', 'нажмите — отмена'),
+      'disconnecting' => ('Отключение…', ''),
+      _ => ('Отключено', 'нажмите, чтобы подключить'),
+    };
+    final label = hint.isEmpty ? title : '$title · $hint';
     return FocusableActionDetector(
       mouseCursor: SystemMouseCursors.click,
       actions: {
@@ -7471,94 +7426,254 @@ class SlidePillState extends State<SlidePill> {
       },
       child: Semantics(
         button: true,
-        label: hint,
+        toggled: on,
+        label: label,
         onTap: _toggle,
-        child: RawGestureDetector(
+        child: GestureDetector(
           key: TourKeys.power,
           behavior: HitTestBehavior.opaque,
-          gestures: {
-            _PillDrag: GestureRecognizerFactoryWithHandlers<_PillDrag>(
-              () => _PillDrag(debugOwner: this),
-              (r) => r
-                ..dragStartBehavior = DragStartBehavior.down
-                ..onStart = _start
-                ..onUpdate = _update
-                ..onEnd = _end
-                ..onCancel = () => setState(() => _drag = null),
-            ),
-          },
-          child: Container(
+          onTap: _toggle,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 220),
             height: 52,
             padding: const EdgeInsets.all(_pad),
             decoration: BoxDecoration(
-              color: Colors.black.withValues(alpha: .25),
+              color: on
+                  ? p.grn.withValues(alpha: .22)
+                  : wait
+                  ? p.amb.withValues(alpha: .18)
+                  : Colors.black.withValues(alpha: .25),
               borderRadius: BorderRadius.circular(26),
-              border: Border.all(color: Colors.white.withValues(alpha: .18)),
+              border: Border.all(
+                color: on
+                    ? p.grn.withValues(alpha: .55)
+                    : Colors.white.withValues(alpha: .18),
+              ),
             ),
-            child: LayoutBuilder(
-              builder: (ctx, bc) {
-                _track = (bc.maxWidth - _knob).clamp(1.0, double.infinity);
-                final x = _drag ?? (_right ? _track : 0);
-                return Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 46),
-                      child: Center(
-                        child: Text(
-                          hint,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            color: Colors.white.withValues(alpha: .85),
-                            fontSize: 13.5,
-                            fontWeight: FontWeight.w700,
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 46),
+                  child: Center(
+                    child: Text.rich(
+                      TextSpan(
+                        children: [
+                          TextSpan(
+                            text: title,
+                            style: const TextStyle(fontWeight: FontWeight.w800),
                           ),
-                        ),
-                      ),
-                    ),
-                    AnimatedPositioned(
-                      duration: _drag == null
-                          ? const Duration(milliseconds: 260)
-                          : Duration.zero,
-                      curve: Curves.easeOutCubic,
-                      left: x,
-                      top: 0,
-                      child: Container(
-                        width: _knob,
-                        height: _knob,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: Colors.white,
-                          boxShadow: [
-                            BoxShadow(
-                              color: (wait ? p.amb : p.acc).withValues(
-                                alpha: .6,
+                          if (hint.isNotEmpty)
+                            TextSpan(
+                              text: '\n$hint',
+                              style: TextStyle(
+                                fontSize: 11.5,
+                                height: 1.25,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.white.withValues(alpha: .7),
                               ),
-                              blurRadius: 14,
                             ),
-                          ],
-                        ),
-                        child: wait
-                            ? Padding(
-                                padding: const EdgeInsets.all(11),
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2.4,
-                                  color: p.amb,
-                                ),
-                              )
-                            : Icon(
-                                on
-                                    ? Icons.power_settings_new_rounded
-                                    : Icons.chevron_right_rounded,
-                                color: p.acc,
-                                size: 24,
-                              ),
+                        ],
+                      ),
+                      key: const Key('pill-label'),
+                      textAlign: TextAlign.center,
+                      textScaler: MediaQuery.textScalerOf(
+                        context,
+                      ).clamp(maxScaleFactor: 1.15),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: .92),
+                        fontSize: 13.5,
                       ),
                     ),
-                  ],
-                );
-              },
+                  ),
+                ),
+                AnimatedAlign(
+                  duration: const Duration(milliseconds: 260),
+                  curve: Curves.easeOutCubic,
+                  alignment: right
+                      ? Alignment.centerRight
+                      : Alignment.centerLeft,
+                  child: Container(
+                    width: _knob,
+                    height: _knob,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: Colors.white,
+                      boxShadow: [
+                        BoxShadow(
+                          color: (wait ? p.amb : (on ? p.grn : p.acc))
+                              .withValues(alpha: .6),
+                          blurRadius: 14,
+                        ),
+                      ],
+                    ),
+                    child: wait
+                        ? Padding(
+                            padding: const EdgeInsets.all(11),
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2.4,
+                              color: p.amb,
+                            ),
+                          )
+                        : Icon(
+                            Icons.power_settings_new_rounded,
+                            color: on ? p.grn : p.acc,
+                            size: 24,
+                          ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 2.1.7: the bottom «＋» (was the first top-bar button). Not on TV, not in the text panel.
+bool showAddFab(NoxController c) =>
+    !c.isTv && c.state != null && c.pref('panel', '') != 'text';
+
+class AddFab extends StatelessWidget {
+  final NoxController c;
+  final Pal p;
+  const AddFab({super.key, required this.c, required this.p});
+  @override
+  Widget build(BuildContext context) => Tooltip(
+    message: 'Добавить подписку',
+    child: Semantics(
+      button: true,
+      label: 'Добавить подписку',
+      child: Material(
+        key: TourKeys.add,
+        type: MaterialType.transparency,
+        shape: const CircleBorder(),
+        clipBehavior: Clip.antiAlias,
+        child: Ink(
+          width: 58,
+          height: 58,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            gradient: accentGradient(p),
+            border: Border.all(color: Colors.white.withValues(alpha: .22)),
+            boxShadow: [
+              BoxShadow(
+                color: p.acc.withValues(alpha: .45),
+                blurRadius: 18,
+                offset: const Offset(0, 6),
+              ),
+            ],
+          ),
+          child: InkWell(
+            customBorder: const CircleBorder(),
+            onTap: () => addSheet(context, c, p),
+            child: const Icon(Icons.add_rounded, color: Colors.white, size: 30),
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
+/// Shared clipboard import (empty-state button): same engine call as «Добавить» in addSheet.
+Future<void> importFromClipboard(BuildContext context, NoxController c) async {
+  final d = await Clipboard.getData('text/plain');
+  final text = (d?.text ?? '').trim();
+  if (!context.mounted) return;
+  if (text.isEmpty) {
+    toast(
+      context,
+      'Буфер обмена пуст — скопируйте ссылку на подписку или сервер',
+    );
+    return;
+  }
+  final r = await c.call('Import', [text]);
+  await c.refresh();
+  if (!context.mounted) return;
+  if (r is Map && r['ok'] == true) {
+    final errs = (r['errors'] as List?)?.length ?? 0;
+    toast(context, '${r['msg']}${errs > 0 ? ' · ошибок: $errs' : ''}');
+  } else {
+    final msg = r is Map && '${r['msg'] ?? ''}'.isNotEmpty
+        ? '${r['msg']}'
+        : (c.fatal ?? 'Не удалось добавить: в буфере нет ссылки');
+    toast(context, msg);
+  }
+}
+
+class ClipboardAddButton extends StatefulWidget {
+  final NoxController c;
+  final Pal p;
+  const ClipboardAddButton({super.key, required this.c, required this.p});
+  @override
+  State<ClipboardAddButton> createState() => _ClipboardAddButtonState();
+}
+
+class _ClipboardAddButtonState extends State<ClipboardAddButton> {
+  bool busy = false;
+  @override
+  Widget build(BuildContext context) {
+    final p = widget.p;
+    return Material(
+      key: const Key('clip-add'),
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(18),
+      clipBehavior: Clip.antiAlias,
+      child: Ink(
+        decoration: BoxDecoration(
+          gradient: accentGradient(p),
+          borderRadius: BorderRadius.circular(18),
+          boxShadow: [
+            BoxShadow(color: p.acc.withValues(alpha: .35), blurRadius: 16),
+          ],
+        ),
+        child: InkWell(
+          onTap: busy
+              ? null
+              : () async {
+                  setState(() => busy = true);
+                  try {
+                    await importFromClipboard(context, widget.c);
+                  } finally {
+                    if (mounted) setState(() => busy = false);
+                  }
+                },
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 18),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                busy
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2.4,
+                          color: Colors.white,
+                        ),
+                      )
+                    : const Icon(
+                        Icons.content_paste_rounded,
+                        color: Colors.white,
+                        size: 22,
+                      ),
+                const SizedBox(width: 10),
+                Flexible(
+                  child: Text(
+                    busy ? 'Добавляю…' : 'Добавить из буфера',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
         ),
