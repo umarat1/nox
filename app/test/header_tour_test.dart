@@ -92,10 +92,10 @@ void main() {
             find.ancestor(of: logo, matching: find.byType(Row)).first,
           );
           expect(lx, closeTo(header.center.dx, 1.0));
-          // «+» left the header: it is now the round button at the bottom right
+          // «+» left the header: it is the first (left) button of the bottom bar (2.1.8)
           final addR = t.getRect(find.byKey(TourKeys.add));
           expect(addR.center.dy, greaterThan(size.height * .75));
-          expect(addR.center.dx, greaterThan(lx));
+          expect(addR.center.dx, lessThan(lx));
           final theme = t.getCenter(find.byKey(TourKeys.theme)).dx;
           final mail = t.getCenter(find.byKey(TourKeys.mail)).dx;
           final set = t.getCenter(find.byKey(TourKeys.settings)).dx;
