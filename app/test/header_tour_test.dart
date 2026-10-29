@@ -80,31 +80,35 @@ void main() {
 
   for (final (name, size) in _sizes) {
     for (final fs in ['1.00', '1.30']) {
-      testWidgets('header: + theme | logo centred | mail settings — $name $fs', (
-        t,
-      ) async {
-        await _app(t, size, fs: fs);
-        final logo = find.text('nox');
-        final lx = t.getCenter(logo).dx;
-        final bar = t.getRect(find.byKey(TourKeys.add)).center.dy;
-        // logo centred in the header row (header spans the phone column / whole window)
-        final header = t.getRect(
-          find.ancestor(of: logo, matching: find.byType(Row)).first,
-        );
-        expect(lx, closeTo(header.center.dx, 1.0));
-        final add = t.getCenter(find.byKey(TourKeys.add)).dx;
-        final theme = t.getCenter(find.byKey(TourKeys.theme)).dx;
-        final mail = t.getCenter(find.byKey(TourKeys.mail)).dx;
-        final set = t.getCenter(find.byKey(TourKeys.settings)).dx;
-        expect(add < theme && theme < lx && lx < mail && mail < set, isTrue);
-        expect(
-          (t.getCenter(find.byKey(TourKeys.mail)).dy - bar).abs(),
-          lessThan(2),
-        );
-        final e = t.takeException();
-        if (e != null) dumpOverflow(t);
-        expect(e, isNull);
-      });
+      testWidgets(
+        'header: theme | logo centred | mail settings, «+» at the bottom — $name $fs',
+        (t) async {
+          await _app(t, size, fs: fs);
+          final logo = find.text('nox');
+          final lx = t.getCenter(logo).dx;
+          final bar = t.getRect(find.byKey(TourKeys.theme)).center.dy;
+          // logo centred in the header row (header spans the phone column / whole window)
+          final header = t.getRect(
+            find.ancestor(of: logo, matching: find.byType(Row)).first,
+          );
+          expect(lx, closeTo(header.center.dx, 1.0));
+          // «+» left the header: it is now the round button at the bottom right
+          final addR = t.getRect(find.byKey(TourKeys.add));
+          expect(addR.center.dy, greaterThan(size.height * .75));
+          expect(addR.center.dx, greaterThan(lx));
+          final theme = t.getCenter(find.byKey(TourKeys.theme)).dx;
+          final mail = t.getCenter(find.byKey(TourKeys.mail)).dx;
+          final set = t.getCenter(find.byKey(TourKeys.settings)).dx;
+          expect(theme < lx && lx < mail && mail < set, isTrue);
+          expect(
+            (t.getCenter(find.byKey(TourKeys.mail)).dy - bar).abs(),
+            lessThan(2),
+          );
+          final e = t.takeException();
+          if (e != null) dumpOverflow(t);
+          expect(e, isNull);
+        },
+      );
     }
   }
 
@@ -114,7 +118,7 @@ void main() {
     await t.pump(const Duration(milliseconds: 300));
     final p = Pal.of(c.settings['theme'] as String?);
     final ring = find.descendant(
-      of: find.byKey(TourKeys.add),
+      of: find.byKey(TourKeys.theme),
       matching: find.byWidgetPredicate(
         (w) =>
             w is AnimatedContainer &&

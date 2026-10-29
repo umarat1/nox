@@ -83,6 +83,42 @@ Android 1.0 reads **top-level** fields (same as 0.7.x; old clients ignore unknow
 
 Envelope icon in the header (0.7.x «конверт»): red badge when an update is available; tap re-checks and offers install.
 
+### In-app updates from `latest.json` (2.1.7+)
+
+The engine first reads **`https://sessia.top/updates/nox/latest.json`** (`LatestURL` in
+`go/engine/update.go`):
+
+```json
+{
+  "version": "2.1.7",
+  "versionCode": 2170,
+  "url": "https://sessia.top/updates/nox/nox-2.1.7-arm64-v8a.apk",
+  "sha256": "<hex sha256 of the APK>",
+  "changelog": "• «+» внизу экрана\n• Подключение нажатием",
+  "minSupported": 2100
+}
+```
+
+- `version` / `versionCode` — newer than the installed build ⇒ offered. `versionCode` is the
+  **pubspec build number** (2170 for 2.1.7), not the split-APK code; split codes (3xxx/4xxx)
+  are read on the base scale as well.
+- `url` + `sha256` — the APK is downloaded (resumable), its SHA-256 verified, then the system
+  installer is launched (`REQUEST_INSTALL_PACKAGES` + FileProvider). A mismatch is reported
+  and nothing is installed. Optional per-ABI keys from `version.json`
+  (`url_arm64`/`sha256_arm64`, `url_armv7`/`sha256_armv7`) work here too.
+- `changelog` — shown in the «Доступна версия X» dialog (on launch once per version, from the
+  envelope and from Настройки → «Проверить обновления»).
+- `minSupported` — build number (int or numeric string) or version string. If the installed
+  build is lower, the update is **mandatory**: no «Позже», back/tap outside do nothing, and
+  «Позже» hidden earlier no longer hides it. `0` / `null` / missing = optional.
+- Offline / unreachable / malformed ⇒ silent (no dialog, no error toast); checked again on the
+  next launch, on resume and periodically.
+
+Fallback order: `latest.json` → `https://sessia.top/api/apps/nox/update.json` →
+`https://iji.by/sessia/api/apps/nox/update.json` → `https://iji.by/dl/version.json`
+(the `version.json` format above). Windows/macOS still require the signed `nox2-<os>` channel,
+so an unsigned `latest.json` falls through to it there.
+
 ## Secrets (CI)
 * `NOX_UPDATE_KEY`: ed25519 private key for update signing (`go run ./cmd/signupdate -gen key`; keep it offline).
 * `WIN_CERT_PFX_BASE64`, `WIN_CERT_PASSWORD`: optional Authenticode certificate (removes SmartScreen warnings).

@@ -19,7 +19,17 @@ import (
 	"time"
 )
 
-// UpdateURL: Сессия catalog endpoint first (1.0.23+); the old iji.by version.json stays as fallback.
+// LatestURL: sessia.top «latest.json» (2.1.7+), tried first. Format:
+//
+//	{"version":"2.1.7","versionCode":2170,"url":"https://sessia.top/…apk","sha256":"…",
+//	 "changelog":"…","minSupported":2100}
+//
+// minSupported is the lowest build number (pubspec +N, the same scale as VersionCode) or a
+// version string ("2.1.0") that may keep running; older installs get a mandatory update.
+// If it is missing, offline, or has nothing for this platform, the older chain below is used.
+var LatestURL = "https://sessia.top/updates/nox/latest.json"
+
+// UpdateURL: Сессия catalog endpoint (1.0.23+); the old iji.by version.json stays as fallback.
 var UpdateURL = "https://sessia.top/api/apps/nox/update.json"
 
 var UpdateFallbackURLs = []string{
@@ -29,7 +39,7 @@ var UpdateFallbackURLs = []string{
 
 // VersionCode is the pubspec build number (2000 for 2.0). Split APKs use abi*1000+VersionCode
 // (armeabi-v7a 3000, arm64-v8a 4000). Update checks compare this to version.json's versionCode.
-const VersionCode = 2160
+const VersionCode = 2170
 
 type UpdateInfo struct {
 	Version string `json:"versionName"`
@@ -38,6 +48,9 @@ type UpdateInfo struct {
 	SHA256  string `json:"sha256"`
 	Notes   string `json:"notes"`
 	Sig     string `json:"sig"` // base64 ed25519 of lowercase hex SHA-256 (required for nox2-windows)
+	// Mandatory: this install is below latest.json's minSupported — the UI shows a
+	// non-dismissable dialog and «Позже» is not offered.
+	Mandatory bool `json:"mandatory"`
 }
 
 // UpdatePubKey verifies signed installers (private key: signing/nox-update-ed25519.key).
@@ -99,21 +112,34 @@ func (a *App) CheckUpdate() *UpdateInfo {
 func (a *App) checkUpdate() (*UpdateInfo, bool) {
 	cl := a.httpClient()
 	cl.Timeout = 15 * time.Second
-	var m map[string]json.RawMessage
-	for _, src := range append([]string{UpdateURL}, UpdateFallbackURLs...) {
-		if m = fetchUpdateJSON(cl, src); m != nil {
-			break
+	var u *UpdateInfo
+	ok := false
+	reached := false
+	// 1) sessia.top/updates/nox/latest.json (only if it parses for this platform)
+	if LatestURL != "" {
+		if m := fetchUpdateJSON(cl, LatestURL); m != nil {
+			reached = true
+			u, ok = parseLatest(m)
 		}
 	}
-	if m == nil {
-		return nil, false
+	// 2) fallback: the existing update.json / version.json chain (first one that answers)
+	if !ok {
+		for _, src := range append([]string{UpdateURL}, UpdateFallbackURLs...) {
+			if m := fetchUpdateJSON(cl, src); m != nil {
+				reached = true
+				u, ok = parseUpdate(m)
+				break
+			}
+		}
+	}
+	if !reached {
+		return nil, false // offline: stay silent
 	}
 	a.mu.Lock()
 	a.p.UpdOK = nowFn().Unix()
 	a.save()
 	a.mu.Unlock()
 
-	u, ok := parseUpdate(m)
 	if !ok || !updateNewer(u) {
 		a.mu.Lock()
 		a.upd = nil
@@ -122,9 +148,68 @@ func (a *App) checkUpdate() (*UpdateInfo, bool) {
 	}
 	a.mu.Lock()
 	a.upd = u
+	if u.Mandatory {
+		a.p.UpdHideVer = "" // «Позже» never hides a mandatory update
+	}
 	a.mu.Unlock()
 	a.log("доступно обновление " + u.Version)
 	return u, true
+}
+
+// parseLatest maps latest.json ({version, versionCode, url, sha256, changelog, minSupported})
+// onto the version.json fields and parses it like the other sources.
+func parseLatest(m map[string]json.RawMessage) (*UpdateInfo, bool) {
+	n := make(map[string]json.RawMessage, len(m)+2)
+	for k, v := range m {
+		n[k] = v
+	}
+	if _, has := n["versionName"]; !has {
+		if v, ok := n["version"]; ok {
+			n["versionName"] = v
+		}
+	}
+	if _, has := n["notes"]; !has {
+		if v, ok := n["changelog"]; ok {
+			n["notes"] = v
+		}
+	}
+	u, ok := parseUpdate(n)
+	if !ok {
+		return nil, false
+	}
+	u.Mandatory = belowMin(n["minSupported"])
+	return u, true
+}
+
+// baseCode maps a split-APK versionCode (armeabi-v7a 3xxx, arm64-v8a 4xxx — see
+// build.gradle.kts) back to the pubspec build number (2xxx), so a server that publishes the
+// arm64 code as minSupported does not make every install "mandatory".
+func baseCode(c int64) int64 {
+	if c >= 3000 && c < 5000 {
+		return 2000 + c%1000
+	}
+	return c
+}
+
+// belowMin: true when this install is older than minSupported (int build number,
+// numeric string, or a dotted version string).
+func belowMin(raw json.RawMessage) bool {
+	if len(raw) == 0 {
+		return false
+	}
+	var code int64
+	if json.Unmarshal(raw, &code) == nil {
+		return code > 0 && int64(VersionCode) < baseCode(code)
+	}
+	var s string
+	if json.Unmarshal(raw, &s) != nil || strings.TrimSpace(s) == "" {
+		return false
+	}
+	s = strings.TrimSpace(s)
+	if c, err := strconv.ParseInt(s, 10, 64); err == nil {
+		return c > 0 && int64(VersionCode) < baseCode(c)
+	}
+	return verLess(Version, s)
 }
 
 // parseUpdate prefers the signed nox2-<os> channel; on Android also accepts top-level

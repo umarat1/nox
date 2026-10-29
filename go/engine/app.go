@@ -27,7 +27,7 @@ import (
 	"nox/core"
 )
 
-const Version = "2.1.6"
+const Version = "2.1.7"
 
 type Sub struct {
 	ID       string `json:"id"`

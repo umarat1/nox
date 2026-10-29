@@ -279,7 +279,7 @@ func (a *App) visibleUpdLocked() *UpdateInfo {
 	if u == nil {
 		return nil
 	}
-	if u.Version == a.p.UpdHideVer && nowFn().Unix() < a.p.UpdHideTill {
+	if !u.Mandatory && u.Version == a.p.UpdHideVer && nowFn().Unix() < a.p.UpdHideTill {
 		return nil
 	}
 	return u
