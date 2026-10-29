@@ -11,6 +11,10 @@ import 'tour.dart';
 typedef J = Map<String, dynamic>;
 
 /// Polls the core and exposes state + list logic (chips, dedup, hide dead, sort) to the UI.
+/// 2.2.2: Windows and macOS use the mobile UI (no top bar, card-corner buttons, country
+/// accordion, no protocol labels); wide windows split it into two panes. Tests may flip it.
+bool desktopUi = (isWindows || isMacOS) && !isWidgetTest;
+
 class NoxController extends ChangeNotifier {
   final NoxApi api;
   NoxController(this.api);
@@ -410,7 +414,7 @@ class NoxController extends ChangeNotifier {
 
   /// Android phones/tablets (not TV): one accordion of countries, no category tabs.
   static bool forceAccordion = false; // widget tests
-  bool get accordion => (isAndroid || forceAccordion) && !isTv;
+  bool get accordion => (isAndroid || desktopUi || forceAccordion) && !isTv;
 
   /// Accordion open state («TR» → true/false); default: the country with the selected server.
   Map<String, bool> get accOpen {

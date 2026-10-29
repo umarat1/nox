@@ -35,7 +35,18 @@ Future<void> main(List<String> args) async {
     });
   }
   runApp(NoxApp(c: c));
-  c.start();
+  await c.start();
+  if (canFullScreen && desktopUi) {
+    // 2.2.2: remember fullscreen between launches (not when started into the tray)
+    if (!args.contains('--tray') && c.state != null && c.flag('fs', false)) {
+      await toggleFullScreen(true);
+    }
+    fullScreen.addListener(() {
+      if (c.state != null && c.flag('fs', false) != fullScreen.value) {
+        c.setPref('fs', fullScreen.value ? '1' : '0');
+      }
+    });
+  }
 }
 
 class NoxApp extends StatelessWidget {

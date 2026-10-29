@@ -17,6 +17,19 @@ bool get isDesktop =>
     Platform.isWindows || Platform.isMacOS || Platform.isLinux;
 bool get isWindows => Platform.isWindows;
 bool get isAndroid => Platform.isAndroid;
+bool get isMacOS => Platform.isMacOS;
+
+/// `flutter test` (any host): widget tests pick the layout explicitly.
+bool get isWidgetTest => Platform.environment['FLUTTER_TEST'] == 'true';
+
+/// 2.2.2: Windows draws its own slim title bar (frameless window, min/max/close).
+bool get customTitleBar => Platform.isWindows && !_mock;
+Future<void> winMinimize() => windowManager.minimize();
+Future<void> winToggleMaximize() async => await windowManager.isMaximized()
+    ? windowManager.unmaximize()
+    : windowManager.maximize();
+Future<void> winClose() => windowManager.close(); // prevented → hides to tray
+Future<void> winStartDrag() => windowManager.startDragging();
 
 /// False while the desktop window is hidden (tray), minimized; animations pause on it.
 final windowShown = ValueNotifier<bool>(true);
@@ -183,8 +196,11 @@ class ServiceApi implements NoxApi {
     try {
       if (!await f.exists()) return false;
       final j = jsonDecode(await f.readAsString()) as Map<String, dynamic>;
-      final sock = await Socket.connect('127.0.0.1', j['port'] as int,
-          timeout: const Duration(milliseconds: 500));
+      final sock = await Socket.connect(
+        '127.0.0.1',
+        j['port'] as int,
+        timeout: const Duration(milliseconds: 500),
+      );
       sock.destroy();
       return true;
     } catch (_) {
@@ -291,6 +307,13 @@ Future<void> initDesktop(
     },
   );
   await windowManager.setPreventClose(true);
+  if (customTitleBar) {
+    // the mobile-style UI draws its own title bar (see WinTitleBar)
+    await windowManager.setTitleBarStyle(
+      TitleBarStyle.hidden,
+      windowButtonVisibility: false,
+    );
+  }
   _tray = _TrayHandler(
     () async {
       windowShown.value = true;
@@ -512,10 +535,16 @@ Future<void> syncWindowCollapse({
             _chromeHeight = (curSize.height - viewportHeight).clamp(0.0, 80.0);
           }
         }
-        final targetH = (compactHeight + _chromeHeight).ceilToDouble().clamp(240.0, 2400.0);
-        if (_lastTargetWinHeight == null || (_lastTargetWinHeight! - targetH).abs() > 1.5) {
+        final targetH = (compactHeight + _chromeHeight).ceilToDouble().clamp(
+          240.0,
+          2400.0,
+        );
+        if (_lastTargetWinHeight == null ||
+            (_lastTargetWinHeight! - targetH).abs() > 1.5) {
           _lastTargetWinHeight = targetH;
-          await windowManager.setMinimumSize(Size(380, targetH.clamp(240.0, 520.0)));
+          await windowManager.setMinimumSize(
+            Size(380, targetH.clamp(240.0, 520.0)),
+          );
           await windowManager.setSize(Size(curSize.width, targetH));
         }
       }
@@ -524,7 +553,9 @@ Future<void> syncWindowCollapse({
   }
   if (Platform.isAndroid) {
     final dp = compactHeight ?? 0.0;
-    final changed = _lastAndroidDp == null ? dp > 0 : (_lastAndroidDp! - dp).abs() > 1.5;
+    final changed = _lastAndroidDp == null
+        ? dp > 0
+        : (_lastAndroidDp! - dp).abs() > 1.5;
     if (changed) {
       _lastAndroidDp = dp > 0 ? dp : null;
       try {

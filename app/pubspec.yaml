@@ -1,7 +1,7 @@
 name: nox
 description: "Nox VPN — Windows, Android, Android TV, macOS"
 publish_to: 'none'
-version: 2.2.1+2210
+version: 2.2.2+2220
 
 environment:
   sdk: ^3.9.0

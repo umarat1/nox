@@ -17,6 +17,13 @@ Future<String?> applySystemProxy(bool on, int port) async => null;
 Future<String?> setUserAutostart(bool on) async => null;
 Future<String?> readLegacyState() async => null;
 bool get isAndroid => false;
+bool get isMacOS => false;
+bool get isWidgetTest => false;
+bool get customTitleBar => false;
+Future<void> winMinimize() async {}
+Future<void> winToggleMaximize() async {}
+Future<void> winClose() async {}
+Future<void> winStartDrag() async {}
 Future<bool> prepareVpn() async => true;
 Future<bool> isTvDevice() async => const bool.fromEnvironment('NOX_MOCK_TV');
 Future<bool> openUrl(String url) async => false;
