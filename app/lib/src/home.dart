@@ -7648,29 +7648,13 @@ class _HeroAlt extends StatelessWidget {
                             ),
                           ),
                         ),
-                        const SizedBox(width: 10),
-                        badge(22),
-                        const SizedBox(width: 7),
-                        Flexible(
-                          fit: corner == null ? FlexFit.loose : FlexFit.tight,
-                          child: Text(
-                            name,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 14,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        ),
                         if (corner != null) ...[
-                          const SizedBox(width: 8),
+                          const Spacer(),
                           corner,
                         ],
                       ],
                     ),
-                    const SizedBox(height: 14),
+                    const SizedBox(height: 4),
                     Row(
                       crossAxisAlignment: CrossAxisAlignment.end,
                       children: [
@@ -7715,11 +7699,40 @@ class _HeroAlt extends StatelessWidget {
                       ],
                     ),
                     const SizedBox(height: 4),
+                    // 2.2.2: region + protocol prominently under the timer («🇷🇴 Румыния · qWDTT»).
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        badge(24),
+                        const SizedBox(width: 8),
+                        Flexible(
+                          child: Text(
+                            [
+                              cur == null
+                                  ? name
+                                  : (_countryOf(cur['name'] ?? '').isNotEmpty
+                                        ? _countryOf(cur['name'] ?? '')
+                                        : name),
+                              if (cur != null)
+                                NoxController.proto(cur).isEmpty
+                                    ? 'Автовыбор'
+                                    : NoxController.proto(cur),
+                            ].join(' · '),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 18,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
                     Text(
-                      [
-                        if (showProto || proto.isNotEmpty) proto,
-                        'пинг $ping',
-                      ].join(' · '),
+                      'пинг $ping',
+                      textAlign: TextAlign.center,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(

@@ -6,10 +6,12 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os/exec"
 	"runtime"
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"nox/core"
@@ -37,6 +39,35 @@ func deviceOS() string {
 	}
 }
 
+var devInfoOnce sync.Once
+var devVer, devModel string
+
+// deviceInfo is the OS version and phone model for the Remnawave HWID device list.
+func deviceInfo() (string, string) {
+	devInfoOnce.Do(func() {
+		devVer, devModel = "", ""
+		if runtime.GOOS == "android" {
+			gp := func(k string) string {
+				out, err := exec.Command("/system/bin/getprop", k).Output()
+				if err != nil {
+					return ""
+				}
+				return strings.TrimSpace(string(out))
+			}
+			devVer = gp("ro.build.version.release")
+			m := strings.TrimSpace(gp("ro.product.manufacturer") + " " + gp("ro.product.model"))
+			devModel = m
+		}
+		if devVer == "" {
+			devVer = runtime.GOOS + "-" + runtime.GOARCH
+		}
+		if devModel == "" {
+			devModel = "Nox " + deviceOS()
+		}
+	})
+	return devVer, devModel
+}
+
 func (a *App) stampSub(req *http.Request) {
 	req.Header.Set("User-Agent", subUserAgent())
 	req.Header.Set("Accept", "*/*")
@@ -49,8 +80,9 @@ func (a *App) stampSub(req *http.Request) {
 		req.Header.Set("x-hwid", id) // Remnawave device id
 	}
 	req.Header.Set("x-device-os", deviceOS())
-	req.Header.Set("x-ver-os", Version)
-	req.Header.Set("x-device-model", "Nox")
+	ver, model := deviceInfo()
+	req.Header.Set("x-ver-os", ver)
+	req.Header.Set("x-device-model", model)
 }
 
 func cacheBust(raw string) string {
@@ -382,7 +414,12 @@ func (a *App) subLoop() {
 	}
 }
 
-func (a *App) refreshDueSubs() {
+func (a *App) refreshDueSubs() { a.refreshSubsOlder(0) }
+
+// refreshSubsOlder refreshes subscriptions that are due by their interval or, when
+// maxAge > 0, older than maxAge seconds (app opened again: servers just added in the
+// panel must show up without waiting for the hourly interval).
+func (a *App) refreshSubsOlder(maxAge int64) {
 	if !a.subDueBusy.CompareAndSwap(false, true) {
 		return // the ticker and Resume() can meet here
 	}
@@ -395,7 +432,7 @@ func (a *App) refreshDueSubs() {
 		if hrs <= 0 {
 			hrs = 1
 		}
-		if s.Updated <= 0 || now-s.Updated >= int64(hrs)*3600 {
+		if s.Updated <= 0 || now-s.Updated >= int64(hrs)*3600 || (maxAge > 0 && now-s.Updated >= maxAge) {
 			if f := a.subFail[s.ID]; f > 0 && now-f < 300 {
 				continue // failed <5 min ago: don't hammer the panel every minute
 			}

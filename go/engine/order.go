@@ -262,7 +262,7 @@ func (a *App) maybeCheckUpdate() {
 // phone or a frozen process missed.
 func (a *App) Resume() {
 	go a.maybeCheckUpdate()
-	go a.refreshDueSubs()
+	go a.refreshSubsOlder(120)
 }
 
 // HideUpdate («Позже») hides the given version for 24 h.
