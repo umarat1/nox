@@ -84,6 +84,31 @@ class NoxApp extends StatelessWidget {
                 data: mq.copyWith(textScaler: TextScaler.linear(fs)),
                 child: child ?? const SizedBox.shrink(),
               );
+              // 2.2.4: Android TV — fixed 960-dp-wide canvas scaled to the screen, so the
+              // 10-foot layout looks the same at any reported dpi / system font size.
+              if (c.isTv && c.flag('tvUi', true) && mq.size.width > 0 && mq.size.height > 0) {
+                final k = mq.size.width / 960.0;
+                final vh = mq.size.height / k;
+                return FittedBox(
+                  fit: BoxFit.contain,
+                  alignment: Alignment.topLeft,
+                  child: SizedBox(
+                    width: 960,
+                    height: vh,
+                    child: MediaQuery(
+                      data: mq.copyWith(
+                        size: Size(960, vh),
+                        devicePixelRatio: mq0.devicePixelRatio * k,
+                        textScaler: TextScaler.noScaling,
+                        padding: EdgeInsets.zero,
+                        viewPadding: EdgeInsets.zero,
+                        viewInsets: EdgeInsets.zero,
+                      ),
+                      child: child ?? const SizedBox.shrink(),
+                    ),
+                  ),
+                );
+              }
               if ((us - 1.0).abs() > 0.01) {
                 body = OverflowBox(
                   minWidth: mq.size.width / us,

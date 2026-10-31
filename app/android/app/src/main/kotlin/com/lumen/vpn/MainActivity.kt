@@ -12,6 +12,7 @@ import android.os.PowerManager
 import android.provider.Settings
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
+import io.flutter.embedding.engine.FlutterShellArgs
 import io.flutter.plugin.common.MethodChannel
 import com.google.zxing.client.android.Intents
 import com.journeyapps.barcodescanner.ScanOptions
@@ -19,6 +20,13 @@ import java.io.File
 import java.util.concurrent.Executors
 
 class MainActivity : FlutterActivity() {
+    // 2.2.4: TV boxes (LG/MStar/Amlogic GLES) mis-render or crash with Impeller — use Skia there.
+    override fun getFlutterShellArgs(): FlutterShellArgs {
+        val a = super.getFlutterShellArgs()
+        try { if (isTv()) a.add(FlutterShellArgs.ARG_DISABLE_IMPELLER) } catch (_: Exception) {}
+        return a
+    }
+
     private val exec = Executors.newCachedThreadPool()
     private var vpnResult: MethodChannel.Result? = null
     private var askedNotif = false

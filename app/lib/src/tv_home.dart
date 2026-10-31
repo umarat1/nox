@@ -19,6 +19,20 @@ const _txt = Colors.white;
 const _sub = Color(0xFFB3B3B3);
 const _grn = Color(0xFF2ECC71);
 
+int _int(Object? v) => v is num ? v.toInt() : int.tryParse('${v ?? ''}') ?? 0;
+
+String _ping(int p) => (p == 0 || p == -3) ? 'не измерен' : pingText(p);
+
+/// Last-resort guard: a failing action shows a toast instead of a grey screen.
+void _safe(dynamic Function() f) {
+  try {
+    final r = f();
+    if (r is Future) r.catchError((Object e) { debugPrint('tv action: $e'); return null; });
+  } catch (e) {
+    debugPrint('tv action: $e');
+  }
+}
+
 String _emoji(String? iso) {
   if (iso == null || iso.length != 2) return '';
   final u = iso.toUpperCase();
@@ -161,15 +175,17 @@ class _TvHomeState extends State<TvHome> {
               colors: [Color(0xFF3A0508), _bg],
             ),
           ),
-          child: SafeArea(
+          // 2.2.4: 5% overscan-safe area (48 × 27 dp on the 960 × 540 canvas)
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 48, vertical: 27),
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(36, 24, 36, 20),
+              padding: EdgeInsets.zero,
               child: FocusTraversalGroup(
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    SizedBox(width: 270, child: _left(context, p)),
-                    const SizedBox(width: 28),
+                    SizedBox(width: 250, child: _left(context, p)),
+                    const SizedBox(width: 24),
                     Expanded(child: _right(context)),
                   ],
                 ),
@@ -200,7 +216,7 @@ class _TvHomeState extends State<TvHome> {
                 'NOX',
                 style: TextStyle(
                   color: _red,
-                  fontSize: 40,
+                  fontSize: 34,
                   fontWeight: FontWeight.w900,
                   letterSpacing: 4,
                 ),
@@ -218,8 +234,8 @@ class _TvHomeState extends State<TvHome> {
               color: on ? _red : _card,
               onTap: c.busy ? null : () => c.toggle(),
               child: SizedBox(
-                width: 128,
-                height: 128,
+                width: 116,
+                height: 116,
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
@@ -260,7 +276,7 @@ class _TvHomeState extends State<TvHome> {
               textAlign: TextAlign.center,
               style: const TextStyle(
                 color: _txt,
-                fontSize: 24,
+                fontSize: 20,
                 fontWeight: FontWeight.w800,
               ),
             ),
@@ -268,7 +284,7 @@ class _TvHomeState extends State<TvHome> {
           if (c.current != null)
             Center(
               child: Text(
-                'Пинг ${pingText(c.current!['ping'] as int?)}',
+                'Пинг ${_ping(_int(c.current!['ping']))}',
                 style: const TextStyle(color: _sub, fontSize: 18),
               ),
             ),
@@ -282,11 +298,11 @@ class _TvHomeState extends State<TvHome> {
   }
 
   Widget _subCard(J b) {
-    final expire = (b['expire'] ?? 0) as int;
+    final expire = _int(b['expire']);
     final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
     final days = expire > 0 ? ((expire - now) / 86400).floor() : null;
-    final used = ((b['upload'] ?? 0) as num) + ((b['download'] ?? 0) as num);
-    final total = (b['total'] ?? 0) as num;
+    final used = _int(b['upload']) + _int(b['download']);
+    final total = _int(b['total']);
     final ok = days == null || days >= 0;
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
@@ -418,11 +434,11 @@ class _TvHomeState extends State<TvHome> {
         FocusTraversalGroup(
           child: Row(
             children: [
-              _icon(Icons.qr_code_2_rounded, 'QR', () => openReceive(context, c)),
-              _icon(Icons.keyboard_rounded, 'Ссылка', () => _manual(context)),
-              _icon(Icons.speed_rounded, 'Пинг', () => c.ping([])),
-              _icon(Icons.refresh_rounded, 'Подписки', () => c.call('RefreshSubs')),
-              _icon(Icons.settings_rounded, 'Опции', () => settingsSheet(context, c, _pal)),
+              _icon(Icons.qr_code_2_rounded, 'QR', () => _safe(() => openReceive(context, c))),
+              _icon(Icons.keyboard_rounded, 'Ссылка', () => _safe(() => _manual(context))),
+              _icon(Icons.speed_rounded, 'Пинг', () => _safe(() => c.ping([]))),
+              _icon(Icons.refresh_rounded, 'Подписки', () => _safe(() => c.call('RefreshSubs'))),
+              _icon(Icons.settings_rounded, 'Опции', () => _safe(() => settingsSheet(context, c, _pal))),
             ],
           ),
         ),
@@ -441,7 +457,7 @@ class _TvHomeState extends State<TvHome> {
                       radius: 22,
                       selected: ch.$1 == cat,
                       color: ch.$1 == cat ? const Color(0xFF3A0B0E) : _card,
-                      onTap: () => c.setPref('cat', ch.$1),
+                      onTap: () => _safe(() => c.setPref('cat', ch.$1)),
                       child: Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 18),
                         child: Center(
@@ -464,10 +480,10 @@ class _TvHomeState extends State<TvHome> {
               clipBehavior: Clip.none,
               padding: const EdgeInsets.fromLTRB(4, 8, 4, 20),
               gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: box.maxWidth >= 600 ? 2 : 1,
+                crossAxisCount: box.maxWidth >= 520 ? 2 : 1,
                 mainAxisSpacing: 14,
                 crossAxisSpacing: 14,
-                mainAxisExtent: 76,
+                mainAxisExtent: 70,
               ),
               itemCount: list.length,
               itemBuilder: (_, i) => _server(list[i]),
@@ -483,19 +499,19 @@ class _TvHomeState extends State<TvHome> {
     final name = '${s['name'] ?? ''}';
     final iso = region(name);
     final pr = NoxController.proto(s);
-    final ping = (s['ping'] ?? 0) as int;
+    final ping = _int(s['ping']);
     final pc = ping <= 0
         ? _sub
-        : ping < 150
+        : ping < 300
         ? _grn
-        : ping < 400
+        : ping < 900
         ? const Color(0xFFF5A623)
         : _red;
     final p = Pal.of(c.settings['theme'] as String?, c.pref('tpl', 'glass'));
     return TvTile(
       selected: sel,
       color: sel ? const Color(0xFF2A0A0D) : _card,
-      onTap: () => c.select('${s['id']}'),
+      onTap: () => _safe(() => c.select('${s['id']}')),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 14),
         child: Row(
@@ -525,9 +541,9 @@ class _TvHomeState extends State<TvHome> {
                   Text.rich(
                     TextSpan(
                       children: [
-                        if (pr.isNotEmpty) TextSpan(text: pingText(ping).isEmpty ? pr : '$pr  ·  '),
+                        if (pr.isNotEmpty) TextSpan(text: '$pr  ·  '),
                         TextSpan(
-                          text: pingText(ping),
+                          text: _ping(ping),
                           style: TextStyle(color: pc, fontWeight: FontWeight.w700),
                         ),
                       ],

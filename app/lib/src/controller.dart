@@ -470,10 +470,10 @@ class NoxController extends ChangeNotifier {
       }
       out.add(s);
     }
-    final m = (s['sort'] ?? '') as String;
+    final m = '${s['sort'] ?? ''}';
     if (m.isEmpty) return out;
     int rank(J x) {
-      final p = (x['ping'] ?? 0) as int;
+      final p = ((x['ping'] ?? 0) as num).toInt();
       return p > 0
           ? p
           : p == 0
