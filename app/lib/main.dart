@@ -64,7 +64,7 @@ class NoxApp extends StatelessWidget {
       graphStyle = graphFromUi(c.ui);
       return MaterialApp(
         navigatorKey: noxNav,
-        title: 'Nox',
+        title: 'ПРОКСИ+',
         debugShowCheckedModeBanner: false,
         theme: materialTheme(pal),
         locale: const Locale('ru'),

@@ -361,7 +361,7 @@ class _PairReceivePageState extends State<PairReceivePage> {
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
-        Text('1. На телефоне: Nox → «+» → «Передать на другое устройство»', style: st),
+        Text('1. На телефоне: ПРОКСИ+ → «+» → «Передать на другое устройство»', style: st),
         const SizedBox(height: 6),
         Text('2. Отсканируйте QR-код или введите вручную:', style: st),
         const SizedBox(height: 14),
@@ -713,7 +713,7 @@ class _PairSendPageState extends State<PairSendPage> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
-            'На ТВ откройте Nox → «+» → «Принять с телефона». Телефон и ТВ — в одной Wi‑Fi сети.',
+            'На ТВ откройте ПРОКСИ+ → «+» → «Принять с телефона». Телефон и ТВ — в одной Wi‑Fi сети.',
             style: TextStyle(color: p.sub, fontSize: 13, height: 1.35),
           ),
           _h(p, '1. ТВ'),
@@ -984,7 +984,7 @@ void showLinkQr(BuildContext context, String title, String link) {
                         fontWeight: FontWeight.w700)),
                 const SizedBox(height: 10),
                 const Text(
-                    'На другом устройстве: Nox → «+» → «Сканировать QR-код».\n'
+                    'На другом устройстве: ПРОКСИ+ → «+» → «Сканировать QR-код».\n'
                     'Не показывайте этот код посторонним — это ваш доступ.',
                     style: st),
                 const SizedBox(height: 16),

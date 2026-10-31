@@ -184,7 +184,7 @@ class ServiceApi implements NoxApi {
     }
     if (!await f.exists()) {
       throw NoxError(
-        'Служба Nox не запущена. Переустановите Nox или запустите службу «Nox VPN».',
+        'Служба Nox не запущена. Переустановите ПРОКСИ+ или запустите службу «Nox VPN».',
       );
     }
     final j = jsonDecode(await f.readAsString()) as Map<String, dynamic>;
@@ -294,7 +294,7 @@ Future<void> initDesktop(
     const WindowOptions(
       size: Size(460, 860),
       minimumSize: Size(380, 260),
-      title: 'Nox',
+      title: 'ПРОКСИ+',
       center: true,
     ),
     () async {
@@ -339,7 +339,7 @@ Future<void> initDesktop(
 Future<void> updateTray(bool connected, String server) async {
   if (_tray == null) return;
   await trayManager.setToolTip(
-    connected ? 'Nox — подключено: $server' : 'Nox — отключено',
+    connected ? 'ПРОКСИ+ — подключено: $server' : 'ПРОКСИ+ — отключено',
   );
   await trayManager.setContextMenu(
     Menu(

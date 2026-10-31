@@ -30,8 +30,8 @@ object UpdNote {
             "download" -> if (pct >= 0) "Загрузка обновления · $pct%" else "Загрузка обновления"
             "verify" -> "Проверка обновления"
             "install", "done" -> "Установка обновления"
-            "error" -> "Не удалось обновить Nox"
-            else -> "Обновление Nox"
+            "error" -> "Не удалось обновить ПРОКСИ+"
+            else -> "Обновление ПРОКСИ+"
         }
         b.setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(title)

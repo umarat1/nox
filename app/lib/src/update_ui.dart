@@ -210,7 +210,7 @@ class _UpdateDialogState extends State<UpdateDialog> {
       case 'done':
         head = 'Подтвердите установку';
         sub = Platform.isMacOS
-            ? 'В открывшемся окне перетащите Nox в «Программы» и замените старую версию, затем перезапустите Nox.'
+            ? 'В открывшемся окне перетащите ПРОКСИ+ в «Программы» и замените старую версию, затем перезапустите ПРОКСИ+.'
             : 'В системном окне нажмите «Обновить». Если окна нет — разрешите установку из этого источника и нажмите «Повторить».';
       case 'error':
         head = 'Не удалось обновить';
@@ -240,7 +240,7 @@ class _UpdateDialogState extends State<UpdateDialog> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Text(
-                v.isEmpty ? 'Обновление Nox' : 'Обновление до $v',
+                v.isEmpty ? 'Обновление ПРОКСИ+' : 'Обновление до $v',
                 style: TextStyle(
                   color: p.txt,
                   fontSize: 18,

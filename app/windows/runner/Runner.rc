@@ -89,13 +89,13 @@ BEGIN
     BEGIN
         BLOCK "040904e4"
         BEGIN
-            VALUE "CompanyName", "Nox" "\0"
-            VALUE "FileDescription", "Nox VPN" "\0"
+            VALUE "CompanyName", "ПРОКСИ+" "\0"
+            VALUE "FileDescription", "ПРОКСИ+" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
             VALUE "InternalName", "Nox" "\0"
             VALUE "LegalCopyright", "GPLv3" "\0"
             VALUE "OriginalFilename", "Nox.exe" "\0"
-            VALUE "ProductName", "Nox" "\0"
+            VALUE "ProductName", "ПРОКСИ+" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END

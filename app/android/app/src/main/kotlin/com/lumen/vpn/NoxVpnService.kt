@@ -86,11 +86,11 @@ class NoxVpnService : VpnService() {
             "connected" -> if (Core.server.isNotEmpty()) "Подключено · ${Core.server}" else "Подключено"
             "connecting" -> "Подключение…"
             "disconnecting" -> "Отключение…"
-            else -> "Nox"
+            else -> "ПРОКСИ+"
         }
         val b = if (Build.VERSION.SDK_INT >= 26) Notification.Builder(this, CH) else @Suppress("DEPRECATION") Notification.Builder(this)
         return b.setSmallIcon(R.drawable.ic_notification)
-            .setContentTitle("Nox")
+            .setContentTitle("ПРОКСИ+")
             .setContentText(text)
             .setContentIntent(open)
             .setOngoing(true)
@@ -114,7 +114,7 @@ class NoxVpnService : VpnService() {
     }
 
     fun openTun(o: JSONObject): Int {
-        val b = Builder().setSession("Nox").setMtu(o.optInt("mtu", 9000))
+        val b = Builder().setSession("ПРОКСИ+").setMtu(o.optInt("mtu", 9000))
         var v6 = false
         each(o.optJSONArray("addr4")) { val (a, p) = prefix(it); b.addAddress(a, p) }
         each(o.optJSONArray("addr6")) { val (a, p) = prefix(it); b.addAddress(a, p); v6 = true }

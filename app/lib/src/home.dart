@@ -227,7 +227,7 @@ class WinTitleBar extends StatelessWidget {
                     ),
                     const SizedBox(width: 8),
                     Text(
-                      'Nox',
+                      'ПРОКСИ+',
                       style: TextStyle(
                         color: p.txt.withValues(alpha: .80),
                         fontSize: 12.5,
@@ -244,7 +244,7 @@ class WinTitleBar extends StatelessWidget {
           btn(Icons.crop_square_rounded, 'Развернуть', winToggleMaximize),
           btn(
             Icons.close_rounded,
-            'Закрыть (Nox останется в трее)',
+            'Закрыть (ПРОКСИ+ останется в трее)',
             winClose,
             close: true,
           ),
@@ -5657,7 +5657,7 @@ void serverSheet(
         item(
           p,
           'TURN по TCP',
-          desc: 'Если по UDP не подключается (Nox и так пробует TCP сам)',
+          desc: 'Если по UDP не подключается (ПРОКСИ+ и так пробует TCP сам)',
           trailing: sw(p, (s['outbound'] as Map?)?['turn_tcp'] == true),
           onTap: () async {
             Navigator.pop(ctx);
@@ -5802,7 +5802,7 @@ void addSheet(BuildContext context, NoxController c, Pal p) {
         item(
           p,
           'Подключиться к телефону',
-          desc: 'Интернет через VPN телефона (Nox → «Раздача VPN»)',
+          desc: 'Интернет через VPN телефона (ПРОКСИ+ → «Раздача VPN»)',
           arrow: true,
           onTap: () {
             Navigator.pop(ctx);
@@ -7040,7 +7040,7 @@ Future<void> connectPhoneDialog(
         mainAxisSize: MainAxisSize.min,
         children: [
           Text(
-            'На телефоне: Nox → Настройки → «Раздача VPN». Подключите ПК к его точке доступа '
+            'На телефоне: ПРОКСИ+ → Настройки → «Раздача VPN». Подключите ПК к его точке доступа '
             'или по USB (USB-модем) и введите адрес, показанный на телефоне.',
             style: TextStyle(color: p.sub, fontSize: 13),
           ),

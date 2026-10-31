@@ -10,7 +10,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   // Single instance: a second start (shortcut, autostart) brings the existing window forward.
   HANDLE mutex = ::CreateMutexW(nullptr, TRUE, L"Local\\by.iji.nox.ui");
   if (mutex && ::GetLastError() == ERROR_ALREADY_EXISTS) {
-    HWND w = ::FindWindowW(L"FLUTTER_RUNNER_WIN32_WINDOW", L"Nox");
+    HWND w = ::FindWindowW(L"FLUTTER_RUNNER_WIN32_WINDOW", L"ПРОКСИ+");
     if (w) {
       ::ShowWindow(w, SW_SHOW);
       ::ShowWindow(w, SW_RESTORE);
@@ -39,7 +39,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   FlutterWindow window(project);
   Win32Window::Point origin(10, 10);
   Win32Window::Size size(460, 860);
-  if (!window.Create(L"Nox", origin, size)) {
+  if (!window.Create(L"ПРОКСИ+", origin, size)) {
     return EXIT_FAILURE;
   }
   window.SetQuitOnClose(true);

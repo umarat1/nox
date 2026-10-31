@@ -14,7 +14,7 @@ import java.util.concurrent.TimeUnit
 class NoxHost(private val ctx: Context) : Host {
     override fun startService(tun: Boolean) {
         if (tun && VpnService.prepare(ctx) != null) {
-            throw Exception("Нет разрешения на VPN — откройте Nox и подтвердите системный запрос")
+            throw Exception("Нет разрешения на VPN — откройте ПРОКСИ+ и подтвердите системный запрос")
         }
         NoxVpnService.instance?.let { it.keep(); return } // reconnect: keep the foreground service
         val latch = CountDownLatch(1)

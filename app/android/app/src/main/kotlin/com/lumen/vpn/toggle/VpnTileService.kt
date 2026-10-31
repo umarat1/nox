@@ -79,7 +79,7 @@ class VpnTileService : TileService() {
         val t = qsTile ?: return
         val on = st == "connected" || st == "connecting"
         t.state = if (on) Tile.STATE_ACTIVE else Tile.STATE_INACTIVE
-        t.label = "Nox"
+        t.label = "ПРОКСИ+"
         val sub = when (st) {
             "connecting" -> "Подключение…"
             "disconnecting" -> "Отключение…"
@@ -87,7 +87,7 @@ class VpnTileService : TileService() {
             else -> Core.server.ifEmpty { "Отключено" }
         }
         if (Build.VERSION.SDK_INT >= 29) t.subtitle = sub
-        t.contentDescription = "Nox: " + sub
+        t.contentDescription = "ПРОКСИ+: " + sub
         t.updateTile()
     }
 }

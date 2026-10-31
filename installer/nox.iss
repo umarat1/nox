@@ -19,13 +19,13 @@
 
 [Setup]
 AppId={{6E0F3B8C-2D4A-4C1E-9B57-0A9D1F4E7C21}
-AppName=Nox
+AppName=ПРОКСИ+
 AppVersion={#AppVersion}
-AppVerName=Nox {#AppVersion}
-AppPublisher=Nox
+AppVerName=ПРОКСИ+ {#AppVersion}
+AppPublisher=ПРОКСИ+
 VersionInfoVersion={#AppVersion}
-VersionInfoProductName=Nox
-VersionInfoDescription=Nox VPN Setup
+VersionInfoProductName=ПРОКСИ+
+VersionInfoDescription=ПРОКСИ+ Setup
 DefaultDirName={autopf}\Nox
 DefaultGroupName=Nox
 DisableProgramGroupPage=yes
@@ -37,7 +37,7 @@ OutputDir={#OutDir}
 OutputBaseFilename=Nox-Setup-{#AppVersion}
 SetupIconFile={#Dist}\app\data\flutter_assets\assets\icon.ico
 UninstallDisplayIcon={app}\Nox.exe
-UninstallDisplayName=Nox
+UninstallDisplayName=ПРОКСИ+
 Compression=lzma2/ultra64
 SolidCompression=yes
 WizardStyle=modern
@@ -57,10 +57,10 @@ ru.DeskIcon=Ярлык на рабочем столе
 en.DeskIcon=Desktop shortcut
 ru.RunNox=Запустить Nox
 en.RunNox=Launch Nox
-ru.SvcFail=Не удалось установить службу Nox (код %1). Подробности: %2
+ru.SvcFail=Не удалось установить службу ПРОКСИ+ (код %1). Подробности: %2
 en.SvcFail=Could not install the Nox service (code %1). Details: %2
 ru.DelData=Удалить также подписки и настройки Nox?
-en.DelData=Also delete Nox subscriptions and settings?
+en.DelData=Also delete ПРОКСИ+ subscriptions and settings?
 ru.Uninst=Удалить Nox
 en.Uninst=Uninstall Nox
 
@@ -75,13 +75,19 @@ Source: "{#Dist}\core\*"; DestDir: "{app}\core"; Flags: ignoreversion recursesub
 ; data dir of the service; ipc.json inside gets its own ACL from noxd
 Name: "{commonappdata}\Nox"
 
+[InstallDelete]
+; rename Nox -> ПРОКСИ+: drop old shortcuts
+Type: files; Name: "{group}\Nox.lnk"
+Type: files; Name: "{autodesktop}\Nox.lnk"
+Type: filesandordirs; Name: "{group}\Nox"
+
 [Icons]
-Name: "{group}\Nox"; Filename: "{app}\Nox.exe"
+Name: "{group}\ПРОКСИ+"; Filename: "{app}\Nox.exe"
 Name: "{group}\{cm:Uninst}"; Filename: "{uninstallexe}"
-Name: "{autodesktop}\Nox"; Filename: "{app}\Nox.exe"; Tasks: desktopicon
+Name: "{autodesktop}\ПРОКСИ+"; Filename: "{app}\Nox.exe"; Tasks: desktopicon
 
 [Run]
-Filename: "{app}\core\noxd.exe"; Parameters: "install"; Flags: runhidden waituntilterminated; StatusMsg: "Nox service…"; AfterInstall: CheckSvc
+Filename: "{app}\core\noxd.exe"; Parameters: "install"; Flags: runhidden waituntilterminated; StatusMsg: "ПРОКСИ+ service…"; AfterInstall: CheckSvc
 Filename: "{app}\core\noxd.exe"; Parameters: "start"; Flags: runhidden waituntilterminated
 ; «Принять с телефона»: noxd listens on a random LAN port for a few minutes (private networks only)
 Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""Nox pairing"""; Flags: runhidden waituntilterminated
