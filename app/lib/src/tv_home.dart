@@ -93,7 +93,7 @@ class _TvTileState extends State<TvTile> {
       child: GestureDetector(
         onTap: widget.onTap,
         child: AnimatedScale(
-          scale: f ? 1.06 : 1.0,
+          scale: f ? 1.04 : 1.0,
           duration: const Duration(milliseconds: 140),
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 140),
@@ -106,10 +106,10 @@ class _TvTileState extends State<TvTile> {
                     : widget.selected
                     ? _red.withValues(alpha: .45)
                     : Colors.transparent,
-                width: f ? 4 : 2,
+                width: f ? 2.5 : 1.5,
               ),
               boxShadow: f
-                  ? [BoxShadow(color: _red.withValues(alpha: .45), blurRadius: 24)]
+                  ? [BoxShadow(color: _red.withValues(alpha: .45), blurRadius: 12)]
                   : null,
             ),
             child: widget.child,
@@ -172,7 +172,7 @@ class _TvHomeState extends State<TvHome> {
             gradient: RadialGradient(
               center: Alignment(-.8, -.9),
               radius: 1.3,
-              colors: [Color(0xFF3A0508), _bg],
+              colors: [Color(0xFF1E0305), _bg],
             ),
           ),
           // 2.2.4: 5% overscan-safe area (48 × 27 dp on the 960 × 540 canvas)
@@ -184,7 +184,7 @@ class _TvHomeState extends State<TvHome> {
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    SizedBox(width: 250, child: _left(context, p)),
+                    SizedBox(width: 240, child: _left(context, p)),
                     const SizedBox(width: 24),
                     Expanded(child: _right(context)),
                   ],
@@ -216,16 +216,16 @@ class _TvHomeState extends State<TvHome> {
                 'NOX',
                 style: TextStyle(
                   color: _red,
-                  fontSize: 34,
+                  fontSize: 24,
                   fontWeight: FontWeight.w900,
-                  letterSpacing: 4,
+                  letterSpacing: 3,
                 ),
               ),
               const SizedBox(width: 10),
-              Text('VPN', style: TextStyle(color: _sub, fontSize: 20)),
+              Text('VPN', style: TextStyle(color: _sub, fontSize: 14)),
             ],
           ),
-          const SizedBox(height: 14),
+          const SizedBox(height: 10),
           Center(
             child: TvTile(
               node: power,
@@ -234,14 +234,14 @@ class _TvHomeState extends State<TvHome> {
               color: on ? _red : _card,
               onTap: c.busy ? null : () => c.toggle(),
               child: SizedBox(
-                width: 116,
-                height: 116,
+                width: 88,
+                height: 88,
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Icon(
                       Icons.power_settings_new_rounded,
-                      size: 54,
+                      size: 32,
                       color: on ? Colors.white : _red,
                     ),
                     const SizedBox(height: 4),
@@ -249,7 +249,7 @@ class _TvHomeState extends State<TvHome> {
                       on ? 'Отключить' : 'Подключить',
                       style: const TextStyle(
                         color: _txt,
-                        fontSize: 18,
+                        fontSize: 11,
                         fontWeight: FontWeight.w700,
                       ),
                     ),
@@ -258,13 +258,13 @@ class _TvHomeState extends State<TvHome> {
               ),
             ),
           ),
-          const SizedBox(height: 14),
+          const SizedBox(height: 8),
           Center(
             child: Text(
               label,
               style: TextStyle(
                 color: on ? _grn : _sub,
-                fontSize: 22,
+                fontSize: 15,
                 fontWeight: FontWeight.w700,
               ),
             ),
@@ -276,7 +276,7 @@ class _TvHomeState extends State<TvHome> {
               textAlign: TextAlign.center,
               style: const TextStyle(
                 color: _txt,
-                fontSize: 20,
+                fontSize: 15,
                 fontWeight: FontWeight.w800,
               ),
             ),
@@ -285,10 +285,10 @@ class _TvHomeState extends State<TvHome> {
             Center(
               child: Text(
                 'Пинг ${_ping(_int(c.current!['ping']))}',
-                style: const TextStyle(color: _sub, fontSize: 18),
+                style: const TextStyle(color: _sub, fontSize: 12),
               ),
             ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 10),
           for (final b in c.subs) _subCard(b),
             _action(Icons.system_update_rounded, 'Обновление', () => openUpdate(context, c, p)),
           const SizedBox(height: 8),
@@ -307,7 +307,7 @@ class _TvHomeState extends State<TvHome> {
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: Container(
-        padding: const EdgeInsets.all(14),
+        padding: const EdgeInsets.all(10),
         decoration: BoxDecoration(
           color: _card,
           borderRadius: BorderRadius.circular(16),
@@ -322,7 +322,7 @@ class _TvHomeState extends State<TvHome> {
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(
                 color: _txt,
-                fontSize: 19,
+                fontSize: 14,
                 fontWeight: FontWeight.w700,
               ),
             ),
@@ -333,13 +333,13 @@ class _TvHomeState extends State<TvHome> {
                   : days < 0
                   ? 'Подписка истекла'
                   : 'Активна · до ${fmtDate(expire)} · $days ${plural(days, 'день', 'дня', 'дней')}',
-              style: TextStyle(color: ok ? _grn : _red, fontSize: 16),
+              style: TextStyle(color: ok ? _grn : _red, fontSize: 12),
             ),
             Text(
               total > 0
                   ? 'Трафик ${fmtBytes(used)} из ${fmtBytes(total)}'
                   : 'Трафик ${fmtBytes(used)} · безлимит',
-              style: const TextStyle(color: _sub, fontSize: 15),
+              style: const TextStyle(color: _sub, fontSize: 11),
             ),
           ],
         ),
@@ -353,15 +353,15 @@ class _TvHomeState extends State<TvHome> {
       onTap: on,
       radius: 14,
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         child: Row(
           children: [
-            Icon(i, color: _red, size: 26),
-            const SizedBox(width: 14),
+            Icon(i, color: _red, size: 18),
+            const SizedBox(width: 10),
             Expanded(
               child: Text(
                 t,
-                style: const TextStyle(color: _txt, fontSize: 19),
+                style: const TextStyle(color: _txt, fontSize: 14),
               ),
             ),
           ],
@@ -373,20 +373,22 @@ class _TvHomeState extends State<TvHome> {
   Pal get _pal => Pal.of(c.settings['theme'] as String?, c.pref('tpl', 'glass'));
 
   Widget _icon(IconData i, String t, VoidCallback on) => Padding(
-    padding: const EdgeInsets.only(right: 10),
+    padding: const EdgeInsets.only(right: 8),
     child: TvTile(
       onTap: on,
-      radius: 14,
+      radius: 17,
       child: SizedBox(
-        width: 60,
-        height: 60,
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(i, color: _red, size: 26),
-            const SizedBox(height: 2),
-            Text(t, maxLines: 1, overflow: TextOverflow.clip, style: const TextStyle(color: _sub, fontSize: 11)),
-          ],
+        height: 34,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(i, color: _red, size: 16),
+              const SizedBox(width: 6),
+              Text(t, maxLines: 1, style: const TextStyle(color: _txt, fontSize: 12)),
+            ],
+          ),
         ),
       ),
     ),
@@ -442,28 +444,29 @@ class _TvHomeState extends State<TvHome> {
             ],
           ),
         ),
-        const SizedBox(height: 10),
+        const SizedBox(height: 6),
         SizedBox(
-          height: 56,
+          height: 44,
           child: FocusTraversalGroup(
             child: ListView(
               scrollDirection: Axis.horizontal,
-              clipBehavior: Clip.none,
+              clipBehavior: Clip.hardEdge,
+              padding: const EdgeInsets.only(left: 4),
               children: [
                 for (final ch in chips)
                   Padding(
-                    padding: const EdgeInsets.fromLTRB(0, 6, 10, 6),
+                    padding: const EdgeInsets.fromLTRB(0, 6, 8, 6),
                     child: TvTile(
-                      radius: 22,
+                      radius: 16,
                       selected: ch.$1 == cat,
                       color: ch.$1 == cat ? const Color(0xFF3A0B0E) : _card,
                       onTap: () => _safe(() => c.setPref('cat', ch.$1)),
                       child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 18),
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
                         child: Center(
                           child: Text(
                             '${ch.$3 != null ? '${_emoji(ch.$3)} ' : ''}${ch.$2}',
-                            style: const TextStyle(color: _txt, fontSize: 18),
+                            style: const TextStyle(color: _txt, fontSize: 12),
                           ),
                         ),
                       ),
@@ -473,17 +476,17 @@ class _TvHomeState extends State<TvHome> {
             ),
           ),
         ),
-        const SizedBox(height: 10),
+        const SizedBox(height: 4),
         Expanded(
           child: FocusTraversalGroup(
             child: LayoutBuilder(builder: (_, box) => GridView.builder(
-              clipBehavior: Clip.none,
-              padding: const EdgeInsets.fromLTRB(4, 8, 4, 20),
+              clipBehavior: Clip.hardEdge,
+              padding: const EdgeInsets.fromLTRB(6, 6, 6, 10),
               gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: box.maxWidth >= 520 ? 2 : 1,
-                mainAxisSpacing: 14,
-                crossAxisSpacing: 14,
-                mainAxisExtent: 70,
+                crossAxisCount: box.maxWidth >= 480 ? 3 : 2,
+                mainAxisSpacing: 8,
+                crossAxisSpacing: 8,
+                mainAxisExtent: 48,
               ),
               itemCount: list.length,
               itemBuilder: (_, i) => _server(list[i]),
@@ -513,16 +516,16 @@ class _TvHomeState extends State<TvHome> {
       color: sel ? const Color(0xFF2A0A0D) : _card,
       onTap: () => _safe(() => c.select('${s['id']}')),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 14),
+        padding: const EdgeInsets.symmetric(horizontal: 8),
         child: Row(
           children: [
             if (NoxController.isBal(s))
-              const Icon(Icons.bolt_rounded, color: _red, size: 40)
+              const Icon(Icons.bolt_rounded, color: _red, size: 24)
             else if (iso != null)
-              countryBadge(p, iso, 40)
+              countryBadge(p, iso, 24)
             else
-              const Icon(Icons.public_rounded, color: _sub, size: 40),
-            const SizedBox(width: 14),
+              const Icon(Icons.public_rounded, color: _sub, size: 24),
+            const SizedBox(width: 8),
             Expanded(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
@@ -534,7 +537,7 @@ class _TvHomeState extends State<TvHome> {
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
                       color: _txt,
-                      fontSize: 20,
+                      fontSize: 13,
                       fontWeight: FontWeight.w700,
                     ),
                   ),
@@ -549,14 +552,15 @@ class _TvHomeState extends State<TvHome> {
                       ],
                     ),
                     maxLines: 1,
-                    style: const TextStyle(color: _sub, fontSize: 15),
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(color: _sub, fontSize: 10.5),
                   ),
                 ],
               ),
             ),
             if (sel) ...[
-              const SizedBox(width: 8),
-              const Icon(Icons.check_circle_rounded, color: _red, size: 26),
+              const SizedBox(width: 4),
+              const Icon(Icons.check_circle_rounded, color: _red, size: 16),
             ],
           ],
         ),
