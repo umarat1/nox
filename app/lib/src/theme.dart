@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 /// Android Nox palettes: AMOLED (black), dark, light — same keys as Android (Theme.KEYS).
+/// 2.2.3: set on Android TV (TvHome) — every Pal.of returns the red TV palette.
+bool tvRed = false;
+
 class Pal {
   final Color bg,
       hero,
@@ -185,6 +188,19 @@ class Pal {
 
   /// [key] = base theme (black/dark/light), [tpl] = design template (glass/ocean/…/mono).
   static Pal of(String? key, [String? tpl]) {
+    // 2.2.3: Android TV screens (settings, QR, update) share the TV's dark/red look
+    if (tvRed) {
+      return dark.copyWith(
+        bg: const Color(0xFF0B0B0D),
+        hero: const Color(0xFF141417),
+        card: const Color(0xFF17171B),
+        line: const Color(0xFF2A2A30),
+        chip: const Color(0xFF222228),
+        acc: const Color(0xFFE50914),
+        acc2: const Color(0xFFFF4D57),
+        sel: const Color(0xFF3A0B0E),
+      );
+    }
     if (key == 'mono') return of('dark', 'mono'); // pre-release 2.1.4 builds
     final base = switch (key) {
       'black' => black,

@@ -20,6 +20,7 @@ import 'pair.dart';
 import 'update_ui.dart';
 import 'tour.dart';
 import 'qr_import.dart';
+import 'tv_home.dart';
 
 class Home extends StatelessWidget {
   final NoxController c;
@@ -30,12 +31,20 @@ class Home extends StatelessWidget {
     return ListenableBuilder(
       listenable: c,
       builder: (context, _) {
+        tvRed = c.isTv && c.flag('tvUi', true);
         final p = Pal.of(
           c.settings['theme'] as String?,
           c.pref('tpl', 'glass'),
         );
         vol3d = vol3dFromUi(c.ui);
         graphStyle = graphFromUi(c.ui);
+        // 2.2.3: Android TV gets its own 10-foot D-pad screen
+        if (c.isTv && c.flag('tvUi', true)) {
+          return Theme(
+            data: materialTheme(p),
+            child: PairGlue(c: c, child: TvHome(c: c)),
+          );
+        }
         return Theme(
           data: materialTheme(p),
           child: Scaffold(
