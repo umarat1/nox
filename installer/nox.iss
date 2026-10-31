@@ -27,14 +27,14 @@ VersionInfoVersion={#AppVersion}
 VersionInfoProductName=ПРОКСИ+
 VersionInfoDescription=ПРОКСИ+ Setup
 DefaultDirName={autopf}\Nox
-DefaultGroupName=Nox
+DefaultGroupName=ПРОКСИ+
 DisableProgramGroupPage=yes
 DisableDirPage=auto
 PrivilegesRequired=admin
 SetupArchitecture=x64
 MinVersion=10.0
 OutputDir={#OutDir}
-OutputBaseFilename=Nox-Setup-{#AppVersion}
+OutputBaseFilename=PROKSI-Plus-Setup-{#AppVersion}
 SetupIconFile={#Dist}\app\data\flutter_assets\assets\icon.ico
 UninstallDisplayIcon={app}\Nox.exe
 UninstallDisplayName=ПРОКСИ+
@@ -77,9 +77,10 @@ Name: "{commonappdata}\Nox"
 
 [InstallDelete]
 ; rename Nox -> ПРОКСИ+: drop old shortcuts
-Type: files; Name: "{group}\Nox.lnk"
+Type: filesandordirs; Name: "{autoprograms}\Nox"
+Type: filesandordirs; Name: "{commonprograms}\Nox"
 Type: files; Name: "{autodesktop}\Nox.lnk"
-Type: filesandordirs; Name: "{group}\Nox"
+Type: files; Name: "{commondesktop}\Nox.lnk"
 
 [Icons]
 Name: "{group}\ПРОКСИ+"; Filename: "{app}\Nox.exe"

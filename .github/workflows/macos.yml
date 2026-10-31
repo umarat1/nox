@@ -89,7 +89,7 @@ jobs:
           lipo -info $APP/Contents/MacOS/* $APP/Contents/Resources/core/noxd
           $APP/Contents/Resources/core/noxd version
           mkdir -p out/dmg && cp -R $APP out/dmg/ && ln -s /Applications out/dmg/Applications
-          hdiutil create -volname "Nox ${{ steps.ver.outputs.name }}" -srcfolder out/dmg -ov -format UDZO out/Nox-${{ steps.ver.outputs.name }}-macos.dmg
+          hdiutil create -volname "ПРОКСИ+ ${{ steps.ver.outputs.name }}" -srcfolder out/dmg -ov -format UDZO out/Nox-${{ steps.ver.outputs.name }}-macos.dmg
           shasum -a 256 out/*.dmg
 
       - name: Sign update (ed25519) -> update.json

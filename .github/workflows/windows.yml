@@ -138,7 +138,7 @@ jobs:
         run: |
           $pfx = "$env:RUNNER_TEMP\c.pfx"; [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:PFX))
           $st = (Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe" | Select-Object -Last 1).FullName
-          & $st sign /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 /f $pfx /p $env:PFX_PASS out/Nox-Setup-*.exe
+          & $st sign /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 /f $pfx /p $env:PFX_PASS out/PROKSI-Plus-Setup-*.exe
           Remove-Item $pfx
 
       - name: Sign update (ed25519) -> update.json
@@ -147,7 +147,7 @@ jobs:
           NOX_UPDATE_KEY: ${{ secrets.NOX_UPDATE_KEY }}
         working-directory: go
         run: |
-          $setup = (Get-ChildItem ../out/Nox-Setup-*.exe).FullName
+          $setup = (Get-ChildItem ../out/PROKSI-Plus-Setup-*.exe).FullName
           $s = go run ./cmd/signupdate -key-env NOX_UPDATE_KEY $setup | ConvertFrom-Json
           $name = Split-Path $setup -Leaf
           # fragment for version.json; the url is filled in when Murad publishes the file
