@@ -1,0 +1,310 @@
+// Package noxcore is the Android binding of the Nox engine (gomobile AAR).
+//
+// The engine (subscriptions, ping, ordering, updates) and sing-box (libbox) run inside the
+// app process. Kotlin implements Host: the VpnService side (TUN fd, protect, network
+// monitor). Flutter talks to the engine through Call (same JSON-RPC methods as the Windows
+// service over loopback IPC).
+package noxcore
+
+import (
+	"encoding/json"
+	"net"
+	"os"
+	"path/filepath"
+	"runtime"
+	"strings"
+	"sync"
+	"time"
+
+	"nox/engine"
+	"nox/ipc"
+)
+
+// Host is implemented in Kotlin (NoxHost).
+type Host interface {
+	// StartService starts the foreground VpnService; returns once it is running.
+	StartService(tun bool) error
+	StopService()
+	// OpenTun builds the VpnService interface from JSON options; returns the TUN fd.
+	OpenTun(optionsJSON string) (int32, error)
+	Protect(fd int32) bool
+	StartNetMonitor()
+	StopNetMonitor()
+	// GetInterfaces returns JSON [{name,index,mtu,flags,type,addrs[],dns[],metered}].
+	GetInterfaces() (string, error)
+	// Resolve looks the name up on a non-VPN network. Comma-separated IPs, or "".
+	Resolve(host string) (string, error)
+	InstallApk(path string) error
+	// NetMetered (2.3.2): 1 = default non-VPN network is metered (mobile data),
+	// 0 = unmetered (Wi-Fi/Ethernet), -1 = unknown / offline. Gates «Только Wi‑Fi».
+	NetMetered() int32
+	// UpdateReady (2.3.2): a background-downloaded, verified update is ready — post the
+	// «Обновление готово» notification (tap opens the app, which shows the installer).
+	UpdateReady(version string)
+	// OnStatus: status changes for the notification / quick-settings tile.
+	OnStatus(status string, server string)
+}
+
+var (
+	mu   sync.Mutex
+	app  *engine.App
+	rpc  *ipc.Server
+	host Host
+)
+
+// Init starts the engine once per process. dataDir: filesDir/nox; libDir:
+// applicationInfo.nativeLibraryDir (libqwdtt.so); ruleDir: rule sets copied from assets.
+// SetABI records the device ABI so update checks can pick url_arm64 / url_armv7.
+//
+// 1.0.10: the ABI of the *installed* APK is what matters (a split arm64 APK can run on an
+// x86_64 device through native-bridge translation, and Build.SUPPORTED_ABIS[0] would then pick
+// the universal APK, whose lower versionCode Android rejects as a downgrade). This library is
+// loaded from the installed APK's lib/<abi>, so its GOARCH is that ABI.
+func SetABI(abi string) {
+	switch runtime.GOARCH {
+	case "arm64":
+		abi = "arm64-v8a"
+	case "arm":
+		abi = "armeabi-v7a"
+	case "amd64":
+		abi = "x86_64"
+	case "386":
+		abi = "x86"
+	}
+	engine.AndroidABI = abi
+}
+
+func Init(dataDir, libDir, ruleDir string, h Host) error {
+	mu.Lock()
+	defer mu.Unlock()
+	if app != nil {
+		host = h
+		return nil
+	}
+	host = h
+	os.MkdirAll(dataDir, 0o755)
+	if err := setupLibbox(filepath.Join(dataDir, "box")); err != nil {
+		return err
+	}
+	engine.AndroidRuleDir = ruleDir
+	engine.CaptchaUI = true // Kotlin CaptchaActivity (WebView)
+	engine.AndroidStartVpn = startVpn
+	engine.AndroidStartTunService = startTunService
+	engine.AndroidOpenTun = openTunJSON
+	engine.AndroidStopTunService = stopVpn
+	engine.AndroidStopVpn = stopVpn
+	engine.AndroidTestCore = testCore
+	engine.AndroidInstallApk = func(p string) error { return host.InstallApk(p) }
+	engine.NetMetered = func() int {
+		mu.Lock()
+		h := host
+		mu.Unlock()
+		if h == nil {
+			return -1
+		}
+		return int(h.NetMetered())
+	}
+	engine.UpdateReadyHook = func(v string) {
+		mu.Lock()
+		h := host
+		mu.Unlock()
+		if h != nil {
+			h.UpdateReady(v)
+		}
+	}
+	engine.ProtectSocket = func(fd int) bool {
+		mu.Lock()
+		h := host
+		mu.Unlock()
+		if h == nil {
+			return false
+		}
+		return h.Protect(int32(fd))
+	}
+	engine.LanAddrs = lanAddrs
+	engine.HostIfaces = hostIfaces
+	engine.PlatformResolve = platformResolve
+	setResolver()
+	app = engine.NewApp(dataDir, libDir)
+	rpc = ipc.New(app)
+	app.Start()
+	go statusLoop()
+	return nil
+}
+
+type reply struct {
+	R any    `json:"r,omitempty"`
+	E string `json:"e,omitempty"`
+}
+
+// Call runs an engine method: args is a JSON array; returns {"r":…} or {"e":"…"}.
+func Call(method, args string) string {
+	mu.Lock()
+	s := rpc
+	mu.Unlock()
+	if s == nil {
+		return `{"e":"ядро не запущено"}`
+	}
+	var a []json.RawMessage
+	if args != "" && json.Unmarshal([]byte(args), &a) != nil {
+		return `{"e":"bad args"}`
+	}
+	r, err := s.Call(method, a)
+	var out reply
+	if err != nil {
+		out.E = err.Error()
+	} else {
+		out.R = r
+	}
+	b, _ := json.Marshal(out)
+	return string(b)
+}
+
+// SetDNS: system DNS server of the default network (LinkProperties), used for direct lookups.
+func SetDNS(server string) {
+	if net.ParseIP(server) != nil {
+		mu.Lock()
+		engine.AndroidDNS = server
+		mu.Unlock()
+	}
+}
+
+// VpnStopped is called by NoxVpnService when it goes down on its own (revoked by the
+// system or another VPN app, killed). msg is shown to the user if non-empty.
+// A non-empty message is an external stop: do not auto-reconnect over it.
+func VpnStopped(msg string) {
+	if msg != "" {
+		mu.Lock()
+		a := app
+		mu.Unlock()
+		if a != nil {
+			a.ExternalStop(msg)
+		}
+	}
+	closeMain()
+	engine.VpnStopped(msg)
+}
+
+// UnderlyingNetworkChanged is the physical network (wifi, mobile). Empty means none.
+func UnderlyingNetworkChanged(name string) {
+	mu.Lock()
+	a := app
+	mu.Unlock()
+	if a != nil {
+		a.UnderlyingNetworkChanged(name)
+	}
+}
+
+// Version of the engine.
+func Version() string { return engine.Version }
+
+func statusLoop() {
+	last := ""
+	for range time.Tick(time.Second) {
+		st := app.GetState()
+		key := st.Status + "|" + st.Selected
+		if key == last {
+			continue
+		}
+		last = key
+		name := ""
+		for _, s := range st.Servers {
+			if s.ID == st.Selected {
+				name = s.Name
+			}
+		}
+		mu.Lock()
+		h := host
+		mu.Unlock()
+		if h != nil {
+			h.OnStatus(st.Status, name)
+		}
+	}
+}
+
+// Go's pure resolver reads /etc/resolv.conf, which Android does not have, and then
+// asks [::1]:53. A UDP dial to the carrier DNS succeeds even when the query will
+// time out, so the old fallback to 1.1.1.1 never ran. InstallPublicResolver gives
+// each public server its own query deadline and moves on after a timeout.
+func setResolver() { engine.InstallPublicResolver() }
+
+func platformResolve(name string) []net.IP {
+	mu.Lock()
+	h := host
+	mu.Unlock()
+	if h == nil {
+		return nil
+	}
+	s, err := h.Resolve(name)
+	if err != nil || s == "" {
+		return nil
+	}
+	var ips []net.IP
+	for _, p := range strings.Split(s, ",") {
+		if ip := net.ParseIP(strings.TrimSpace(p)); ip != nil {
+			ips = append(ips, ip)
+		}
+	}
+	return ips
+}
+
+// hostIfaces: every up interface with its addresses (hotspot ap0/swlan0/wlan1, USB rndis/ncm, Wi‑Fi),
+// for «Раздача через точку доступа».
+func hostIfaces() []engine.ShareIface {
+	mu.Lock()
+	h := host
+	mu.Unlock()
+	if h == nil {
+		return nil
+	}
+	js, err := h.GetInterfaces()
+	if err != nil {
+		return nil
+	}
+	var ifs []struct {
+		Name  string   `json:"name"`
+		Flags int      `json:"flags"`
+		Addrs []string `json:"addrs"`
+	}
+	json.Unmarshal([]byte(js), &ifs)
+	var out []engine.ShareIface
+	for _, i := range ifs {
+		if i.Flags&0x1 == 0 || i.Flags&0x8 != 0 {
+			continue // down or loopback
+		}
+		out = append(out, engine.ShareIface{Name: i.Name, Addrs: i.Addrs})
+	}
+	return out
+}
+
+// lanAddrs: IPv4 of Wi‑Fi / Ethernet interfaces (net.Interfaces is restricted on Android 11+).
+func lanAddrs() []string {
+	mu.Lock()
+	h := host
+	mu.Unlock()
+	if h == nil {
+		return nil
+	}
+	js, err := h.GetInterfaces()
+	if err != nil {
+		return nil
+	}
+	var ifs []struct {
+		Name  string   `json:"name"`
+		Type  int      `json:"type"`
+		Addrs []string `json:"addrs"`
+	}
+	json.Unmarshal([]byte(js), &ifs)
+	var wifi, other []string
+	for _, i := range ifs {
+		if i.Type == 1 || strings.HasPrefix(i.Name, "tun") || strings.HasPrefix(i.Name, "lo") {
+			continue
+		}
+		if i.Type == 0 || i.Type == 2 {
+			wifi = append(wifi, i.Addrs...)
+		} else {
+			other = append(other, i.Addrs...)
+		}
+	}
+	return append(wifi, other...)
+}

@@ -1,0 +1,5 @@
+app/build/
+app/.dart_tool/
+app/test/failures/
+app/android/local.properties
+app/.flutter-plugins-dependencies

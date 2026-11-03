@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- ПРОКСИ+ 2.4.0 MSIX (test). Tokens __VERSION__ and __PUBLISHER__ are filled by
+     .github/workflows/windows-msix.yml. Publisher must equal the signing cert subject.
+     Layout: app files at the root (Nox.exe), engine in core\ (noxd.exe = packaged service "Nox"). -->
+<Package
+  xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+  xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+  xmlns:desktop="http://schemas.microsoft.com/appx/manifest/desktop/windows10"
+  xmlns:desktop2="http://schemas.microsoft.com/appx/manifest/desktop/windows10/2"
+  xmlns:desktop6="http://schemas.microsoft.com/appx/manifest/desktop/windows10/6"
+  xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
+  IgnorableNamespaces="uap desktop desktop2 desktop6 rescap">
+
+  <Identity Name="ProksiPlus.Nox" Publisher="__PUBLISHER__" Version="__VERSION__" ProcessorArchitecture="x64" />
+
+  <Properties>
+    <DisplayName>ПРОКСИ+</DisplayName>
+    <PublisherDisplayName>ПРОКСИ+</PublisherDisplayName>
+    <Logo>Assets\StoreLogo.png</Logo>
+    <!-- ProgramData\Nox (ipc.json, settings, logs) and HKCU Run must be the real ones,
+         shared between the UI and the service, not per-package copies -->
+    <desktop6:FileSystemWriteVirtualization>disabled</desktop6:FileSystemWriteVirtualization>
+    <desktop6:RegistryWriteVirtualization>disabled</desktop6:RegistryWriteVirtualization>
+  </Properties>
+
+  <Dependencies>
+    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.19041.0" MaxVersionTested="10.0.26100.0" />
+  </Dependencies>
+
+  <Resources>
+    <Resource Language="ru-RU" />
+    <Resource Language="en-US" />
+  </Resources>
+
+  <Applications>
+    <Application Id="Nox" Executable="Nox.exe" EntryPoint="Windows.FullTrustApplication">
+      <uap:VisualElements DisplayName="ПРОКСИ+" Description="ПРОКСИ+ — VPN и блокировка рекламы"
+        BackgroundColor="transparent" Square150x150Logo="Assets\Square150x150Logo.png" Square44x44Logo="Assets\Square44x44Logo.png">
+        <uap:DefaultTile Wide310x150Logo="Assets\Wide310x150Logo.png" />
+      </uap:VisualElements>
+      <Extensions>
+        <!-- engine: LocalSystem service, owns TUN and routes (same name as the Inno build) -->
+        <desktop6:Extension Category="windows.service" Executable="core\noxd.exe" EntryPoint="Windows.FullTrustApplication">
+          <desktop6:Service Name="Nox" StartupType="auto" StartAccount="localSystem" />
+        </desktop6:Extension>
+        <desktop:Extension Category="windows.startupTask" Executable="Nox.exe" EntryPoint="Windows.FullTrustApplication">
+          <desktop:StartupTask TaskId="NoxAutostart" Enabled="false" DisplayName="ПРОКСИ+" />
+        </desktop:Extension>
+      </Extensions>
+    </Application>
+  </Applications>
+
+  <Extensions>
+    <!-- pairing (QR import from a phone): private networks only, like the Inno netsh rule -->
+    <desktop2:Extension Category="windows.firewallRules">
+      <desktop2:FirewallRules Executable="core\noxd.exe">
+        <desktop2:Rule Direction="in" IPProtocol="TCP" Profile="private" />
+      </desktop2:FirewallRules>
+    </desktop2:Extension>
+  </Extensions>
+
+  <Capabilities>
+    <Capability Name="internetClient" />
+    <Capability Name="internetClientServer" />
+    <Capability Name="privateNetworkClientServer" />
+    <rescap:Capability Name="runFullTrust" />
+    <rescap:Capability Name="packagedServices" />
+    <rescap:Capability Name="localSystemServices" />
+    <rescap:Capability Name="unvirtualizedResources" />
+  </Capabilities>
+</Package>

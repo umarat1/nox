@@ -1,0 +1,149 @@
+# ПРОКСИ+ 2.4.0: Windows MSIX test build (Flutter UI + noxd as a packaged LocalSystem service).
+# Output: workflow artifact "proxyplus-msix" (.msix, .cer, .appinstaller). Nothing is published:
+# the .appinstaller points at a future location and is not uploaded anywhere.
+#
+# Secrets:
+#   MSIX_PFX_BASE64    self-signed test code-signing cert (.pfx, base64), subject = Publisher
+#   MSIX_PFX_PASSWORD  its password
+name: windows-msix
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [proxyplus-win-msix]
+
+permissions:
+  contents: read
+
+env:
+  FLUTTER_VERSION: "3.47.7"
+  SINGBOX_VERSION: "1.14.3"
+  SINGBOX_SHA256: "d8b86ef58936dba9230ec6a57ffa4243933f3c14ef4809828b6c553440ed1518"
+  XRAY_VERSION: "26.3.27"
+  XRAY_SHA256: "d004c39288ce9ada487c6f398c7c545f7d749e44bdfdd59dbc9f865afba4e1ad"
+  APPINSTALLER_BASE: "https://sessia.top/updates/nox/msix"
+
+jobs:
+  msix:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Version
+        id: ver
+        run: |
+          $line = (Select-String -Path app/pubspec.yaml -Pattern '^version:\s*(\S+)').Matches[0].Groups[1].Value
+          $name, $build = $line -split '\+'
+          "name=$name"     >> $env:GITHUB_OUTPUT
+          "build=$build"   >> $env:GITHUB_OUTPUT
+          "msix=$name.0"   >> $env:GITHUB_OUTPUT
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go/go.mod
+          cache-dependency-path: go/go.sum
+
+      - name: Go vet + tests
+        working-directory: go
+        run: |
+          go vet ./...
+          go test ./core ./ipc
+
+      - name: Build noxd.exe
+        working-directory: go
+        run: go build -trimpath -ldflags "-s -w" -o ../dist/core/noxd.exe ./cmd/noxd
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      # widget/golden tests run on Linux (fonts differ on Windows); here: analyze + build
+      - name: Flutter analyze + build
+        working-directory: app
+        run: |
+          flutter pub get
+          flutter analyze --no-fatal-infos --no-fatal-warnings
+          flutter build windows --release --build-name=${{ steps.ver.outputs.name }} --build-number=${{ steps.ver.outputs.build }}
+
+      - name: Fetch sing-box (pinned, checksum verified)
+        run: |
+          $zip = "$env:RUNNER_TEMP\sb.zip"
+          Invoke-WebRequest "https://github.com/SagerNet/sing-box/releases/download/v$env:SINGBOX_VERSION/sing-box-$env:SINGBOX_VERSION-windows-amd64.zip" -OutFile $zip
+          if ((Get-FileHash $zip -Algorithm SHA256).Hash -ne $env:SINGBOX_SHA256) { throw "sing-box checksum mismatch" }
+          Expand-Archive $zip "$env:RUNNER_TEMP\sb"
+          Copy-Item "$env:RUNNER_TEMP\sb\*\sing-box.exe","$env:RUNNER_TEMP\sb\*\libcronet.dll" dist/core/
+
+      - name: Fetch Xray-core (pinned, checksum verified)
+        run: |
+          $zip = "$env:RUNNER_TEMP\xray.zip"
+          Invoke-WebRequest "https://github.com/XTLS/Xray-core/releases/download/v$env:XRAY_VERSION/Xray-windows-64.zip" -OutFile $zip
+          if ((Get-FileHash $zip -Algorithm SHA256).Hash -ne $env:XRAY_SHA256) { throw "Xray checksum mismatch" }
+          Expand-Archive $zip "$env:RUNNER_TEMP\xray"
+          Copy-Item "$env:RUNNER_TEMP\xray\xray.exe" dist/core/
+
+      - name: NaiveProxy client (bundled)
+        run: |
+          if ((Get-FileHash third_party/windows/naive.exe -Algorithm SHA256).Hash -ne "71B1BC593A1470F3FBAF216469EDDE58B06A97449558AA3BC70CB265591635B7") { throw "naive checksum mismatch" }
+          Copy-Item third_party/windows/* dist/core/
+
+      - name: Cert (secret -> temp pfx, export public .cer)
+        id: cert
+        env:
+          PFX: ${{ secrets.MSIX_PFX_BASE64 }}
+          PFX_PASS: ${{ secrets.MSIX_PFX_PASSWORD }}
+        run: |
+          if (-not $env:PFX) { throw "MSIX_PFX_BASE64 secret missing" }
+          $pfx = "$env:RUNNER_TEMP\msix.pfx"; [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:PFX))
+          $c = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2($pfx, $env:PFX_PASS)
+          "publisher=$($c.Subject)" >> $env:GITHUB_OUTPUT
+          New-Item -ItemType Directory -Force out | Out-Null
+          [IO.File]::WriteAllBytes("$pwd\out\PROKSI-Plus-Test.cer", $c.Export('Cert'))
+          Write-Host "subject: $($c.Subject)  thumbprint: $($c.Thumbprint)"
+
+      - name: Stage MSIX layout
+        run: |
+          $L = "dist\msix"
+          New-Item -ItemType Directory -Force $L, "$L\core" | Out-Null
+          Copy-Item -Recurse app/build/windows/x64/runner/Release/* $L/
+          foreach ($d in 'msvcp140.dll','vcruntime140.dll','vcruntime140_1.dll') { Copy-Item "$env:WINDIR\System32\$d" $L/ }
+          Copy-Item -Recurse dist/core/* "$L\core\"
+          Copy-Item -Recurse packaging/msix/Assets $L/
+          (Get-Content -Raw -Encoding utf8 packaging/msix/AppxManifest.xml).
+            Replace('__VERSION__','${{ steps.ver.outputs.msix }}').
+            Replace('__PUBLISHER__','${{ steps.cert.outputs.publisher }}') |
+            Set-Content -Encoding utf8 "$L\AppxManifest.xml"
+          Get-ChildItem -Recurse $L | Select-Object FullName, Length | Format-Table -AutoSize
+
+      - name: MakeAppx + SignTool
+        env:
+          PFX_PASS: ${{ secrets.MSIX_PFX_PASSWORD }}
+        run: |
+          $kit = (Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\10.*\x64\makeappx.exe" | Sort-Object FullName | Select-Object -Last 1).Directory.FullName
+          $msix = "out\ProksiPlus-${{ steps.ver.outputs.name }}-x64.msix"
+          & "$kit\makeappx.exe" pack /o /h SHA256 /d dist\msix /p $msix
+          if ($LASTEXITCODE -ne 0) { throw "makeappx failed" }
+          & "$kit\signtool.exe" sign /fd SHA256 /f "$env:RUNNER_TEMP\msix.pfx" /p $env:PFX_PASS $msix
+          if ($LASTEXITCODE -ne 0) { throw "signtool failed" }
+          Remove-Item "$env:RUNNER_TEMP\msix.pfx"
+          (Get-FileHash $msix -Algorithm SHA256).Hash | Set-Content "$msix.sha256"
+
+      - name: .appinstaller (not published)
+        run: |
+          (Get-Content -Raw -Encoding utf8 packaging/msix/ProksiPlus.appinstaller).
+            Replace('__BASE__',$env:APPINSTALLER_BASE).
+            Replace('__VERSION__','${{ steps.ver.outputs.msix }}').
+            Replace('__NAME__','${{ steps.ver.outputs.name }}').
+            Replace('__PUBLISHER__','${{ steps.cert.outputs.publisher }}') |
+            Set-Content -Encoding utf8 out\ProksiPlus.appinstaller
+          Get-ChildItem out | Format-Table Name, Length
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: proxyplus-msix
+          path: out/*
+          if-no-files-found: error
