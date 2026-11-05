@@ -128,7 +128,7 @@ void main() {
     for (var i = 0; i < 5; i++) {
       await t.pump(const Duration(milliseconds: 80));
     }
-    expect(c.pref('tpl', 'glass'), 'ocean');
+    expect(c.pref('tpl', 'purple'), 'ocean');
     await t.tap(find.text('Стекло'));
     for (var i = 0; i < 5; i++) {
       await t.pump(const Duration(milliseconds: 80));

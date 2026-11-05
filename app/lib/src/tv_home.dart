@@ -153,7 +153,7 @@ class _TvHomeState extends State<TvHome> {
   @override
   Widget build(BuildContext context) {
     tvRed = true;
-    final p = Pal.of(c.settings['theme'] as String?, c.pref('tpl', 'glass'));
+    final p = Pal.of(c.settings['theme'] as String?, c.pref('tpl', 'purple'));
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (did, _) {
@@ -370,7 +370,7 @@ class _TvHomeState extends State<TvHome> {
     ),
   );
 
-  Pal get _pal => Pal.of(c.settings['theme'] as String?, c.pref('tpl', 'glass'));
+  Pal get _pal => Pal.of(c.settings['theme'] as String?, c.pref('tpl', 'purple'));
 
   Widget _icon(IconData i, String t, VoidCallback on) => Padding(
     padding: const EdgeInsets.only(right: 8),
@@ -510,7 +510,7 @@ class _TvHomeState extends State<TvHome> {
         : ping < 900
         ? const Color(0xFFF5A623)
         : _red;
-    final p = Pal.of(c.settings['theme'] as String?, c.pref('tpl', 'glass'));
+    final p = Pal.of(c.settings['theme'] as String?, c.pref('tpl', 'purple'));
     return TvTile(
       selected: sel,
       color: sel ? const Color(0xFF2A0A0D) : _card,

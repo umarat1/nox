@@ -328,6 +328,22 @@ const templates = <Tpl>[
     lSel: Color(0xFFFFEDD5),
   ),
   Tpl(
+    'purple',
+    'Navy / фиолетовый',
+    acc: Color(0xFF6E64DE),
+    acc2: Color(0xFF9B7CFF),
+    bg: Color(0xFF120E3A),
+    hero: Color(0xFF16124A),
+    card: Color(0xFF201C4E),
+    line: Color(0xFF38328A),
+    chip: Color(0xFF2A2660),
+    sel: Color(0xFF3A3478),
+    oSel: Color(0xFF241E58),
+    lAcc: Color(0xFF5B52C7),
+    lAcc2: Color(0xFF7C6CFF),
+    lSel: Color(0xFFE8E6FF),
+  ),
+  Tpl(
     'mono',
     'Монохром',
     acc: Color(0xFF8E8E93),
@@ -346,7 +362,13 @@ const templates = <Tpl>[
 ];
 
 Tpl templateOf(String? k) =>
-    templates.firstWhere((t) => t.key == k, orElse: () => templates[0]);
+    templates.firstWhere(
+      (t) => t.key == k,
+      orElse: () => templates.firstWhere(
+        (t) => t.key == 'purple',
+        orElse: () => templates[0],
+      ),
+    );
 
 const themeNames = [
   ('black', 'AMOLED (чёрная)'),

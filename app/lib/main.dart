@@ -58,7 +58,7 @@ class NoxApp extends StatelessWidget {
     builder: (_, _) {
       final pal = Pal.of(
         c.settings['theme'] as String?,
-        c.pref('tpl', 'glass'),
+        c.pref('tpl', 'purple'),
       );
       vol3d = vol3dFromUi(c.ui);
       graphStyle = graphFromUi(c.ui);

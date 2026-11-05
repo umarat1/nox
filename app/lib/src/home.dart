@@ -34,7 +34,7 @@ class Home extends StatelessWidget {
         tvRed = c.isTv && c.flag('tvUi', true);
         final p = Pal.of(
           c.settings['theme'] as String?,
-          c.pref('tpl', 'glass'),
+          c.pref('tpl', 'purple'),
         );
         vol3d = vol3dFromUi(c.ui);
         graphStyle = graphFromUi(c.ui);
@@ -4949,8 +4949,8 @@ void settingsSheet(BuildContext context, NoxController c, Pal p) {
         p,
         'Цветовой шаблон',
         desc:
-            templateOf(c.pref('tpl', 'glass')).name +
-            (c.pref('tpl', 'glass') == 'mono' ? ' · без флагов' : ''),
+            templateOf(c.pref('tpl', 'purple')).name +
+            (c.pref('tpl', 'purple') == 'mono' ? ' · без флагов' : ''),
         arrow: true,
         onTap: () {
           Navigator.pop(ctx);
@@ -7109,7 +7109,7 @@ class TemplatePicker extends StatelessWidget {
     listenable: c,
     builder: (context, _) {
       final theme = c.settings['theme'] as String?;
-      final cur = c.pref('tpl', 'glass');
+      final cur = c.pref('tpl', 'purple');
       final p = Pal.of(theme, cur);
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -7262,7 +7262,7 @@ class _TplCard extends StatelessWidget {
 }
 
 /// Phone connection-card layout: 'classic' | 'ring' (1) | 'compact' (2) | 'timer' (3).
-String heroStyle = 'timer';
+String heroStyle = 'ring'; // 2.2.7: navy/purple nebula power rings (Марат screenshot)
 
 String _hms(int s) {
   if (s < 0) s = 0;
@@ -7355,85 +7355,134 @@ class _HeroAlt extends StatelessWidget {
 
     switch (style) {
       case 'ring':
+        // 2.2.7: navy/purple nebula + concentric glowing power rings (screenshot theme 1)
         return Container(
-          padding: EdgeInsets.fromLTRB(
-            16,
-            corner == null ? 18 : 12,
-            corner == null ? 16 : 12,
-            12,
+          clipBehavior: Clip.antiAlias,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(26),
+            color: p.card,
+            border: Border.all(color: p.acc2.withValues(alpha: .28)),
+            boxShadow: [
+              BoxShadow(
+                color: p.acc.withValues(alpha: on ? .35 : .14),
+                blurRadius: 28,
+                offset: const Offset(0, 10),
+              ),
+            ],
           ),
-          decoration: glassBox(p, r: 26),
-          child: Column(
+          child: Stack(
             children: [
-              if (corner != null)
-                Align(alignment: Alignment.centerRight, child: corner),
-              _GlowRing(
-                p: p,
-                on: on,
-                wait: wait,
-                spin: c.animSmooth && (on || wait),
-                child: _powerKnob(c, p, size: 104),
-              ),
-              const SizedBox(height: 14),
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  badge(22),
-                  const SizedBox(width: 8),
-                  Flexible(
-                    child: Text(
-                      name,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: p.txt,
-                        fontSize: 18,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 4),
-              Text(
-                [
-                  on ? _hms(secs) : label,
-                  if (showProto || proto.isNotEmpty) proto,
-                ].join('  ·  '),
-                style: TextStyle(
-                  color: on ? p.acc2 : stColor,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: .6,
-                  fontFeatures: const [FontFeature.tabularFigures()],
+              Positioned.fill(
+                child: CustomPaint(
+                  painter: _NebulaPainter(seed: on ? 1.2 : 0.4),
                 ),
               ),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  Expanded(
-                    child: _Stat(
-                      p: p,
-                      icon: Icons.south_rounded,
-                      label: 'Загрузка',
-                      value: down,
-                      color: p.acc2,
+              Padding(
+                padding: EdgeInsets.fromLTRB(
+                  16,
+                  corner == null ? 18 : 12,
+                  corner == null ? 16 : 12,
+                  12,
+                ),
+                child: Column(
+                  children: [
+                    if (corner != null)
+                      Align(alignment: Alignment.centerRight, child: corner),
+                    GestureDetector(
+                      onTap: c.toggle,
+                      child: SizedBox(
+                        width: 200,
+                        height: 200,
+                        child: CustomPaint(
+                          painter: _PowerRingsPainter(
+                            on: on,
+                            busy: wait,
+                            accent: p.acc,
+                          ),
+                          child: Center(
+                            child: wait
+                                ? const SizedBox(
+                                    width: 36,
+                                    height: 36,
+                                    child: CircularProgressIndicator(
+                                      color: Colors.white,
+                                      strokeWidth: 2.6,
+                                    ),
+                                  )
+                                : Icon(
+                                    Icons.power_settings_new_rounded,
+                                    size: 48,
+                                    color: on
+                                        ? const Color(0xFF1A1448)
+                                        : Colors.white,
+                                  ),
+                          ),
+                        ),
+                      ),
                     ),
-                  ),
-                  Container(width: 1, height: 30, color: p.line),
-                  Expanded(
-                    child: _Stat(
-                      p: p,
-                      icon: Icons.north_rounded,
-                      label: 'Отдача',
-                      value: up,
-                      color: p.mono ? p.sub : const Color(0xFF34D399),
+                    const SizedBox(height: 6),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        badge(22),
+                        const SizedBox(width: 8),
+                        Flexible(
+                          child: Text(
+                            name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: p.txt,
+                              fontSize: 18,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
-                  ),
-                ],
+                    const SizedBox(height: 4),
+                    Text(
+                      [
+                        on ? _hms(secs) : label,
+                        if (showProto || proto.isNotEmpty) proto,
+                      ].join('  ·  '),
+                      style: TextStyle(
+                        color: on ? p.acc2 : stColor,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: .6,
+                        fontFeatures: const [FontFeature.tabularFigures()],
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _Stat(
+                            p: p,
+                            icon: Icons.south_rounded,
+                            label: 'Загрузка',
+                            value: down,
+                            color: p.acc2,
+                          ),
+                        ),
+                        Container(width: 1, height: 30, color: p.line),
+                        Expanded(
+                          child: _Stat(
+                            p: p,
+                            icon: Icons.north_rounded,
+                            label: 'Отдача',
+                            value: up,
+                            color: p.mono ? p.sub : const Color(0xFF34D399),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    graph(52),
+                  ],
+                ),
               ),
-              const SizedBox(height: 8),
-              graph(52),
             ],
           ),
         );
@@ -8455,4 +8504,98 @@ class _GlowRingState extends State<_GlowRing>
       ),
     );
   }
+}
+
+
+/// 2.2.7: soft navy/purple nebula wisps behind the power button (Марат screenshot).
+class _NebulaPainter extends CustomPainter {
+  final double seed;
+  _NebulaPainter({required this.seed});
+  @override
+  void paint(Canvas canvas, Size size) {
+    final cx = size.width / 2, cy = size.height * 0.42;
+    final glow = Paint()..maskFilter = const MaskFilter.blur(BlurStyle.normal, 28);
+    for (final e in [
+      (90.0, const Color(0x337846E0)),
+      (130.0, const Color(0x284060F0)),
+      (70.0, const Color(0x40A050D0)),
+    ]) {
+      glow.color = e.$2;
+      canvas.drawCircle(Offset(cx, cy), e.$1 * (0.85 + seed * 0.1), glow);
+    }
+    final stroke = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 18
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 10);
+    for (var i = 0; i < 5; i++) {
+      final path = Path();
+      for (var k = 0; k <= 40; k++) {
+        final x = size.width * k / 40;
+        final y = cy +
+            math.sin(k * 0.22 + i * 1.1 + seed) * (16 + i * 3) +
+            (i - 2) * 10;
+        if (k == 0) {
+          path.moveTo(x, y);
+        } else {
+          path.lineTo(x, y);
+        }
+      }
+      stroke.color = [
+        const Color(0x337060F0),
+        const Color(0x2EC060E0),
+        const Color(0x284080F8),
+        const Color(0x26A040C8),
+        const Color(0x2250A0FF),
+      ][i];
+      canvas.drawPath(path, stroke);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _NebulaPainter old) => old.seed != seed;
+}
+
+/// Concentric glowing power rings + disc (navy/purple), matching the screenshot.
+class _PowerRingsPainter extends CustomPainter {
+  final bool on, busy;
+  final Color accent;
+  _PowerRingsPainter({
+    required this.on,
+    required this.busy,
+    required this.accent,
+  });
+  @override
+  void paint(Canvas canvas, Size size) {
+    final c = Offset(size.width / 2, size.height / 2);
+    const blue = Color(0xFF468CFF);
+    const pink = Color(0xFFDC50C8);
+    for (final e in [
+      (96.0, 12.0, blue.withValues(alpha: .22)),
+      (90.0, 9.0, pink.withValues(alpha: .20)),
+      (86.0, 3.2, blue.withValues(alpha: .85)),
+      (92.0, 2.0, pink.withValues(alpha: .80)),
+    ]) {
+      canvas.drawCircle(
+        c,
+        e.$1,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = e.$2
+          ..color = e.$3
+          ..maskFilter =
+              e.$2 > 4 ? const MaskFilter.blur(BlurStyle.normal, 4) : null,
+      );
+    }
+    final disk = on ? const Color(0xFF968CFF) : const Color(0xFF5F58D2);
+    canvas.drawCircle(c, 68, Paint()..color = disk);
+    canvas.drawCircle(
+      c,
+      52,
+      Paint()..color = on ? const Color(0xFFA89EFF) : const Color(0xFF6E64DE),
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _PowerRingsPainter old) =>
+      old.on != on || old.busy != busy || old.accent != accent;
 }
